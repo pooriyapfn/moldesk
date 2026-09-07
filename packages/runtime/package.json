@@ -4,6 +4,11 @@
   "description": "Hardware detection and Python/Docker/process execution for MoleculeDesk",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pooriyapfn/moldesk.git",
+    "directory": "packages/runtime"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true

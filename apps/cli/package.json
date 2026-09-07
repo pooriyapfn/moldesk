@@ -4,6 +4,11 @@
   "description": "MoleculeDesk CLI — install and run computational biology models",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pooriyapfn/moldesk.git",
+    "directory": "apps/cli"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true

@@ -4,6 +4,11 @@
   "description": "Shared engine logic for MoleculeDesk (CLI + desktop)",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pooriyapfn/moldesk.git",
+    "directory": "packages/core"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true

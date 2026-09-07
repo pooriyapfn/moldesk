@@ -4,6 +4,11 @@
   "description": "Model manifest loading and resolution for MoleculeDesk",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pooriyapfn/moldesk.git",
+    "directory": "packages/registry"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true
