@@ -1,0 +1,11 @@
+name: boltz
+displayName: Boltz
+version: "0.1.0"
+description: >-
+  Open-source biomolecular structure prediction model (proteins, ligands,
+  nucleic acids).
+homepage: https://github.com/jwohlwend/boltz
+license: MIT
+compatibility:
+  cpu: true
+  gpu: recommended

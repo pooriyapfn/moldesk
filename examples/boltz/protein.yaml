@@ -1,0 +1,7 @@
+# Example Boltz input — a single protein chain by sequence.
+# This is a placeholder for the future `moldesk run boltz protein.yaml` workflow.
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKR
