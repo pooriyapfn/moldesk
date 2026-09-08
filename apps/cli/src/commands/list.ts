@@ -18,7 +18,7 @@ export function registerListCommand(program: Command): void {
       console.log("Available models:\n");
       for (const model of available) {
         const status = installedNames.has(model.name) ? "installed" : "not installed";
-        console.log(`  ${model.name.padEnd(12)} ${model.version.padEnd(10)} ${status}`);
+        console.log(`  ${model.name.padEnd(12)} ${model.modelVersion.padEnd(10)} ${model.status.padEnd(10)} ${status}`);
       }
     });
 }

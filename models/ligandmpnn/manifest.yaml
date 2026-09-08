@@ -1,0 +1,35 @@
+schemaVersion: 1
+name: ligandmpnn
+displayName: LigandMPNN
+modelVersion: 0.1.2
+adapterVersion: 0.1.0
+description: Protein sequence design for protein-ligand and multimer systems (Dauparas et al. 2023).
+category: sequence-design
+status: planned
+license: MIT
+homepage: https://github.com/dauparas/LigandMPNN
+source:
+  repository: https://github.com/dauparas/LigandMPNN
+  revision: 26ec57ac976ade5379920dbd43c7f97a91cf82de
+runtimes:
+  - kind: python
+    python: "3.11"
+    installer: uv
+    requirements:
+      - name: torch
+        version: 2.2.1
+      - name: numpy
+        version: "1"
+      - name: prody
+hardware:
+  platforms:
+    - darwin-arm64
+    - linux-x64
+input:
+  formats:
+    - .pdb
+  required: true
+outputs:
+  - id: sequences
+    glob: "*.fa"
+    required: true

@@ -7,7 +7,7 @@ It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecula
 Think of it as a simpler interface for scientific models:
 
 ```bash
-npm install -g moldesk
+npm install -g @moldesk/cli
 
 moldesk doctor
 moldesk install boltz
@@ -87,8 +87,11 @@ Boltz / AlphaFold / ColabFold / Chai / ...
 * `packages/registry`
   Model discovery, manifests, compatibility metadata, and model resolution.
 
+* `packages/adapters`
+  Thin model-specific installation, command, and output translations.
+
 * `models/`
-  Model-specific adapters and manifests.
+  Validated model manifests and provenance documentation.
 
 Example:
 

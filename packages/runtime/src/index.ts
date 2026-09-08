@@ -17,6 +17,19 @@ export async function getSystemReport(): Promise<SystemReport> {
   };
 }
 
+export { getMoldeskHome, getMoldeskPaths, modelInstallDir, modelVersionDir, pythonToolDir, uvToolDir } from "./filesystem/index.js";
+export type { MoldeskPaths } from "./filesystem/index.js";
+export type {
+  ExecuteRequest,
+  ExecutionResult,
+  MoldeskErrorData,
+  PrepareRuntimeRequest,
+  PreparedRuntime,
+  RemoveRuntimeRequest,
+  RuntimeCapability,
+  RuntimeProvider,
+} from "./providers.js";
+export { MoldeskError } from "./providers.js";
 export { getHardwareInfo } from "./hardware/index.js";
 export { detectPython } from "./python/index.js";
 export { detectDocker } from "./docker/index.js";

@@ -22,5 +22,7 @@ Boltz / AlphaFold / Chai / ...
   hardware detection, Python/Docker discovery, and subprocess execution.
 - **`packages/registry`** loads model manifests from `models/*/manifest.yaml`
   and resolves install/compatibility state.
-- **`models/<name>`** holds one adapter per supported model: a manifest plus
-  (eventually) `install.ts` and `runner.ts`.
+- **`packages/adapters`** contains thin, typed model-specific installation and
+  execution translations.
+- **`models/<name>`** contains registry metadata and provenance: a validated
+  manifest plus model documentation.

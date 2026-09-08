@@ -3,7 +3,7 @@
 ## npm (recommended)
 
 ```bash
-npm install -g moldesk
+npm install -g @moldesk/cli
 moldesk --version
 moldesk doctor
 ```
