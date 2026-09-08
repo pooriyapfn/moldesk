@@ -96,7 +96,13 @@ const runtimeSpecSchema = z.discriminatedUnion("kind", [
 const cudaSchema = z
   .object({
     level: requirementLevel,
-    version: z.string().min(1).optional(),
+    // Minimum driver-supported CUDA version, e.g. "12.1" — compared against the
+    // driver's max-supported CUDA (not the local CUDA toolkit) as a major.minor
+    // floor, not a semver range.
+    minDriverCudaVersion: z
+      .string()
+      .regex(/^\d+\.\d+$/, "must be a major.minor CUDA version, e.g. \"12.1\"")
+      .optional(),
   })
   .strict();
 
@@ -209,6 +215,13 @@ export const modelManifestV1Schema = z
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.hardware.minVramGb !== undefined && val.hardware.nvidiaGpu === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "hardware.nvidiaGpu must be set (\"required\" or \"recommended\") whenever minVramGb is specified",
+        path: ["hardware", "nvidiaGpu"],
+      });
+    }
     const names = new Set<string>();
     for (const out of val.outputs) {
       if (names.has(out.id)) {

@@ -18,6 +18,8 @@ function sourceModelsDir(): string {
 }
 
 function resolveModelsDir(): string {
+  const override = process.env["MOLDESK_MODELS_DIR"];
+  if (override && fs.existsSync(override)) return override;
   if (fs.existsSync(packagedModelsDir())) return packagedModelsDir();
   if (fs.existsSync(sourceModelsDir())) return sourceModelsDir();
   throw new MoldeskError({

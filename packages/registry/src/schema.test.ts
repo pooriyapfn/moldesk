@@ -145,6 +145,32 @@ describe("parseManifest", () => {
     expect(() => parseManifest(available, "m.yaml")).not.toThrow();
   });
 
+  it("requires nvidiaGpu whenever minVramGb is set", () => {
+    const raw = baseManifest();
+    raw["hardware"] = { platforms: ["darwin-arm64"], minVramGb: 16 };
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+
+    raw["hardware"] = { platforms: ["darwin-arm64"], minVramGb: 16, nvidiaGpu: "recommended" };
+    expect(() => parseManifest(raw, "m.yaml")).not.toThrow();
+  });
+
+  it("validates cuda.minDriverCudaVersion as major.minor", () => {
+    const raw = baseManifest();
+    raw["hardware"] = {
+      platforms: ["darwin-arm64"],
+      nvidiaGpu: "required",
+      cuda: { level: "required", minDriverCudaVersion: "12.1" },
+    };
+    expect(() => parseManifest(raw, "m.yaml")).not.toThrow();
+
+    raw["hardware"] = {
+      platforms: ["darwin-arm64"],
+      nvidiaGpu: "required",
+      cuda: { level: "required", minDriverCudaVersion: "12.1.0" },
+    };
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
   it("corrupt fixtures name manifest, field, and remediation", () => {
     try {
       parseManifest({ schemaVersion: 1, name: "Bad Name!" }, "models/bad/manifest.yaml");
