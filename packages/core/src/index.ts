@@ -14,7 +14,7 @@ export type {
   SystemReportDeps,
   ToolCapability,
 } from "@moldesk/runtime";
-export { listInstalledModels, listAvailableModels } from "@moldesk/registry";
+export { listAvailableModels } from "@moldesk/registry";
 export type {
   AssetSpec,
   CommandSpec,
@@ -36,5 +36,25 @@ export type {
   CompatibilityStatus,
   RuntimeCompatibility,
 } from "./compatibility.js";
+export {
+  listInstalledModels,
+} from "./install-state.js";
+export type { InstalledModel } from "./install-state.js";
+export {
+  createInstallationPlan,
+  installModel,
+  INSTALL_CONFIRMATION_DISK_BYTES,
+  INSTALL_CONFIRMATION_DOWNLOAD_BYTES,
+  requiresInstallConfirmation,
+  runtimeFingerprint,
+  uninstallModel,
+} from "./installation.js";
+export type {
+  InstallationPlanResult,
+  InstallCostEstimate,
+  InstallModelOptions,
+  InstallModelResult,
+  UninstallModelOptions,
+} from "./installation.js";
 
 export const VERSION = "0.0.1";

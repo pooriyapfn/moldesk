@@ -11,7 +11,7 @@ Evidence:
 - Boltz-2 released as v2.0.0; v2.2.1 latest patch at time of writing.
 - `boltz predict <input.yaml> --out_dir <out>`; inputs YAML/Fasta, outputs CIF.
 
-Pending before Step 3 install work: checkpoint/download SHA-256, Docker
+Deferred to Step 4: checkpoint/download SHA-256, Docker
 digest decision (Python preferred if pinnable), CUDA minima, smoke-test log
 on a CUDA host. CPU path retained for macOS ARM64 with warning-level
 performance expectations (Step 2 compatibility).

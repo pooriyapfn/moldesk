@@ -61,6 +61,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@moldesk/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       '@moldesk/registry':
         specifier: workspace:*
         version: link:../registry

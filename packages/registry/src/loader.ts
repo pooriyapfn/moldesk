@@ -124,11 +124,6 @@ export function listAvailableModels(modelsDir?: string): ModelManifestV1[] {
   return manifests;
 }
 
-export function listInstalledModels(): ModelManifestV1[] {
-  // No models are installed yet — installation support lands with `moldesk install` (Step 3).
-  return [];
-}
-
 export function getModelsDir(): string {
   return resolveModelsDir();
 }

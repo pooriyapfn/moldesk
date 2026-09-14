@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MoldeskError } from "@moldesk/registry";
 import { adapterCatalog, getAdapter, validateAdapterCatalog } from "./catalog.js";
 
 describe("adapterCatalog", () => {
@@ -29,10 +28,10 @@ describe("adapterCatalog", () => {
     expect(errors).toEqual([expect.stringContaining("missing-model")]);
   });
 
-  it("makes planned adapters fail closed", async () => {
+  it("makes installable adapters fail verification when files are absent", async () => {
     const context = { manifestName: "proteinmpnn", modelDir: "/model", assetsDir: "/assets" };
     const adapter = getAdapter("proteinmpnn");
     expect(adapter).toBeDefined();
-    await expect(adapter!.verifyInstallation(context)).rejects.toBeInstanceOf(MoldeskError);
+    await expect(adapter!.verifyInstallation(context)).resolves.toMatchObject({ passed: false });
   });
 });

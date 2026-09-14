@@ -10,8 +10,8 @@ Think of it as a simpler interface for scientific models:
 npm install -g @moldesk/cli
 
 moldesk doctor
-moldesk install boltz
-moldesk run boltz input.yaml
+moldesk install proteinmpnn
+moldesk list --installed
 ```
 
 Instead of manually setting up Python environments, CUDA dependencies, containers, model weights, and model-specific commands, MoleculeDesk provides a consistent interface across supported models.
@@ -24,6 +24,9 @@ Available:
 
 * `moldesk doctor` for system and hardware detection
 * `moldesk list` for model discovery
+* compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
+* isolated, atomic ProteinMPNN and LigandMPNN installation
+* `moldesk list --installed`, reinstall, and uninstall state management
 * `moldesk --version`
 * initial CLI and runtime architecture
 
@@ -31,8 +34,6 @@ In progress:
 
 * `moldesk install boltz`
 * `moldesk run boltz input.yaml`
-* isolated model environments
-* automatic hardware compatibility checks
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.

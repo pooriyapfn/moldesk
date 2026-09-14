@@ -7,13 +7,13 @@ verified via GitHub API).
 Evidence:
 - `Python>=3.0, PyTorch, Numpy` required; conda example uses `cudatoolkit=11.3`.
   Managed runtime pins Python 3.11 (compatible range).
-- Default model `v_48_020` used as `modelVersion`; weights live in-repo under
-  `vanilla_model_weights/` (no separate checksum to pin for Step 1; assets
-  omitted until download URLs + SHA-256 verified).
+- Default model `v_48_020` used as `modelVersion`; its 6,681,301-byte checkpoint
+  is cached by SHA-256 `c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd`.
 - Entry point `protein_mpnn_run.py --pdb_path <input.pdb> --out_folder <out>`.
 
-Pending before Step 3 install work: weight-file SHA-256, full pip freeze,
-CUDA minima, smoke-test log.
+The exact resolved dependency freeze is captured in every installed-model record.
+Pending before promotion to `available`: execution smoke tests and output collection.
 
-Registry status remains `planned` until installation verification, input
-validation, execution, and output collection work end-to-end.
+Registry status remains `beta` until execution and output collection work
+end-to-end. Step 3 installation is implemented with a pinned source checkout,
+isolated managed Python environment, and post-install verification.

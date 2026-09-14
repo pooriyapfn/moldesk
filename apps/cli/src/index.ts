@@ -5,6 +5,7 @@ import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerListCommand } from "./commands/list.js";
 import { registerInstallCommand } from "./commands/install.js";
 import { registerRunCommand } from "./commands/run.js";
+import { registerUninstallCommand } from "./commands/uninstall.js";
 
 const program = new Command();
 
@@ -16,6 +17,7 @@ program
 registerDoctorCommand(program);
 registerListCommand(program);
 registerInstallCommand(program);
+registerUninstallCommand(program);
 registerRunCommand(program);
 
 program.parse();

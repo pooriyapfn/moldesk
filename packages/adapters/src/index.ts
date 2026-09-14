@@ -2,6 +2,7 @@ export interface InstallContext {
   manifestName: string;
   modelDir: string;
   assetsDir: string;
+  runner?: import("@moldesk/runtime").InstallCommandRunner;
 }
 
 export interface RunContext {
@@ -13,12 +14,12 @@ export interface RunContext {
 }
 
 export interface InstallPlanStep {
-  id: string;
-  description: string;
+  readonly id: string;
+  readonly description: string;
 }
 
 export interface InstallPlan {
-  steps: InstallPlanStep[];
+  readonly steps: readonly InstallPlanStep[];
 }
 
 export interface CollectedOutput {
@@ -40,4 +41,4 @@ export interface ModelAdapterDefinition {
   verifyInstallation(context: InstallContext): Promise<VerificationResult>;
 }
 
-export { adapterCatalog } from "./catalog.js";
+export { adapterCatalog, getAdapter, hasAdapter, validateAdapterCatalog } from "./catalog.js";

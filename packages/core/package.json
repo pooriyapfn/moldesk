@@ -22,6 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@moldesk/adapters": "workspace:*",
     "@moldesk/runtime": "workspace:*",
     "@moldesk/registry": "workspace:*"
   },

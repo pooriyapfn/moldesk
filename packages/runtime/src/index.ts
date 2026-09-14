@@ -58,6 +58,25 @@ export {
 } from "./docker/index.js";
 export { detectNvidia } from "./nvidia/index.js";
 export { collectSystemReport } from "./system.js";
+export { runCommand } from "./process/index.js";
+export type { RunOptions, RunResult } from "./process/index.js";
+export {
+  cacheAsset,
+  ensureManagedUv,
+  managedUvDownloadBytes,
+  materializeAsset,
+  prepareDockerImage,
+  preparePythonEnvironment,
+  temporaryInstallDir,
+  MANAGED_UV_VERSION,
+} from "./install/index.js";
+export type {
+  AssetFetch,
+  InstallCommandRunner,
+  InstallProgress,
+  PreparedPythonEnvironment,
+  PythonInstallRequest,
+} from "./install/index.js";
 export type {
   DiskInfo,
   DockerCapability,

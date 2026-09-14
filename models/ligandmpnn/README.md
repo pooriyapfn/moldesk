@@ -10,8 +10,11 @@ Evidence:
   `Python <3.12,>=3.11`, docs pin PyTorch 2.2.1 + NumPy 1.X.
 - Entry point `python run.py --pdb_path <input.pdb> --out_folder <out>`.
 
-Pending before Step 3 install work: model-param (`get_model_params.sh`) SHA-256,
-full requirements freeze, smoke-test log.
+The selected 10,541,943-byte checkpoint is cached by SHA-256
+`161cd264061fda9680cbb940255522ae42f2966c552d045d87913d9452a80970`;
+the exact resolved dependency freeze is captured in installed-model state.
+Pending before promotion to `available`: execution smoke tests and output collection.
 
-Registry status remains `planned` until installation verification, input
-validation, execution, and output collection work end-to-end.
+Registry status remains `beta` until execution and output collection work
+end-to-end. Step 3 installation uses the pinned source revision and a
+content-addressed, SHA-256-verified checkpoint download.

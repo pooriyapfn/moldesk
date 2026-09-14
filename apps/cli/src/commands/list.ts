@@ -21,13 +21,13 @@ export function registerListCommand(program: Command): void {
     .description("List available models with compatibility")
     .option("--json", "print raw manifests + compatibility results as JSON")
     .option("--runtime <kind>", "constrain compatibility selection to python|docker")
-    .option("--installed", "show installed models only (Step 3 provides state)")
+    .option("--installed", "show installed models only")
     .action(async (options: { json?: boolean; runtime?: string; installed?: boolean }) => {
       try {
         const requestedRuntime = options.runtime ? parseRuntime(options.runtime) : undefined;
         const available = listAvailableModels();
         const installed = listInstalledModels();
-        const installedNames = new Set(installed.map((m) => m.name));
+        const installedNames = new Set(installed.map((m) => m.model));
 
         if (options.installed) {
           if (options.json) {
@@ -39,7 +39,7 @@ export function registerListCommand(program: Command): void {
             return;
           }
           for (const model of installed) {
-            console.log(`  ${model.name} ${model.modelVersion}`);
+            console.log(`  ${model.model} ${model.modelVersion} (${model.runtime.kind}, ${model.status})`);
           }
           return;
         }

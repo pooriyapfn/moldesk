@@ -1,12 +1,15 @@
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import {
+  createInstallationPlan,
   evaluateCompatibility,
   getSystemReport,
+  installModel,
   isImageCachedLocally,
   listAvailableModels,
   probeDockerGpuAccess,
   pullDockerImage,
+  requiresInstallConfirmation,
   shortReason,
 } from "@moldesk/core";
 import type { RuntimeKind } from "@moldesk/core";
@@ -26,6 +29,18 @@ function parseRuntime(value: string): RuntimeKind {
   throw new Error("unreachable");
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "unknown";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
 async function confirmDownload(image: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -36,6 +51,39 @@ async function confirmDownload(image: string): Promise<boolean> {
   } finally {
     rl.close();
   }
+}
+
+async function confirmInstallation(model: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(`Install ${model}? [y/N] `);
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
+type ConfirmationDecision =
+  | { proceed: true }
+  | { proceed: false; reason: "confirmation-required" | "cancelled" };
+
+/**
+ * Cost-aware confirmation gate: proceeds without asking for small, known-size,
+ * non-destructive installs; otherwise prompts interactively, or — with no TTY,
+ * `--json`, or `--yes` already declining — fails before any mutation happens.
+ */
+async function decideInstallConfirmation(
+  displayName: string,
+  needsConfirmation: boolean,
+  options: { yes?: boolean; json?: boolean },
+): Promise<ConfirmationDecision> {
+  if (!needsConfirmation || options.yes) return { proceed: true };
+  if (options.json || !process.stdin.isTTY || !process.stdout.isTTY) {
+    return { proceed: false, reason: "confirmation-required" };
+  }
+  return (await confirmInstallation(displayName))
+    ? { proceed: true }
+    : { proceed: false, reason: "cancelled" };
 }
 
 /**
@@ -69,11 +117,12 @@ async function verifyDockerGpuAccess(
 export function registerInstallCommand(program: Command): void {
   program
     .command("install <model>")
-    .description("Install a model (compatibility gate; full engine lands in Step 3)")
+    .description("Install a model into an isolated, reproducible environment")
     .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
-    .option("--yes", "skip the confirmation prompt before downloading the Docker GPU verification image")
+    .option("--yes", "accept downloads and installation without prompting")
+    .option("--reinstall", "stage and atomically replace an existing installation")
     .option("--json", "print compatibility/plan result as JSON")
-    .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean }) => {
+    .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean; reinstall?: boolean }) => {
       const available = listAvailableModels();
       const manifest = available.find((m) => m.name === model);
 
@@ -131,30 +180,95 @@ export function registerInstallCommand(program: Command): void {
         return;
       }
 
-      // Compatibility passed (compatible|warning). Full install lifecycle is Step 3:
-      // perform zero writes here.
-      if (options.json) {
-        console.log(
-          JSON.stringify(
-            {
-              model,
-              status: compatibility.status,
-              selectedRuntime: compatibility.selectedRuntime,
-              compatibility,
-              note: "Install engine lands in Step 3; no files written.",
-            },
-            null,
-            2,
-          ),
-        );
+      const runtime = manifest.runtimes.find((candidate) => candidate.kind === compatibility.selectedRuntime);
+      if (!runtime) {
+        console.error(`Cannot resolve selected runtime for "${model}".`);
+        process.exitCode = 1;
         return;
       }
-      console.log(
-        `Model "${model}" is ${compatibility.status} via ${compatibility.selectedRuntime ?? "unknown"} runtime.`,
-      );
-      if (compatibility.status === "warning") {
-        console.log(`  ${shortReason(compatibility)}`);
+
+      let planned;
+      try {
+        planned = await createInstallationPlan(manifest, runtime);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.json) {
+          console.log(JSON.stringify({ model, status: compatibility.status, selectedRuntime: runtime.kind, compatibility, installable: false, message }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exitCode = 1;
+        return;
       }
-      console.log("Installation engine lands in Step 3; no files were written.");
+
+      const payload = {
+        model,
+        status: compatibility.status,
+        selectedRuntime: runtime.kind,
+        compatibility,
+        alreadyInstalled: planned.alreadyInstalled,
+        reinstall: options.reinstall ?? false,
+        targetDir: planned.targetDir,
+        estimatedDownloadBytes: planned.estimatedDownloadBytes,
+        estimatedDiskBytes: planned.estimatedDiskBytes,
+        steps: planned.plan.steps,
+      };
+
+      // An identical fingerprint that's already installed and not being replaced is a
+      // successful no-op below — nothing will be mutated, so there is nothing to confirm.
+      const isNoop = planned.alreadyInstalled && !options.reinstall;
+      const destructive = Boolean(options.reinstall) && planned.alreadyInstalled;
+      const needsConfirmation = !isNoop && requiresInstallConfirmation(
+        {
+          downloadBytes: planned.estimatedDownloadBytes,
+          downloadSizeUnknown: planned.downloadSizeUnknown,
+          diskBytes: planned.estimatedDiskBytes,
+          diskSizeUnknown: planned.diskSizeUnknown,
+        },
+        { destructive },
+      );
+
+      if (!options.json) {
+        console.log(`Installation plan for ${manifest.displayName} (${runtime.kind}):`);
+        for (const [index, step] of planned.plan.steps.entries()) console.log(`  ${index + 1}. ${step.description}`);
+        console.log(`  Download: ${formatBytes(planned.estimatedDownloadBytes)}${planned.downloadSizeUnknown ? " (partly unknown)" : ""}`);
+        console.log(`  Additional disk: ${formatBytes(planned.estimatedDiskBytes)}${planned.diskSizeUnknown ? " (unknown)" : ""}`);
+        console.log(`  Target: ${planned.targetDir}`);
+      }
+
+      const decision = await decideInstallConfirmation(manifest.displayName, needsConfirmation, options);
+      if (!decision.proceed) {
+        if (decision.reason === "confirmation-required") {
+          const message = `Installing ${manifest.displayName} requires confirmation (large or unknown-size download/disk use, or a destructive reinstall). Re-run with --yes.`;
+          if (options.json) console.log(JSON.stringify({ ...payload, status: "confirmation-required", message }, null, 2));
+          else console.error(message);
+          process.exitCode = 1;
+        } else {
+          if (options.json) console.log(JSON.stringify({ ...payload, status: "cancelled" }, null, 2));
+          else console.log("Installation cancelled. Re-run with --yes for non-interactive use.");
+        }
+        return;
+      }
+
+      try {
+        const result = await installModel(planned, {
+          reinstall: options.reinstall,
+          onProgress: options.json ? undefined : (progress) => {
+            if (progress.receivedBytes !== undefined && progress.totalBytes) {
+              const percent = Math.floor((progress.receivedBytes / progress.totalBytes) * 100);
+              console.log(`  [${progress.step}] ${progress.message} (${percent}%)`);
+            } else {
+              console.log(`  [${progress.step}] ${progress.message}`);
+            }
+          },
+        });
+        if (options.json) console.log(JSON.stringify({ ...payload, status: result.status, installation: result.installation }, null, 2));
+        else console.log(`${manifest.displayName}: ${result.status}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.json) console.log(JSON.stringify({ ...payload, status: "failed", message }, null, 2));
+        else console.error(`Installation failed: ${message}`);
+        process.exitCode = 1;
+      }
     });
 }

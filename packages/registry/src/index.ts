@@ -25,7 +25,6 @@ export type { LegacyModelManifest } from "./types.js";
 export {
   getModelsDir,
   listAvailableModels,
-  listInstalledModels,
   loadManifestFile,
   parseManifest,
 } from "./loader.js";
