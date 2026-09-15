@@ -28,12 +28,19 @@ export interface ExecuteRequest {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  signal?: AbortSignal;
+  onSpawn?: (pid: number) => void;
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
 }
 
 export interface ExecutionResult {
   exitCode: number;
   stdoutPath: string;
   stderrPath: string;
+  pid?: number;
+  signal?: string;
+  cancelled?: boolean;
 }
 
 export interface RemoveRuntimeRequest {

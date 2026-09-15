@@ -6,6 +6,17 @@ export interface RunOptions {
   timeoutMs?: number;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
+  /** External cancellation trigger, e.g. wired to CLI SIGINT/SIGTERM handlers. */
+  signal?: AbortSignal;
+  /**
+   * If set, a timeout or `signal` abort sends SIGTERM first and waits up to
+   * this many ms before escalating to SIGKILL. If unset (the default),
+   * termination is an immediate SIGKILL — this is the pre-existing behavior,
+   * unchanged, so callers that don't pass it keep identical semantics.
+   */
+  gracefulTimeoutMs?: number;
+  /** Called synchronously once the child is spawned, so callers can persist the pid before the promise resolves. */
+  onSpawn?: (pid: number) => void;
 }
 
 export interface RunResult {
@@ -13,6 +24,10 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   timedOut?: boolean;
+  pid?: number;
+  signal?: string;
+  /** True when termination was triggered by `options.signal` aborting (distinct from a `timeoutMs` timeout). */
+  cancelled?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -28,34 +43,66 @@ export function runCommand(
   options: RunOptions = {},
 ): Promise<RunResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const gracefulTimeoutMs = options.gracefulTimeoutMs;
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
+    if (typeof child.pid === "number") {
+      options.onSpawn?.(child.pid);
+    }
+
     let stdout = "";
     let stderr = "";
 
-    const timer =
-      timeoutMs > 0
-        ? setTimeout(() => {
-            timedOut = true;
+    const terminate = (): void => {
+      try {
+        if (gracefulTimeoutMs && gracefulTimeoutMs > 0) {
+          child.kill("SIGTERM");
+          forceKillTimer = setTimeout(() => {
             try {
               child.kill("SIGKILL");
             } catch {
               // ignore kill failures; close handler settles below
             }
+          }, gracefulTimeoutMs);
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch {
+        // ignore kill failures; close handler settles below
+      }
+    };
+
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            terminate();
           }, timeoutMs)
         : undefined;
+
+    const onAbort = (): void => {
+      if (settled || timedOut) return;
+      cancelled = true;
+      terminate();
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
 
     const settle = (result: RunResult): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      options.signal?.removeEventListener("abort", onAbort);
       resolve(result);
     };
 
@@ -81,20 +128,31 @@ export function runCommand(
         stdout,
         stderr: `${stderr}${error.message}${suffix}`,
         timedOut,
+        cancelled,
+        pid: child.pid,
       });
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (timedOut) {
         settle({
           code: 124,
           stdout,
           stderr: `${stderr}command timed out after ${timeoutMs}ms: ${command} ${args.join(" ")}`.trim(),
           timedOut: true,
+          pid: child.pid,
+          signal: signal ?? undefined,
         });
         return;
       }
-      settle({ code: code ?? 0, stdout, stderr });
+      settle({
+        code: code ?? 0,
+        stdout,
+        stderr,
+        cancelled,
+        pid: child.pid,
+        signal: signal ?? undefined,
+      });
     });
   });
 }

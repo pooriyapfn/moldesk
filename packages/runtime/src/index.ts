@@ -34,6 +34,7 @@ export {
   modelInstallDir,
   modelVersionDir,
   pythonToolDir,
+  runDir,
   uvToolDir,
 } from "./filesystem/index.js";
 export type { MoldeskPaths } from "./filesystem/index.js";
@@ -48,6 +49,8 @@ export type {
   RuntimeProvider,
 } from "./providers.js";
 export { MoldeskError } from "./providers.js";
+export { PythonRuntimeProvider } from "./providers/python.js";
+export { redactEnv } from "./redact.js";
 export { getHardwareInfo, getDiskInfo } from "./hardware/index.js";
 export { detectPython } from "./python/index.js";
 export {

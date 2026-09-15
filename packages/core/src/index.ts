@@ -56,5 +56,7 @@ export type {
   InstallModelResult,
   UninstallModelOptions,
 } from "./installation.js";
+export { runModel } from "./run.js";
+export type { RunModelOptions, RunModelResult, RunRecord } from "./run.js";
 
-export const VERSION = "0.0.1";
+export { VERSION } from "./version.js";

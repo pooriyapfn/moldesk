@@ -39,5 +39,5 @@ input:
   required: true
 outputs:
   - id: sequences
-    glob: "*.fa"
+    glob: "seqs/*.fa"
     required: true

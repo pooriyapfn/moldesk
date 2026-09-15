@@ -47,6 +47,13 @@ function safeRuntimeFingerprint(value: string): string {
   return safeSegment(value, "runtime fingerprint", /^(?:python|docker)-[a-f0-9]{16,64}$/);
 }
 
+const RUN_ID_PATTERN =
+  /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function safeRunId(value: string): string {
+  return safeSegment(value, "run id", RUN_ID_PATTERN);
+}
+
 /** Centralized home resolution. Honors MOLDESK_HOME for tests/advanced users. */
 export function getMoldeskHome(env: NodeJS.ProcessEnv = process.env): string {
   const override = env["MOLDESK_HOME"];
@@ -97,6 +104,10 @@ export function modelInstallDir(
     modelVersionDir(model, modelVersion, env),
     safeRuntimeFingerprint(runtimeFingerprint),
   );
+}
+
+export function runDir(runId: string, env?: NodeJS.ProcessEnv): string {
+  return path.join(getMoldeskPaths(env).runs, safeRunId(runId));
 }
 
 export function uvToolDir(version: string, env?: NodeJS.ProcessEnv): string {

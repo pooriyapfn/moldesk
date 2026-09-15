@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -19,6 +19,7 @@ import {
 } from "@moldesk/runtime";
 import type { ModelManifestV1, RuntimeSpec } from "@moldesk/registry";
 import { MoldeskError } from "./errors.js";
+import { digest } from "./hash.js";
 import {
   listInstalledModels,
   rebuildInstallState,
@@ -63,10 +64,6 @@ export interface UninstallModelOptions {
   paths?: MoldeskPaths;
   runtime?: RuntimeSpec["kind"];
   all?: boolean;
-}
-
-function digest(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 export function runtimeFingerprint(runtime: RuntimeSpec): string {
