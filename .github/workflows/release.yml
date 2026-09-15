@@ -1,5 +1,10 @@
 name: Release
 
+# Spec §5.2 requires recorded successful full E2E results (real ProteinMPNN/
+# LigandMPNN/Boltz-2 install+run) for the exact commit being tagged before a
+# release is cut. This workflow does not verify that automatically — it has
+# no access to a CUDA host. Tag only after `scheduled-e2e.yml` has been run
+# manually against this commit and its results reviewed.
 on:
   push:
     tags:
@@ -42,3 +47,14 @@ jobs:
       - run: pnpm --filter @moldesk/cli publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  build-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build-only smoke test: proves the image builds without depending on
+      # committed dist files. No registry login, no push — publishing the
+      # image is a separate, explicitly authorized step.
+      - uses: docker/setup-buildx-action@v3
+      - run: docker buildx build --file docker/Dockerfile --tag moldesk/moldesk:smoke-test .

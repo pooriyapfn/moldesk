@@ -11,11 +11,13 @@ import {
   modelInstallDir,
   prepareDockerImage,
   preparePythonEnvironment,
+  resolvePythonLock,
   temporaryInstallDir,
   type InstallCommandRunner,
   type InstallProgress,
   type AssetFetch,
   type MoldeskPaths,
+  type ResolvedPythonLock,
 } from "@moldesk/runtime";
 import type { ModelManifestV1, RuntimeSpec } from "@moldesk/registry";
 import { MoldeskError } from "./errors.js";
@@ -44,6 +46,20 @@ export interface InstallationPlanResult {
   readonly downloadSizeUnknown: boolean;
   /** Same as {@link downloadSizeUnknown}, for additional disk usage. */
   readonly diskSizeUnknown: boolean;
+  /**
+   * For a python runtime, the fully resolved transitive dependency lock
+   * computed at plan time — its digest is folded into `runtimeFingerprint`
+   * so two installs that would resolve differently (e.g. a manifest
+   * requirement with an open version range) never silently land at the
+   * same install path. Installation installs from this exact lock.
+   */
+  readonly pythonLock?: ResolvedPythonLock;
+}
+
+export interface CreateInstallationPlanOptions {
+  runner?: InstallCommandRunner;
+  uvExecutable?: string;
+  fetch?: AssetFetch;
 }
 
 export interface InstallModelOptions {
@@ -66,8 +82,13 @@ export interface UninstallModelOptions {
   all?: boolean;
 }
 
-export function runtimeFingerprint(runtime: RuntimeSpec): string {
-  return `${runtime.kind}-${digest({ runtime, platform: process.platform, architecture: process.arch })}`;
+export function runtimeFingerprint(runtime: RuntimeSpec, options: { lockDigest?: string } = {}): string {
+  return `${runtime.kind}-${digest({
+    runtime,
+    platform: process.platform,
+    architecture: process.arch,
+    ...(options.lockDigest ? { lockDigest: options.lockDigest } : {}),
+  })}`;
 }
 
 function environmentFingerprint(data: unknown): string {
@@ -150,6 +171,7 @@ export async function createInstallationPlan(
   manifest: ModelManifestV1,
   runtime: RuntimeSpec,
   paths: MoldeskPaths = getMoldeskPaths(),
+  options: CreateInstallationPlanOptions = {},
 ): Promise<InstallationPlanResult> {
   const adapter = getAdapter(manifest.name);
   if (!adapter) {
@@ -158,7 +180,10 @@ export async function createInstallationPlan(
   if (!manifest.source) {
     throw installFailure("SOURCE_PROVENANCE_MISSING", `${manifest.name} has no pinned source provenance.`, "The registry entry must include a repository and immutable revision.");
   }
-  const fingerprint = runtimeFingerprint(runtime);
+  const pythonLock = runtime.kind === "python"
+    ? await resolvePythonLock(runtime, { runner: options.runner, uvExecutable: options.uvExecutable, fetch: options.fetch, paths })
+    : undefined;
+  const fingerprint = runtimeFingerprint(runtime, { lockDigest: pythonLock?.digest });
   const targetDir = modelInstallDir(manifest.name, manifest.modelVersion, fingerprint, { MOLDESK_HOME: paths.home });
   const adapterPlan = await adapter.installPlan({ manifestName: manifest.name, modelDir: targetDir, assetsDir: path.join(targetDir, "assets") });
   const plan = Object.freeze({ steps: Object.freeze([...adapterPlan.steps]) });
@@ -184,6 +209,7 @@ export async function createInstallationPlan(
     estimatedDiskBytes: runtime.estimatedDiskBytes ?? 0,
     downloadSizeUnknown: assetSizeUnknown || runtimeDownloadUnknown,
     diskSizeUnknown: runtimeDiskUnknown,
+    ...(pythonLock ? { pythonLock } : {}),
   });
 }
 
@@ -218,6 +244,7 @@ export async function installModel(
           repository: manifest.source.repository,
           revision: manifest.source.revision,
           runtime,
+          lock: planned.pythonLock?.lock,
           runner: options.runner,
           fetch: options.fetch,
           paths,

@@ -9,21 +9,59 @@ function segmentPattern(segment: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-/** Matches a manifest output glob (segment-wise `*` wildcards, e.g. "seqs/*.fa") against files under `root`. */
-function matchGlob(root: string, glob: string): string[] {
-  let candidates = [root];
-  for (const segment of glob.split("/")) {
-    const pattern = segmentPattern(segment);
-    const next: string[] = [];
-    for (const dir of candidates) {
-      if (!fs.existsSync(dir)) continue;
-      for (const entry of fs.readdirSync(dir)) {
-        if (pattern.test(entry)) next.push(path.join(dir, entry));
-      }
-    }
-    candidates = next;
+function isDirectory(entryPath: string): boolean {
+  try {
+    return fs.statSync(entryPath).isDirectory();
+  } catch {
+    return false;
   }
-  return candidates.filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile()).sort();
+}
+
+function walkFiles(dir: string): string[] {
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) results.push(...walkFiles(full));
+    else if (entry.isFile()) results.push(full);
+  }
+  return results;
+}
+
+/**
+ * Matches glob segments against files under `currentDir`. A literal `**`
+ * segment matches zero or more directory levels (true recursion), not one
+ * fixed level — required for real adapter output layouts nested more than
+ * one directory deep (e.g. Boltz's `predictions/<id>/*.cif`).
+ */
+function matchSegments(currentDir: string, segments: string[]): string[] {
+  if (!fs.existsSync(currentDir) || segments.length === 0) return [];
+  const [head, ...rest] = segments;
+
+  if (head === "**") {
+    const results: string[] = rest.length === 0 ? walkFiles(currentDir) : matchSegments(currentDir, rest);
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) results.push(...matchSegments(path.join(currentDir, entry.name), segments));
+    }
+    return results;
+  }
+
+  const pattern = segmentPattern(head);
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(currentDir)) {
+    if (!pattern.test(entry)) continue;
+    const full = path.join(currentDir, entry);
+    if (rest.length === 0) {
+      if (fs.statSync(full).isFile()) results.push(full);
+    } else if (isDirectory(full)) {
+      results.push(...matchSegments(full, rest));
+    }
+  }
+  return results;
+}
+
+/** Matches a manifest output glob (segment-wise `*` wildcards, recursive `**`) against files under `root`. */
+function matchGlob(root: string, glob: string): string[] {
+  return [...new Set(matchSegments(root, glob.split("/")))].sort();
 }
 
 /**

@@ -7,7 +7,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,3 +26,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # Package smoke test: packs every publishable package and installs
+      # the tarballs outside the workspace/monorepo checkout, proving no
+      # reliance on workspace links, checked-in dist, or root models/.
+      - run: pnpm pack:verify

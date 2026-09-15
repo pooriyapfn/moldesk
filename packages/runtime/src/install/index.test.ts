@@ -7,12 +7,16 @@ import { getMoldeskPaths } from "../filesystem/index.js";
 import {
   cacheAsset,
   ensureManagedUv,
+  materializeAsset,
+  resolvePythonLock,
   MANAGED_UV_VERSION,
   prepareDockerImage,
   preparePythonEnvironment,
   UV_RELEASES,
   type AssetFetch,
+  type InstallCommandRunner,
 } from "./index.js";
+import { execFileSync } from "node:child_process";
 
 const platformId = `${process.platform}-${process.arch}`;
 const release = UV_RELEASES[platformId];
@@ -179,5 +183,56 @@ describe("installation runtime", () => {
     }, async () => ({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" }))).rejects.toMatchObject({
       code: "INSTALL_COMMAND_FAILED",
     });
+  });
+
+  it("extracts an uncompressed tar archive asset", async () => {
+    const paths = tempPaths();
+    const stagingSource = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk-tar-src-"));
+    homes.push(stagingSource);
+    fs.writeFileSync(path.join(stagingSource, "inner.txt"), "hello from mols.tar");
+    const tarPath = path.join(stagingSource, "bundle.tar");
+    execFileSync("tar", ["-cf", tarPath, "-C", stagingSource, "inner.txt"]);
+    const bytes = fs.readFileSync(tarPath);
+    const checksum = createHash("sha256").update(bytes).digest("hex");
+    const object = await cacheAsset(
+      { id: "bundle", url: "https://example.test/bundle.tar", sha256: checksum, target: "mols", archive: "tar" as const },
+      paths,
+      { fetch: async () => response(bytes) },
+    );
+    const assetsDir = path.join(paths.home, "assets");
+    const extracted = await materializeAsset(
+      { id: "bundle", url: "https://example.test/bundle.tar", sha256: checksum, target: "mols", archive: "tar" as const },
+      object,
+      assetsDir,
+    );
+    expect(extracted).toBe(path.join(assetsDir, "mols"));
+    expect(fs.readFileSync(path.join(extracted, "inner.txt"), "utf8")).toBe("hello from mols.tar");
+  });
+
+  it("resolves a full transitive lock via uv pip compile and folds it into a stable digest", async () => {
+    const paths = tempPaths();
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const runner: InstallCommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      if (args[0] === "pip" && args[1] === "compile") {
+        return { code: 0, stdout: "# header\nnumpy==1.26.4\ntorch==2.8.0\n", stderr: "" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const runtime = {
+      kind: "python" as const,
+      python: "3.11",
+      installer: "uv" as const,
+      requirements: [{ name: "torch", version: "2.8.0" }, { name: "numpy", version: "1.26.4" }],
+    };
+    const resolved = await resolvePythonLock(runtime, { runner, uvExecutable: "uv", paths });
+    expect(resolved.lock).toEqual(["numpy==1.26.4", "torch==2.8.0"]);
+    expect(resolved.digest).toMatch(/^[0-9a-f]{64}$/);
+    const compileCall = calls.find((c) => c.args[0] === "pip" && c.args[1] === "compile");
+    expect(compileCall?.args).toContain("--python-version");
+    expect(compileCall?.args).toContain("3.11");
+    // Resolving twice with the same inputs is deterministic.
+    const again = await resolvePythonLock(runtime, { runner, uvExecutable: "uv", paths });
+    expect(again.digest).toBe(resolved.digest);
   });
 });

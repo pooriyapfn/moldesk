@@ -5,7 +5,7 @@ modelVersion: 2.2.1
 adapterVersion: 0.1.0
 description: Joint biomolecular structure and binding-affinity prediction (Boltz team, MIT).
 category: structure-prediction
-status: planned
+status: beta
 license: MIT
 homepage: https://github.com/jwohlwend/boltz
 source:
@@ -18,17 +18,70 @@ runtimes:
     requirements:
       - name: boltz
         version: 2.2.1
+      # boltz==2.2.1 leaves these four dependencies as open ranges
+      # (torch>=2.2, numpy>=1.26,<2.0, rdkit>=2024.3.2, pandas>=2.2.2) in its
+      # own pyproject.toml. Pinned here to exact, verified-real versions so
+      # installs are reproducible regardless of when they run; every other
+      # boltz dependency is already exact-pinned upstream.
+      - name: torch
+        version: 2.8.0
+      - name: numpy
+        version: 1.26.4
+      - name: rdkit
+        version: 2025.3.6
+      - name: pandas
+        version: 2.3.2
+assets:
+  # No checksum verification exists upstream (boltz's own downloader uses
+  # urllib.request.urlretrieve with no digest check). These are pinned to a
+  # specific Hugging Face commit (not `main`) with checksums obtained via
+  # HF's blob-metadata API, so MoleculeDesk verifies what boltz itself does
+  # not. ccd.pkl is deliberately NOT included: confirmed by reading
+  # boltz.main's source that the boltz2 code path never downloads or reads
+  # it (only boltz1 does).
+  - id: boltz2-conf-checkpoint
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/boltz2_conf.ckpt
+    source: boltz-community/boltz-2 on Hugging Face, pinned commit 6fdef46d763fee7fbb83ca5501ccceff43b85607
+    license: MIT
+    sha256: 090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1
+    target: boltz2_conf.ckpt
+    sizeBytes: 2286561469
+    archive: none
+  - id: boltz2-affinity-checkpoint
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/boltz2_aff.ckpt
+    source: boltz-community/boltz-2 on Hugging Face, pinned commit 6fdef46d763fee7fbb83ca5501ccceff43b85607
+    license: MIT
+    sha256: dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e
+    target: boltz2_aff.ckpt
+    sizeBytes: 2062139170
+    archive: none
+  - id: boltz2-mols
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/mols.tar
+    source: boltz-community/boltz-2 on Hugging Face, pinned commit 6fdef46d763fee7fbb83ca5501ccceff43b85607
+    license: MIT
+    sha256: 39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7
+    target: mols
+    sizeBytes: 1855662080
+    archive: tar
 hardware:
   platforms:
     - darwin-arm64
     - linux-x64
-  nvidiaGpu: recommended
+  # The pinned revision (v2.2.1) has a confirmed upstream CPU-inference
+  # correctness bug (distorted structures: github.com/jwohlwend/boltz
+  # issues #653, #662), fixed by PR #670 — merged after this pinned tag and
+  # not yet in any released boltz version. GPU is required for v0.1 until a
+  # fixed release is pinnable.
+  nvidiaGpu: required
   cuda:
-    level: recommended
+    level: required
 input:
   formats:
-    - .yaml
+    - .fa
+    - .fas
     - .fasta
+    - .yml
+    - .yaml
   required: true
 outputs:
   - id: structures

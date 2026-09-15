@@ -16,6 +16,9 @@
   "bin": {
     "moldesk": "./dist/index.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "files": ["dist"],
   "scripts": {
     "dev": "tsx src/index.ts",

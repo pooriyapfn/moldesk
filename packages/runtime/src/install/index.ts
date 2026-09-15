@@ -24,6 +24,13 @@ export interface PythonInstallRequest {
   repository: string;
   revision: string;
   runtime: PythonRuntimeSpec;
+  /**
+   * A pre-resolved lock (from `resolvePythonLock`) to install from, so the
+   * installed environment matches exactly what was fingerprinted at plan
+   * time. Falls back to resolving directly from the manifest's declared
+   * requirements (the pre-Step-5 behavior) when omitted.
+   */
+  lock?: string[];
   runner?: InstallCommandRunner;
   fetch?: AssetFetch;
   paths?: MoldeskPaths;
@@ -197,6 +204,55 @@ export async function ensureManagedUv(options: {
   }
 }
 
+export interface ResolvedPythonLock {
+  /** Every resolved package (direct and transitive), sorted, as `name==version` lines. */
+  lock: string[];
+  /** Stable sha256 of the sorted lock, suitable for folding into a runtime fingerprint. */
+  digest: string;
+}
+
+function parseLockOutput(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .sort();
+}
+
+/**
+ * Resolves the full transitive dependency graph for a Python runtime spec
+ * via `uv pip compile`, without creating a venv or installing anything.
+ * Used so a runtime's fingerprint (and install path) can reflect exactly
+ * what would be installed, not just the top-level declared requirements —
+ * a manifest requirement like `boltz==2.2.1` can itself declare open
+ * ranges (e.g. `torch>=2.2`) that resolve differently over time.
+ */
+export async function resolvePythonLock(
+  runtime: PythonRuntimeSpec,
+  options: {
+    runner?: InstallCommandRunner;
+    uvExecutable?: string;
+    paths?: MoldeskPaths;
+    fetch?: AssetFetch;
+    onProgress?: (progress: InstallProgress) => void;
+  } = {},
+): Promise<ResolvedPythonLock> {
+  const runner = options.runner ?? runCommand;
+  const paths = options.paths ?? getMoldeskPaths();
+  const uv = options.uvExecutable ?? await ensureManagedUv({ paths, fetch: options.fetch, runner, onProgress: options.onProgress });
+  const env = managedEnvironment(paths, runtime.python);
+  fs.mkdirSync(paths.cache, { recursive: true });
+  const requirementsFile = path.join(paths.cache, `resolve-${randomUUID()}.in`);
+  fs.writeFileSync(requirementsFile, `${requirementArgs(runtime).join("\n")}\n`);
+  try {
+    const compiled = await checked(runner, uv, ["pip", "compile", requirementsFile, "--python-version", runtime.python], { env });
+    const lock = parseLockOutput(compiled.stdout);
+    return { lock, digest: createHash("sha256").update(JSON.stringify(lock)).digest("hex") };
+  } finally {
+    fs.rmSync(requirementsFile, { force: true });
+  }
+}
+
 function requirementArgs(runtime: PythonRuntimeSpec): string[] {
   return runtime.requirements.map((requirement) => {
     if (requirement.source) {
@@ -237,7 +293,13 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   await checked(runner, uv, ["python", "install", request.runtime.python], { env });
   await checked(runner, uv, ["venv", "--python", request.runtime.python, venvDir], { env });
   request.onProgress?.({ step: "dependencies", message: "Installing pinned dependencies" });
-  await checked(runner, uv, ["pip", "install", "--python", python, ...requirementArgs(request.runtime)], { env });
+  if (request.lock && request.lock.length > 0) {
+    const lockFile = path.join(request.targetDir, "requirements.lock.txt");
+    fs.writeFileSync(lockFile, `${request.lock.join("\n")}\n`);
+    await checked(runner, uv, ["pip", "install", "--python", python, "-r", lockFile], { env });
+  } else {
+    await checked(runner, uv, ["pip", "install", "--python", python, ...requirementArgs(request.runtime)], { env });
+  }
   const freeze = await checked(runner, uv, ["pip", "freeze", "--python", python], { env });
   const version = await checked(runner, python, ["--version"], { env });
   return {
@@ -406,7 +468,9 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
   fs.mkdirSync(target, { recursive: true });
   const listing = asset.archive === "tar.gz"
     ? await checked(runCommand, "tar", ["-tzf", objectPath])
-    : await checked(runCommand, "unzip", ["-Z1", objectPath]);
+    : asset.archive === "tar"
+      ? await checked(runCommand, "tar", ["-tf", objectPath])
+      : await checked(runCommand, "unzip", ["-Z1", objectPath]);
   const unsafeEntry = listing.stdout.split(/\r?\n/).filter(Boolean).find((entry) => {
     const normalized = entry.replaceAll("\\", "/");
     return normalized.startsWith("/") || normalized.split("/").some((part) => part === "..");
@@ -416,6 +480,7 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} contains unsafe path ${unsafeEntry}.`, "Report the registry asset as unsafe.");
   }
   if (asset.archive === "tar.gz") await checked(runCommand, "tar", ["-xzf", objectPath, "-C", target]);
+  else if (asset.archive === "tar") await checked(runCommand, "tar", ["-xf", objectPath, "-C", target]);
   else await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
   return target;
 }

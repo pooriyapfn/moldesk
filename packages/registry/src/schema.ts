@@ -126,7 +126,7 @@ const assetSchema = z
     sha256: sha256Hex,
     target: safeTarget,
     sizeBytes: z.number().int().nonnegative().optional(),
-    archive: z.enum(["none", "tar.gz", "zip"]).optional(),
+    archive: z.enum(["none", "tar", "tar.gz", "zip"]).optional(),
   })
   .strict();
 

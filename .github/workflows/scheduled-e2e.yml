@@ -1,0 +1,59 @@
+name: Scheduled E2E
+
+# workflow_dispatch only — deliberately no `schedule:` trigger. A `schedule:`
+# trigger would run this automatically after every merge, which is wrong for
+# a workflow that downloads real model checkpoints and executes real model
+# code. Run it manually when you want a real end-to-end signal, e.g. before
+# cutting a release tag.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  proteinmpnn-ligandmpnn-macos:
+    # Real installs + real runs on GitHub-hosted macOS (CPU, real network,
+    # real checkpoints — this is genuinely achievable without dedicated
+    # infrastructure).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Install and run ProteinMPNN for real
+        run: |
+          export MOLDESK_HOME="${RUNNER_TEMP}/moldesk-home-proteinmpnn"
+          node apps/cli/dist/index.js install proteinmpnn --yes
+          curl -sL -o "${RUNNER_TEMP}/1ubq.pdb" https://files.rcsb.org/download/1UBQ.pdb
+          node apps/cli/dist/index.js run proteinmpnn "${RUNNER_TEMP}/1ubq.pdb"
+
+      - name: Install and run LigandMPNN for real
+        run: |
+          export MOLDESK_HOME="${RUNNER_TEMP}/moldesk-home-ligandmpnn"
+          node apps/cli/dist/index.js install ligandmpnn --yes
+          curl -sL -o "${RUNNER_TEMP}/1ubq.pdb" https://files.rcsb.org/download/1UBQ.pdb
+          node apps/cli/dist/index.js run ligandmpnn "${RUNNER_TEMP}/1ubq.pdb"
+
+  boltz-cuda:
+    # TODO: requires a self-hosted GPU runner. GitHub-hosted runners have no
+    # NVIDIA GPU, and the pinned Boltz-2 revision has a confirmed real
+    # CPU-inference correctness bug (see models/boltz/README.md), so a CPU
+    # fallback here would not be a valid E2E signal. To enable this job:
+    #   1. Configure a self-hosted runner with an NVIDIA GPU (e.g. a RunPod
+    #      instance registered as a GitHub Actions runner) and a matching
+    #      `runs-on` label.
+    #   2. Uncomment the job body below and set that label.
+    # Until then, the Boltz-2 CUDA smoke test is a manual step run outside
+    # CI, and Boltz-2 remains a release-blocking gate per spec §5's
+    # acceptance criteria.
+    if: false
+    runs-on: [self-hosted, gpu]
+    steps:
+      - run: echo "Configure a self-hosted GPU runner and remove the 'if false' guard above to enable this job."

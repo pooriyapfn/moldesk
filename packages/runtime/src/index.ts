@@ -70,6 +70,7 @@ export {
   materializeAsset,
   prepareDockerImage,
   preparePythonEnvironment,
+  resolvePythonLock,
   temporaryInstallDir,
   MANAGED_UV_VERSION,
 } from "./install/index.js";
@@ -79,6 +80,7 @@ export type {
   InstallProgress,
   PreparedPythonEnvironment,
   PythonInstallRequest,
+  ResolvedPythonLock,
 } from "./install/index.js";
 export type {
   DiskInfo,
