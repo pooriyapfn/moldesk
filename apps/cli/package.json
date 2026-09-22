@@ -27,7 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@moldesk/core": "workspace:*",
+    "@moldesk/core": "*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

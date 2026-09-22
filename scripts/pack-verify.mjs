@@ -18,7 +18,7 @@ try {
   fs.mkdirSync(installDir, { recursive: true });
   fs.mkdirSync(unrelatedCwd, { recursive: true });
 
-  execFileSync("pnpm", ["build"], { cwd: repoRoot, stdio: "inherit" });
+  execFileSync("npm", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
   const packageDirs = [
     "packages/registry",
@@ -28,7 +28,7 @@ try {
     "apps/cli",
   ];
   for (const packageDir of packageDirs) {
-    execFileSync("pnpm", ["pack", "--pack-destination", packDir], {
+    execFileSync("npm", ["pack", "--pack-destination", packDir], {
       cwd: path.join(repoRoot, packageDir),
       stdio: "inherit",
     });

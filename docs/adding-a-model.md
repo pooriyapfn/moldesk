@@ -36,7 +36,7 @@
 2. Confirm it shows up:
 
    ```bash
-   pnpm --filter @moldesk/cli dev -- list
+   npm run dev -w @moldesk/cli -- list
    ```
 
 3. (Once install/run support lands in Steps 3-4) add a thin adapter under

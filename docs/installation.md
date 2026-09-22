@@ -19,8 +19,8 @@ docker run --rm moldesk/moldesk:latest doctor
 ```bash
 git clone https://github.com/pooriyapfn/moldesk.git
 cd moldesk
-pnpm install
-pnpm --filter @moldesk/cli dev -- doctor
+npm install
+npm run dev -w @moldesk/cli -- doctor
 ```
 
 ## Supported platforms

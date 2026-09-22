@@ -14,19 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
       # Package smoke test: packs every publishable package and installs
       # the tarballs outside the workspace/monorepo checkout, proving no
       # reliance on workspace links, checked-in dist, or root models/.
-      - run: pnpm pack:verify
+      - run: npm run pack:verify

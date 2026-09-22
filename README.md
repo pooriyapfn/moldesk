@@ -106,14 +106,14 @@ models/
 
 ## Development
 
-MoleculeDesk uses a pnpm workspace.
+MoleculeDesk uses an npm workspace.
 
 ```bash
 git clone https://github.com/pooriyapfn/moldesk.git
 cd moldesk
 
-pnpm install
-pnpm --filter @moldesk/cli dev -- doctor
+npm install
+npm run dev -w @moldesk/cli -- doctor
 ```
 
 ## Model support

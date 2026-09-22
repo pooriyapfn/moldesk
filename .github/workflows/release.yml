@@ -20,31 +20,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @moldesk/registry --filter @moldesk/runtime --filter @moldesk/adapters --filter @moldesk/core --filter @moldesk/cli build
+      - run: npm ci
+      - run: npm run build
 
       # Published in dependency order: registry -> runtime/adapters -> core -> cli.
-      - run: pnpm --filter @moldesk/registry publish --no-git-checks
+      - run: npm publish --workspace @moldesk/registry --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/runtime publish --no-git-checks
+      - run: npm publish --workspace @moldesk/runtime --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/adapters publish --no-git-checks
+      - run: npm publish --workspace @moldesk/adapters --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/core publish --no-git-checks
+      - run: npm publish --workspace @moldesk/core --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/cli publish --no-git-checks
+      - run: npm publish --workspace @moldesk/cli --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

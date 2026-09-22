@@ -7,8 +7,8 @@ Thanks for your interest in contributing.
 ```bash
 git clone https://github.com/pooriyapfn/moldesk.git
 cd moldesk
-pnpm install
-pnpm --filter @moldesk/cli dev -- doctor
+npm install
+npm run dev -w @moldesk/cli -- doctor
 ```
 
 ## Repo layout
@@ -28,7 +28,7 @@ See [docs/adding-a-model.md](./docs/adding-a-model.md).
 
 - Keep PRs focused on a single change.
 - Add/update tests for behavior changes.
-- Run `pnpm lint && pnpm typecheck && pnpm test` before opening a PR.
+- Run `npm run lint && npm run typecheck && npm run test` before opening a PR.
 - Describe the "why" in the PR description, not just the "what".
 
 ## Commit messages

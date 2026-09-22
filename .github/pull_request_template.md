@@ -6,6 +6,6 @@
 
 <!-- How did you verify this works? -->
 
-- [ ] `pnpm typecheck`
-- [ ] `pnpm lint`
-- [ ] `pnpm test`
+- [ ] `npm run typecheck`
+- [ ] `npm run lint`
+- [ ] `npm run test`
