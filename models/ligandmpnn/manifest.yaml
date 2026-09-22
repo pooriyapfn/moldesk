@@ -1,0 +1,63 @@
+schemaVersion: 1
+name: ligandmpnn
+displayName: LigandMPNN
+modelVersion: 0.1.2
+adapterVersion: 0.1.0
+description: Protein sequence design for protein-ligand and multimer systems (Dauparas et al. 2023).
+category: sequence-design
+status: beta
+license: MIT
+homepage: https://github.com/dauparas/LigandMPNN
+source:
+  repository: https://github.com/dauparas/LigandMPNN
+  revision: 26ec57ac976ade5379920dbd43c7f97a91cf82de
+runtimes:
+  - kind: python
+    python: "3.11"
+    installer: uv
+    requirements:
+      - name: biopython
+        version: "1.79"
+      - name: filelock
+        version: 3.13.1
+      - name: fsspec
+        version: 2024.3.1
+      - name: Jinja2
+        version: 3.1.3
+      - name: MarkupSafe
+        version: 2.1.5
+      - name: ml-collections
+        version: 0.1.1
+      - name: dm-tree
+        version: 0.1.8
+      - name: torch
+        version: 2.2.1
+      - name: numpy
+        version: "1.23.5"
+      - name: prody
+        version: 2.4.1
+      - name: pyparsing
+        version: 3.1.1
+      - name: scipy
+        version: 1.12.0
+assets:
+  - id: ligandmpnn-checkpoint
+    url: https://files.ipd.uw.edu/pub/ligandmpnn/ligandmpnn_v_32_010_25.pt
+    source: LigandMPNN upstream model parameter distribution
+    license: MIT
+    sha256: 161cd264061fda9680cbb940255522ae42f2966c552d045d87913d9452a80970
+    target: model_params/ligandmpnn_v_32_010_25.pt
+    sizeBytes: 10541943
+    archive: none
+hardware:
+  platforms:
+    - darwin-arm64
+    - linux-x64
+input:
+  formats:
+    - .pdb
+  required: true
+outputs:
+  - id: sequences
+    glob: "seqs/*.fa"
+    required: true

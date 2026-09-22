@@ -24,14 +24,16 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @moldesk/runtime --filter @moldesk/registry --filter @moldesk/core --filter @moldesk/cli build
+      - run: pnpm --filter @moldesk/registry --filter @moldesk/runtime --filter @moldesk/adapters --filter @moldesk/core --filter @moldesk/cli build
 
-      # Published in dependency order: runtime/registry have no internal deps,
-      # core depends on both, cli depends on core.
+      # Published in dependency order: registry -> runtime/adapters -> core -> cli.
+      - run: pnpm --filter @moldesk/registry publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm --filter @moldesk/runtime publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/registry publish --no-git-checks
+      - run: pnpm --filter @moldesk/adapters publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm --filter @moldesk/core publish --no-git-checks

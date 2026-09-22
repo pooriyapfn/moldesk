@@ -1,0 +1,43 @@
+schemaVersion: 1
+name: proteinmpnn
+displayName: ProteinMPNN
+modelVersion: v_48_020
+adapterVersion: 0.1.0
+description: Structure-conditioned protein sequence design (Dauparas et al., Science 2022).
+category: sequence-design
+status: beta
+license: MIT
+homepage: https://github.com/dauparas/ProteinMPNN
+source:
+  repository: https://github.com/dauparas/ProteinMPNN
+  revision: 8907e6671bfbfc92303b5f79c4b5e6ce47cdef57
+runtimes:
+  - kind: python
+    python: "3.11"
+    installer: uv
+    requirements:
+      - name: torch
+        version: 2.2.1
+      - name: numpy
+        version: 1.26.4
+assets:
+  - id: proteinmpnn-checkpoint
+    url: https://raw.githubusercontent.com/dauparas/ProteinMPNN/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/vanilla_model_weights/v_48_020.pt
+    source: ProteinMPNN pinned source revision
+    license: MIT
+    sha256: c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd
+    target: vanilla_model_weights/v_48_020.pt
+    sizeBytes: 6681301
+    archive: none
+hardware:
+  platforms:
+    - darwin-arm64
+    - linux-x64
+input:
+  formats:
+    - .pdb
+  required: true
+outputs:
+  - id: sequences
+    glob: "seqs/*.fa"
+    required: true

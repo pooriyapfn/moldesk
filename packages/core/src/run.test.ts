@@ -1,0 +1,242 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { getMoldeskPaths, type InstallCommandRunner, type ExecuteRequest, type ExecutionResult, type RuntimeProvider } from "@moldesk/runtime";
+import { listAvailableModels } from "@moldesk/registry";
+import { createInstallationPlan, installModel } from "./installation.js";
+import { runModel } from "./run.js";
+
+const homes: string[] = [];
+
+function tempPaths() {
+  // Intentionally includes a space to exercise the "paths containing spaces" requirement.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk core run "));
+  homes.push(home);
+  return getMoldeskPaths({ MOLDESK_HOME: home });
+}
+
+afterEach(() => {
+  for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+});
+
+function successfulInstallRunner(revision: string): InstallCommandRunner {
+  return async (command, args) => {
+    if (command === "git" && args[0] === "init") {
+      const source = args[1]!;
+      fs.mkdirSync(path.join(source, "vanilla_model_weights"), { recursive: true });
+      fs.mkdirSync(path.join(path.dirname(source), "assets", "vanilla_model_weights"), { recursive: true });
+      fs.writeFileSync(path.join(source, "protein_mpnn_run.py"), "# pinned source\n");
+      fs.writeFileSync(path.join(source, "vanilla_model_weights", "v_48_020.pt"), "weights");
+      fs.writeFileSync(path.join(path.dirname(source), "assets", "vanilla_model_weights", "v_48_020.pt"), "weights");
+    }
+    if (command === "git" && args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+    if (command === "uv" && args[0] === "venv") fs.mkdirSync(path.join(args.at(-1)!, "bin"), { recursive: true });
+    if (command === "uv" && args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\ntorch==2.2.1\n", stderr: "" };
+    if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+}
+
+/** Installs a real ProteinMPNN fixture (fake install commands, no network) so `runModel` has a genuine `InstalledModel` to resolve. */
+async function installFixture(paths: ReturnType<typeof getMoldeskPaths>) {
+  const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
+  const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
+  const planned = await createInstallationPlan(manifest, runtime, paths);
+  await installModel(planned, { paths, runner: successfulInstallRunner(manifest.source!.revision), uvExecutable: "uv" });
+  return planned.targetDir;
+}
+
+/** A fake RuntimeProvider whose `execute()` is fully scripted by the test. */
+function fakeProvider(
+  behavior: (request: ExecuteRequest) => ExecutionResult | Promise<ExecutionResult>,
+): RuntimeProvider {
+  return {
+    kind: "python",
+    async inspect() {
+      return { kind: "python", available: true };
+    },
+    async prepare(request) {
+      return { kind: "python", executable: request.targetDir, fingerprint: request.runtimeFingerprint };
+    },
+    async execute(request) {
+      request.onSpawn?.(4242);
+      return behavior(request);
+    },
+    async remove() {},
+  };
+}
+
+function writeSequenceOutput(request: ExecuteRequest): void {
+  const seqsDir = path.join(request.cwd, "output", "seqs");
+  fs.mkdirSync(seqsDir, { recursive: true });
+  fs.writeFileSync(path.join(seqsDir, "input.fa"), ">input\nMKV\n");
+}
+
+function writeInputFixture(dir: string, name = "input.pdb"): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const inputPath = path.join(dir, name);
+  fs.writeFileSync(inputPath, "ATOM      1  N   MET A   1\n");
+  return inputPath;
+}
+
+describe("runModel", () => {
+  it("succeeds end-to-end, checksumming outputs and finalizing run.json", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider((request) => {
+        writeSequenceOutput(request);
+        return { exitCode: 0, stdoutPath: path.join(request.cwd, "stdout.log"), stderrPath: path.join(request.cwd, "stderr.log") };
+      }),
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.record.outputs).toHaveLength(1);
+    expect(result.record.outputs[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.record.process?.pid).toBe(4242);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(result.record.command.cwd, "run.json"), "utf8"));
+    expect(onDisk.status).toBe("succeeded");
+  });
+
+  it("fails on nonzero exit without attempting output collection", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+    let collectAttempted = false;
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider((request) => {
+        // Deliberately do NOT write an output file; if collectOutputs ran, it would throw
+        // MISSING_REQUIRED_OUTPUT instead of leaving RUN_EXECUTION_FAILED as the error.
+        collectAttempted = fs.existsSync(path.join(request.cwd, "output", "seqs"));
+        return { exitCode: 1, stdoutPath: path.join(request.cwd, "stdout.log"), stderrPath: path.join(request.cwd, "stderr.log") };
+      }),
+    });
+
+    expect(collectAttempted).toBe(false);
+    expect(result.status).toBe("failed");
+    expect(result.record.error?.code).toBe("RUN_EXECUTION_FAILED");
+    expect(result.record.outputs).toHaveLength(0);
+  });
+
+  it("fails on missing required output despite exit code 0", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider((request) => ({
+        exitCode: 0,
+        stdoutPath: path.join(request.cwd, "stdout.log"),
+        stderrPath: path.join(request.cwd, "stderr.log"),
+      })),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.record.error?.code).toBe("MISSING_REQUIRED_OUTPUT");
+  });
+
+  it("rejects for an invalid (non-.pdb) input before allocating a run directory", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home, "input.txt");
+
+    await expect(runModel("proteinmpnn", inputPath, { paths })).rejects.toMatchObject({ code: "INVALID_RUN_INPUT" });
+    expect(fs.existsSync(paths.runs)).toBe(false);
+  });
+
+  it("rejects for invalid params before allocating a run directory", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+
+    await expect(
+      runModel("proteinmpnn", inputPath, { paths, params: { num_seq_per_target: "not-a-number" } }),
+    ).rejects.toMatchObject({ code: "INVALID_RUN_PARAMS" });
+    expect(fs.existsSync(paths.runs)).toBe(false);
+  });
+
+  it("marks a run cancelled regardless of the reported exit code", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider((request) => ({
+        exitCode: 0,
+        stdoutPath: path.join(request.cwd, "stdout.log"),
+        stderrPath: path.join(request.cwd, "stderr.log"),
+        cancelled: true,
+      })),
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(result.record.error?.code).toBe("RUN_CANCELLED");
+  });
+
+  it("finalizes run.json even when execution throws unexpectedly after allocation", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider(() => {
+        throw new Error("simulated runtime crash");
+      }),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.record.error?.message).toContain("simulated runtime crash");
+    expect(result.record.finishedAt).toBeDefined();
+  });
+
+  it("writes status:running with the real pid before execute() resolves", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+    let observedMidRun: { status?: string; process?: { pid?: number } } | undefined;
+
+    await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider((request) => {
+        writeSequenceOutput(request);
+        const runJsonPath = path.join(request.cwd, "run.json");
+        observedMidRun = JSON.parse(fs.readFileSync(runJsonPath, "utf8"));
+        return { exitCode: 0, stdoutPath: path.join(request.cwd, "stdout.log"), stderrPath: path.join(request.cwd, "stderr.log") };
+      }),
+    });
+
+    expect(observedMidRun?.status).toBe("running");
+    expect(observedMidRun?.process?.pid).toBe(4242);
+  });
+
+  it("copies outputs to --output and reports a collision without changing the run's own status", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+    const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk core run export "));
+    homes.push(exportDir);
+    fs.writeFileSync(path.join(exportDir, "input.fa"), "pre-existing");
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      outputDir: exportDir,
+      runtimeProvider: fakeProvider((request) => {
+        writeSequenceOutput(request);
+        return { exitCode: 0, stdoutPath: path.join(request.cwd, "stdout.log"), stderrPath: path.join(request.cwd, "stderr.log") };
+      }),
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.exportError?.code).toBe("OUTPUT_COLLISION");
+    expect(fs.readFileSync(path.join(exportDir, "input.fa"), "utf8")).toBe("pre-existing");
+  });
+});

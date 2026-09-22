@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "Installing MoleculeDesk CLI..."
-npm install -g moldesk
+npm install -g @moldesk/cli
 
 echo
 moldesk --version

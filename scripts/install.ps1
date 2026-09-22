@@ -1,5 +1,5 @@
 Write-Host "Installing MoleculeDesk CLI..."
-npm install -g moldesk
+npm install -g @moldesk/cli
 
 Write-Host ""
 moldesk --version
