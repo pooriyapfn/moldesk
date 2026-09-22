@@ -36,8 +36,11 @@ jobs:
         run: |
           export MOLDESK_HOME="${RUNNER_TEMP}/moldesk-home-ligandmpnn"
           node apps/cli/dist/index.js install ligandmpnn --yes
-          curl -sL -o "${RUNNER_TEMP}/1ubq.pdb" https://files.rcsb.org/download/1UBQ.pdb
-          node apps/cli/dist/index.js run ligandmpnn "${RUNNER_TEMP}/1ubq.pdb"
+          # 3PTB (trypsin + benzamidine) has a real bound ligand, unlike 1UBQ —
+          # exercises LigandMPNN's actual ligand-aware design, not just its
+          # ProteinMPNN-equivalent protein-only path.
+          curl -sL -o "${RUNNER_TEMP}/3ptb.pdb" https://files.rcsb.org/download/3PTB.pdb
+          node apps/cli/dist/index.js run ligandmpnn "${RUNNER_TEMP}/3ptb.pdb"
 
   boltz-cuda:
     # TODO: requires a self-hosted GPU runner. GitHub-hosted runners have no

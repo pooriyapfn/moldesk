@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/adapters",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Thin model-specific adapters for MoleculeDesk (translation/verification only)",
   "license": "MIT",
   "type": "module",
@@ -31,8 +31,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@moldesk/registry": "*",
-    "@moldesk/runtime": "*"
+    "@moldesk/registry": "0.1.0",
+    "@moldesk/runtime": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

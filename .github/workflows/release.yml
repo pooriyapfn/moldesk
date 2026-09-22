@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   publish-npm:
+    needs: build-docker-image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,8 +52,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Build-only smoke test: proves the image builds without depending on
-      # committed dist files. No registry login, no push — publishing the
-      # image is a separate, explicitly authorized step.
+      # Build + run smoke test: proves the image builds without depending on
+      # committed dist files, and that it actually works (right version,
+      # installer tools present) — not just that `docker build` exits 0.
+      # No registry login, no push — publishing the image is a separate,
+      # explicitly authorized step.
       - uses: docker/setup-buildx-action@v3
-      - run: docker buildx build --file docker/Dockerfile --tag moldesk/moldesk:smoke-test .
+      - run: docker buildx build --load --file docker/Dockerfile --tag moldesk/moldesk:smoke-test .
+      - run: docker run --rm moldesk/moldesk:smoke-test doctor
+      - run: docker run --rm --entrypoint bash moldesk/moldesk:smoke-test -c "which git && which unzip"
+      - name: Verify the image reports the tag's version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          IMAGE_VERSION=$(docker run --rm moldesk/moldesk:smoke-test --version)
+          echo "tag=$TAG_VERSION image=$IMAGE_VERSION"
+          [ "$TAG_VERSION" = "$IMAGE_VERSION" ]

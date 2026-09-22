@@ -11,6 +11,7 @@ npm install -g @moldesk/cli
 
 moldesk doctor
 moldesk install proteinmpnn
+moldesk run proteinmpnn input.pdb
 moldesk list --installed
 ```
 
@@ -18,23 +19,30 @@ Instead of manually setting up Python environments, CUDA dependencies, container
 
 ## Status
 
-MoleculeDesk is currently in early development.
+MoleculeDesk is approaching a v0.1 Early Preview, not yet released.
 
 Available:
 
 * `moldesk doctor` for system and hardware detection
-* `moldesk list` for model discovery
-* compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
-* isolated, atomic ProteinMPNN and LigandMPNN installation
-* `moldesk list --installed`, reinstall, and uninstall state management
+* `moldesk list` for model discovery, with compatibility explanations for
+  Python, Docker, CUDA, GPU, RAM, and disk
+* isolated, atomic install/uninstall/reinstall for ProteinMPNN and
+  LigandMPNN, with `moldesk list --installed` state management
+* `moldesk run <model> <input>` — real end-to-end execution for
+  ProteinMPNN and LigandMPNN, with live logs, checksummed outputs, a stable
+  CLI exit-code contract, and a full reproducibility record
+  (`run.json`: hardware, parameters, command, timing, checksums) per run
+* a Boltz-2 install/run adapter — implemented and unit-tested, but **not
+  yet verified on a real CUDA host**; GPU is required (the pinned upstream
+  revision has a known CPU-inference correctness bug), so Boltz stays
+  release-blocking until that verification happens
 * `moldesk --version`
-* initial CLI and runtime architecture
 
-In progress:
+Before release:
 
-* `moldesk install boltz`
-* `moldesk run boltz input.yaml`
-* reproducible run history
+* a real Boltz-2 install + run verified on an NVIDIA GPU host
+* published npm packages at a coordinated version (the previous `0.0.1`
+  publish is incomplete/broken — `@moldesk/adapters` was never published)
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
 

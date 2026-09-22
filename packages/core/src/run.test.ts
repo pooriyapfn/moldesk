@@ -46,7 +46,7 @@ async function installFixture(paths: ReturnType<typeof getMoldeskPaths>) {
   const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
   const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
   const runner = successfulInstallRunner(manifest.source!.revision);
-  const planned = await createInstallationPlan(manifest, runtime, paths, { runner, uvExecutable: "uv" });
+  const planned = await createInstallationPlan(manifest, runtime, paths);
   await installModel(planned, { paths, runner, uvExecutable: "uv" });
   return planned.targetDir;
 }
@@ -106,7 +106,7 @@ async function installBoltzFixture(paths: ReturnType<typeof getMoldeskPaths>) {
     if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
     return { code: 0, stdout: "", stderr: "" };
   };
-  const planned = await createInstallationPlan(manifest, runtime, paths, { runner, uvExecutable: "uv" });
+  const planned = await createInstallationPlan(manifest, runtime, paths);
   await installModel(planned, { paths, runner, uvExecutable: "uv" });
   return planned.targetDir;
 }

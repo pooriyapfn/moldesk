@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import {
+  MoldeskError,
   createInstallationPlan,
   evaluateCompatibility,
   getSystemReport,
@@ -10,15 +11,36 @@ import {
   probeDockerGpuAccess,
   pullDockerImage,
   requiresInstallConfirmation,
-  shortReason,
 } from "@moldesk/core";
 import type { RuntimeKind } from "@moldesk/core";
+import { createProgressLine, failure, strong, success } from "../utils/ui.js";
 
-// TODO: pin by digest (`docker manifest inspect nvidia/cuda:12.4.1-base-ubuntu22.04`)
-// before release — kept as a tag here since resolving a real digest needs a
-// reachable Docker daemon/registry, and fabricating one would be worse than
-// a tag (a wrong digest fails every pull; a tag just isn't reproducible yet).
-const DOCKER_GPU_PROBE_IMAGE = "nvidia/cuda:12.4.1-base-ubuntu22.04";
+// The underlying command's stderr (e.g. a Python build failure) is what actually
+// explains an INSTALL_COMMAND_FAILED error — `error.message` alone is just
+// "<command> failed with exit code N", so surface the tail of stderr too.
+const FAILURE_DETAIL_MAX_LINES = 20;
+
+function commandFailureDetail(error: unknown): string | undefined {
+  if (!(error instanceof MoldeskError)) return undefined;
+  const stderr = error.details?.["stderr"];
+  if (typeof stderr !== "string" || !stderr.trim()) return undefined;
+  const lines = stderr.trim().split(/\r?\n/);
+  return lines.slice(-FAILURE_DETAIL_MAX_LINES).join("\n");
+}
+
+// A handful of build failures are common enough, and fixable enough, to call
+// out by name instead of leaving the user to dig through --verbose output.
+function knownFailureHint(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  if (detail.includes("Xcode license") || detail.includes("xcodebuild -license")) {
+    return "This model needs to compile part of its code, which requires accepting Xcode's license. Run `sudo xcodebuild -license` in Terminal, accept it, then retry with --reinstall.";
+  }
+  return undefined;
+}
+
+// Pinned by digest (nvidia/cuda:12.4.1-base-ubuntu22.04), resolved via the
+// Docker Registry HTTP API against a reachable daemon/registry.
+const DOCKER_GPU_PROBE_IMAGE = "nvidia/cuda@sha256:0f6bfcbf267e65123bcc2287e2153dedfc0f24772fb5ce84afe16ac4b2fada95";
 const PULL_TIMEOUT_MS = 120_000;
 const PROBE_TIMEOUT_MS = 10_000;
 
@@ -39,6 +61,22 @@ function formatBytes(bytes: number): string {
     unit += 1;
   }
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function friendlyInstallProgress(
+  step: string,
+  percent?: number,
+): string {
+  const labels: Record<string, string> = {
+    uv: "Preparing the installer",
+    source: "Getting the model ready",
+    python: "Creating a private workspace",
+    dependencies: "Adding the model's requirements",
+    asset: "Downloading model files",
+    verify: "Checking everything works",
+  };
+  const label = labels[step] ?? "Preparing the model";
+  return percent === undefined ? label : `${label} ${percent}%`;
 }
 
 async function confirmDownload(image: string): Promise<boolean> {
@@ -117,12 +155,13 @@ async function verifyDockerGpuAccess(
 export function registerInstallCommand(program: Command): void {
   program
     .command("install <model>")
-    .description("Install a model into an isolated, reproducible environment")
-    .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
-    .option("--yes", "accept downloads and installation without prompting")
-    .option("--reinstall", "stage and atomically replace an existing installation")
+    .description("Download a model and get it ready to use")
+    .option("--runtime <kind>", "choose an advanced runtime: python or docker")
+    .option("--yes", "start without asking for confirmation")
+    .option("--reinstall", "replace the current copy with a fresh installation")
+    .option("--verbose", "show technical installation details")
     .option("--json", "print compatibility/plan result as JSON")
-    .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean; reinstall?: boolean }) => {
+    .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean; reinstall?: boolean; verbose?: boolean }) => {
       const available = listAvailableModels();
       const manifest = available.find((m) => m.name === model);
 
@@ -161,20 +200,27 @@ export function registerInstallCommand(program: Command): void {
       }
 
       if (compatibility.status === "unsupported") {
-        const reason = shortReason(compatibility);
+        const primaryReason = compatibility.runtimes.flatMap((candidate) => candidate.reasons)[0];
         if (options.json) {
           console.log(
             JSON.stringify({ model, status: "unsupported", compatibility }, null, 2),
           );
         } else {
-          console.error(`Cannot install "${model}": ${reason || "unsupported on this machine"}.`);
-          for (const rt of compatibility.runtimes) {
-            console.error(`  [${rt.kind}] ${rt.status}`);
-            for (const r of rt.reasons) {
-              console.error(`    ${r.code}: ${r.message}${r.remediation ? ` — ${r.remediation}` : ""}`);
+          console.error(failure(`✗ ${manifest.displayName} cannot be installed on this computer.`));
+          if (primaryReason) {
+            console.error(`  ${primaryReason.message}`);
+            if (primaryReason.remediation) console.error(`  ${primaryReason.remediation}`);
+          }
+          if (options.verbose) {
+            console.error("\nTechnical details:");
+            for (const rt of compatibility.runtimes) {
+              console.error(`  [${rt.kind}] ${rt.status}`);
+              for (const r of rt.reasons) {
+                console.error(`    ${r.code}: ${r.message}${r.remediation ? ` — ${r.remediation}` : ""}`);
+              }
             }
           }
-          console.error("No files were written.");
+          console.error("  Nothing was changed.");
         }
         process.exitCode = 1;
         return;
@@ -229,11 +275,18 @@ export function registerInstallCommand(program: Command): void {
       );
 
       if (!options.json) {
-        console.log(`Installation plan for ${manifest.displayName} (${runtime.kind}):`);
-        for (const [index, step] of planned.plan.steps.entries()) console.log(`  ${index + 1}. ${step.description}`);
-        console.log(`  Download: ${formatBytes(planned.estimatedDownloadBytes)}${planned.downloadSizeUnknown ? " (partly unknown)" : ""}`);
-        console.log(`  Additional disk: ${formatBytes(planned.estimatedDiskBytes)}${planned.diskSizeUnknown ? " (unknown)" : ""}`);
-        console.log(`  Target: ${planned.targetDir}`);
+        console.log(strong(`Installing ${manifest.displayName}`));
+        if (!isNoop) {
+          const download = planned.downloadSizeUnknown ? "size not available" : formatBytes(planned.estimatedDownloadBytes);
+          const disk = planned.diskSizeUnknown ? "size not available" : formatBytes(planned.estimatedDiskBytes);
+          console.log(`  Download ${download}  •  Disk space ${disk}`);
+        }
+        if (options.verbose) {
+          console.log(`  Method: ${runtime.kind}`);
+          console.log(`  Location: ${planned.targetDir}`);
+          for (const [index, step] of planned.plan.steps.entries()) console.log(`  ${index + 1}. ${step.description}`);
+        }
+        console.log("");
       }
 
       const decision = await decideInstallConfirmation(manifest.displayName, needsConfirmation, options);
@@ -250,24 +303,42 @@ export function registerInstallCommand(program: Command): void {
         return;
       }
 
+      const progressLine = createProgressLine();
       try {
         const result = await installModel(planned, {
           reinstall: options.reinstall,
           onProgress: options.json ? undefined : (progress) => {
-            if (progress.receivedBytes !== undefined && progress.totalBytes) {
-              const percent = Math.floor((progress.receivedBytes / progress.totalBytes) * 100);
-              console.log(`  [${progress.step}] ${progress.message} (${percent}%)`);
-            } else {
-              console.log(`  [${progress.step}] ${progress.message}`);
-            }
+            const percent = progress.receivedBytes !== undefined && progress.totalBytes
+              ? Math.min(100, Math.floor((progress.receivedBytes / progress.totalBytes) * 100))
+              : undefined;
+            const message = options.verbose
+              ? `${progress.message}${percent === undefined ? "" : ` ${percent}%`}`
+              : friendlyInstallProgress(progress.step, percent);
+            progressLine.update(message);
           },
         });
+        progressLine.finish();
         if (options.json) console.log(JSON.stringify({ ...payload, status: result.status, installation: result.installation }, null, 2));
-        else console.log(`${manifest.displayName}: ${result.status}.`);
+        else if (result.status === "already-installed") console.log(success(`✓ ${manifest.displayName} is already installed.`));
+        else if (result.status === "reinstalled") console.log(success(`✓ ${manifest.displayName} is updated and ready.`));
+        else console.log(success(`✓ ${manifest.displayName} is ready.`));
       } catch (error) {
+        progressLine.finish();
         const message = error instanceof Error ? error.message : String(error);
-        if (options.json) console.log(JSON.stringify({ ...payload, status: "failed", message }, null, 2));
-        else console.error(`Installation failed: ${message}`);
+        const detail = commandFailureDetail(error);
+        const hint = knownFailureHint(detail);
+        if (options.json) {
+          console.log(JSON.stringify({ ...payload, status: "failed", message, detail, hint }, null, 2));
+        } else {
+          console.error(failure(`✗ We couldn't install ${manifest.displayName}.`));
+          if (hint) console.error(`  ${hint}`);
+          else if (error instanceof MoldeskError && error.remediation) console.error(`  ${error.remediation}`);
+          else console.error("  Try again. If this keeps happening, add --verbose for details.");
+          if (options.verbose) {
+            console.error(`\nTechnical details: ${message}`);
+            if (detail) console.error(detail);
+          }
+        }
         process.exitCode = 1;
       }
     });

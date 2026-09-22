@@ -6,12 +6,13 @@ import { registerListCommand } from "./commands/list.js";
 import { registerInstallCommand } from "./commands/install.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
+import { printWelcome } from "./utils/ui.js";
 
 const program = new Command();
 
 program
   .name("moldesk")
-  .description("Install and run computational biology models")
+  .description("Install and run molecular models")
   .version(VERSION);
 
 registerDoctorCommand(program);
@@ -20,4 +21,10 @@ registerInstallCommand(program);
 registerUninstallCommand(program);
 registerRunCommand(program);
 
-program.parse();
+// The welcome screen belongs to the CLI entry page, not individual commands.
+if (process.argv.length <= 2) {
+  printWelcome();
+  program.outputHelp();
+} else {
+  program.parse();
+}

@@ -73,6 +73,21 @@ describe("run (CLI, faked runModel)", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("hides model logs and technical run details by default", async () => {
+    state.runModel.mockResolvedValue({
+      status: "succeeded",
+      record: { ...baseRecord, outputs: [{ id: "sequences", path: "/runs/run-1/output/example.fa" }] },
+    });
+    const program = buildProgram();
+
+    await program.parseAsync(["run", "proteinmpnn", "input.pdb"], { from: "user" });
+
+    expect(state.runModel.mock.calls[0]?.[2]?.onLog).toBeUndefined();
+    expect(logs.join("\n")).toContain("ProteinMPNN finished");
+    expect(logs.join("\n")).toContain("Sequences: /runs/run-1/output/example.fa");
+    expect(logs.join("\n")).not.toContain("Run files:");
+  });
+
   it("sets exit code 7 when the run failed", async () => {
     state.runModel.mockResolvedValue({
       status: "failed",

@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Shared engine logic for MoleculeDesk (CLI + desktop)",
   "license": "MIT",
   "type": "module",
@@ -31,9 +31,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@moldesk/adapters": "*",
-    "@moldesk/runtime": "*",
-    "@moldesk/registry": "*"
+    "@moldesk/adapters": "0.1.0",
+    "@moldesk/runtime": "0.1.0",
+    "@moldesk/registry": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

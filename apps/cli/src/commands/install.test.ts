@@ -157,7 +157,7 @@ describe("install (real command, faked process boundary only)", () => {
     await program.parseAsync(["install", "old-python"], { from: "user" });
     const after = dirSnapshot(moldeskHome);
     expect(after).toEqual(before);
-    expect(errors.some((e) => e.includes("No files were written."))).toBe(true);
+    expect(errors.some((e) => e.includes("Nothing was changed."))).toBe(true);
   });
 
   it("--json output is valid JSON for an unsupported install", async () => {
@@ -181,15 +181,16 @@ describe("install (real command, faked process boundary only)", () => {
   it("human output includes remediation text per reason", async () => {
     writeManifest(modelsDir, "old-python", UNSUPPORTED_PYTHON_VERSION_MANIFEST("old-python"));
     const program = buildProgram();
-    await program.parseAsync(["install", "old-python"], { from: "user" });
+    await program.parseAsync(["install", "old-python", "--verbose"], { from: "user" });
     expect(errors.some((e) => e.includes("MANAGED_PYTHON_VERSION_UNSUPPORTED") && e.includes("Use a manifest requesting one of"))).toBe(true);
   });
 
-  it("rejects an unsupported managed Python version manifest", async () => {
+  it("keeps technical compatibility codes out of the default output", async () => {
     writeManifest(modelsDir, "old-python", UNSUPPORTED_PYTHON_VERSION_MANIFEST("old-python"));
     const program = buildProgram();
     await program.parseAsync(["install", "old-python"], { from: "user" });
-    expect(errors.some((e) => e.includes("MANAGED_PYTHON_VERSION_UNSUPPORTED"))).toBe(true);
+    expect(errors.join("\n")).not.toContain("MANAGED_PYTHON_VERSION_UNSUPPORTED");
+    expect(errors.join("\n")).toContain("cannot be installed on this computer");
   });
 
   it("a docker-gpu-required manifest with unverified GPU access surfaces DOCKER_GPU_UNVERIFIED, not UNAVAILABLE", async () => {

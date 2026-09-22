@@ -65,18 +65,15 @@ describe("doctor (real command, faked process boundary only)", () => {
     const program = buildProgram();
     await program.parseAsync(["doctor"], { from: "user" });
     const output = logs.join("\n");
-    expect(output).toContain("2 GPUs:");
-    expect(output).toContain("80.0 GB VRAM");
-    expect(output).toContain("CUDA (driver max) 12.4");
+    expect(output).toContain("2 NVIDIA GPUs available");
   });
 
-  it("renders the corrected no-NVIDIA guidance instead of the misleading Docker-fallback note", async () => {
+  it("explains CPU fallback in researcher-friendly language", async () => {
     const program = buildProgram();
     await program.parseAsync(["doctor"], { from: "user" });
     const output = logs.join("\n");
-    expect(output).toContain("No NVIDIA GPU detected: CUDA/GPU models will run on CPU only.");
-    expect(output).toContain("Docker GPU runtimes need the same host NVIDIA driver");
-    expect(output).not.toMatch(/CPU or Docker fallbacks/);
+    expect(output).toContain("No NVIDIA GPU detected");
+    expect(output).toContain("GPU models will use the CPU and may run more slowly.");
   });
 
   it("renders 'unknown (<error>)' instead of '0 MB' when the disk probe failed", () => {
@@ -94,8 +91,8 @@ describe("doctor (real command, faked process boundary only)", () => {
     };
     printHuman(report);
     const output = logs.join("\n");
-    expect(output).toContain("unknown (EACCES: permission denied)");
-    expect(output).not.toContain("0 MB");
+    expect(output).toContain("Could not check available space");
+    expect(output).toContain("Check free storage before installing a large model.");
   });
 
   it("renders the free-space reading normally when the disk probe succeeds (including a genuine zero)", () => {
@@ -113,6 +110,6 @@ describe("doctor (real command, faked process boundary only)", () => {
     };
     printHuman(report);
     const output = logs.join("\n");
-    expect(output).toContain("0 MB free at /tmp/moldesk");
+    expect(output).toContain("0 MB available");
   });
 });

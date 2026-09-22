@@ -1,5 +1,7 @@
 import type { Command } from "commander";
+import path from "node:path";
 import { MoldeskError, runModel, type RuntimeKind } from "@moldesk/core";
+import { failure, humanize, strong, success } from "../utils/ui.js";
 
 function parseRuntime(value: string): RuntimeKind {
   if (value === "python" || value === "docker") return value;
@@ -40,16 +42,17 @@ function exitCodeFor(error: unknown): number {
 export function registerRunCommand(program: Command): void {
   program
     .command("run <model> <input>")
-    .description("Run a model against an input file")
-    .option("--output <directory>", "copy declared outputs to this directory")
-    .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
-    .option("--param <key=value>", "set a model parameter (repeatable)", collectParam, {} as Record<string, string>)
+    .description("Run a model with an input file")
+    .option("--output <directory>", "save results in this folder")
+    .option("--runtime <kind>", "choose an advanced runtime: python or docker")
+    .option("--param <key=value>", "set an advanced model option (repeatable)", collectParam, {} as Record<string, string>)
+    .option("--verbose", "show technical model output and run details")
     .option("--json", "print the run result as JSON")
     .action(
       async (
         model: string,
         input: string,
-        options: { output?: string; runtime?: string; param: Record<string, string>; json?: boolean },
+        options: { output?: string; runtime?: string; param: Record<string, string>; json?: boolean; verbose?: boolean },
       ) => {
         const runtime = options.runtime ? parseRuntime(options.runtime) : undefined;
         const controller = new AbortController();
@@ -57,24 +60,41 @@ export function registerRunCommand(program: Command): void {
         process.once("SIGINT", onSignal);
         process.once("SIGTERM", onSignal);
         try {
+          if (!options.json) console.log(strong(`Running ${humanize(model)}…`));
           const result = await runModel(model, input, {
             runtime,
             params: options.param,
             outputDir: options.output,
             signal: controller.signal,
-            onLog: options.json
-              ? undefined
-              : (stream, chunk) => (stream === "stdout" ? process.stdout : process.stderr).write(chunk),
+            onLog: options.verbose && !options.json
+              ? (stream, chunk) => (stream === "stdout" ? process.stdout : process.stderr).write(chunk)
+              : undefined,
           });
 
           if (options.json) {
             console.log(JSON.stringify({ model, ...result }, null, 2));
           } else {
-            console.log(`${result.record.model}: ${result.status}.`);
-            for (const output of result.record.outputs) console.log(`  ${output.id}: ${output.path}`);
-            if (result.record.error) console.error(`  ${result.record.error.code}: ${result.record.error.message}`);
-            if (result.exportError) console.error(`  --output copy failed: ${result.exportError.message}`);
-            console.log(`  Run directory: ${result.record.command.cwd}`);
+            const displayName = humanize(result.record.model);
+            if (result.status === "succeeded" && !result.exportError) {
+              console.log(success(`✓ ${displayName} finished.`));
+            } else if (result.status === "cancelled") {
+              console.error(failure(`✗ ${displayName} was stopped.`));
+            } else {
+              console.error(failure(`✗ ${displayName} did not finish.`));
+            }
+
+            if (options.output && !result.exportError) {
+              console.log(`  Results saved to ${path.resolve(options.output)}`);
+            } else {
+              for (const output of result.record.outputs) console.log(`  ${humanize(output.id)}: ${output.path}`);
+            }
+            if (result.record.error) console.error(`  ${result.record.error.message}`);
+            if (result.exportError) console.error("  Results could not be copied to the requested folder.");
+            if (options.verbose) {
+              if (result.record.error) console.error(`  Error code: ${result.record.error.code}`);
+              if (result.exportError) console.error(`  Copy error: ${result.exportError.message}`);
+              console.log(`  Run files: ${result.record.command.cwd}`);
+            }
           }
 
           if (result.status === "cancelled") process.exitCode = 8;
@@ -90,7 +110,10 @@ export function registerRunCommand(program: Command): void {
               ),
             );
           } else {
-            console.error(message);
+            console.error(failure(`✗ ${humanize(model)} could not start.`));
+            if (error instanceof MoldeskError && error.remediation) console.error(`  ${error.remediation}`);
+            else console.error(`  ${message}`);
+            if (options.verbose && error instanceof MoldeskError) console.error(`  Error code: ${error.code}`);
           }
           process.exitCode = exitCodeFor(error);
         } finally {

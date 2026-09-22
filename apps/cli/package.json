@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "MoleculeDesk CLI — install and run computational biology models",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,9 @@
   "engines": {
     "node": ">=20"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
@@ -27,13 +29,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@moldesk/core": "*",
+    "@moldesk/core": "0.1.0",
+    "cli-ascii-logo": "^2.1.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "tsx": "^4.19.1",
     "@types/node": "^20.16.11",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
     "vitest": "^3.0.0"
   }
 }
