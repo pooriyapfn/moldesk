@@ -1,0 +1,65 @@
+export const metadata = {
+  title: "CLI usage",
+  description: "The moldesk doctor, install, list, and uninstall workflow, with flags and examples.",
+};
+
+# CLI usage
+
+The typical MoleculeDesk workflow is: check your machine, install a model, confirm it's installed, then manage it.
+
+```bash
+moldesk doctor              # detect hardware, Python, Docker, CUDA
+moldesk install proteinmpnn # install a model
+moldesk list --installed    # confirm what's installed
+moldesk uninstall proteinmpnn --yes
+```
+
+## `moldesk doctor`
+
+Detects your system and hardware, and explains compatibility for Python, Docker, CUDA, GPU, RAM, and disk against the models in the registry.
+
+## `moldesk list`
+
+Shows every model in the registry, its status (`available`, `beta`, or `planned`), and — with `--installed` — which ones are currently installed on your machine.
+
+```bash
+moldesk list
+moldesk list --installed
+```
+
+## `moldesk install <model>`
+
+Installs a model. By default this shows a plan and asks for confirmation; pass `--yes` to skip the prompt (useful in scripts/CI).
+
+```bash
+moldesk install proteinmpnn
+moldesk install ligandmpnn --yes
+moldesk install proteinmpnn --reinstall --yes
+```
+
+Under the hood, `install` gives Python models a pinned source checkout and an isolated `uv`-managed virtual environment, downloads any required checkpoints into a content-addressed cache (verified by SHA-256), and promotes the installation atomically — so a failed reinstall never leaves you with a broken model.
+
+## `moldesk uninstall <model>`
+
+```bash
+moldesk uninstall proteinmpnn --yes
+```
+
+Removes the model's installed environment and state, but retains shared cached downloads (like checkpoints) so another model — or a later reinstall — can reuse them.
+
+## `moldesk run <model> <input>`
+
+Runs an installed model against an input file and reports the outcome.
+
+```bash
+moldesk run proteinmpnn structure.pdb
+moldesk run proteinmpnn structure.pdb --output ./results  # also copy outputs here
+moldesk run proteinmpnn structure.pdb --param <key>=<value>
+moldesk run proteinmpnn structure.pdb --json               # machine-readable result
+```
+
+MoleculeDesk prints the run status and the path to each declared output as the run completes, plus the run directory it used. Pass `--output <dir>` to also copy the output files into a directory of your choice.
+
+## What's next
+
+See each [model's page](/docs/model-compatibility) for a runnable, model-specific example.

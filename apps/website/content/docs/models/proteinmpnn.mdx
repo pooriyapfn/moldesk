@@ -1,0 +1,64 @@
+import { CopyCommand } from "@/components/copy-command";
+
+export const metadata = {
+  title: "ProteinMPNN: protein sequence design",
+  description:
+    "Install and use ProteinMPNN for structure-conditioned protein sequence design with MoleculeDesk. Commands, requirements, and use cases.",
+};
+
+# Design protein sequences with ProteinMPNN
+
+[ProteinMPNN](https://github.com/dauparas/ProteinMPNN) (Dauparas et al., *Science* 2022) is a structure-conditioned protein sequence design model, released under the MIT license. Given a protein backbone structure, it designs amino-acid sequences predicted to fold into that structure.
+
+<div className="not-prose my-6 rounded-md border border-accent bg-accent-soft px-4 py-3 text-[14px] text-foreground">
+  <strong>Status: beta.</strong> Install and run both work today. The registry keeps this at `beta` (rather than `available`) until execution is verified across more environments.
+</div>
+
+## Install
+
+<CopyCommand command="moldesk install proteinmpnn" />
+
+See [CLI usage](/docs/cli-usage) for reinstalling, uninstalling, and other commands.
+
+## Example
+
+Download a sample structure — [ubiquitin (1UBQ)](https://www.rcsb.org/structure/1UBQ) from the RCSB PDB — and design new sequences for it:
+
+<CopyCommand command="curl -O https://files.rcsb.org/download/1UBQ.pdb" />
+
+<CopyCommand command="moldesk run proteinmpnn 1UBQ.pdb --output ./results" />
+
+MoleculeDesk prints the run's status and the path to each output file as it completes. `--output ./results` also copies the designed sequences into `./results` as `.fa` (FASTA) files you can open directly.
+
+## What ProteinMPNN is used for
+
+ProteinMPNN is widely used upstream for:
+
+- **Fixed-backbone sequence design** — generating new sequences for a known structure.
+- **Enzyme redesign** — designing sequence variants around a target active site or fold.
+- **Binder design** — as a component in pipelines that design proteins to bind a specific target.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Model version | `v_48_020` (default upstream checkpoint) |
+| License | MIT |
+| Python | 3.11, via `uv` |
+| Dependencies | `torch` 2.2.1, `numpy` 1.26.4 |
+| Platforms | `darwin-arm64`, `linux-x64` |
+| Input format | `.pdb` |
+| Output | sequences (`seqs/*.fa`) |
+
+MoleculeDesk pins ProteinMPNN to a specific upstream commit and verifies the model checkpoint (~6.7 MB) by SHA-256 before use, so every install is reproducible.
+
+## FAQ
+
+**Can I run ProteinMPNN through MoleculeDesk today?**
+Yes — both `moldesk install proteinmpnn` and `moldesk run proteinmpnn <input>.pdb` work today (see the example above). See [Model compatibility & registry](/docs/model-compatibility) for what `beta` means.
+
+**Does this require a GPU?**
+No specific GPU requirement is declared for ProteinMPNN's manifest, though `torch` will use one if available. Run `moldesk doctor` to check your machine.
+
+**What license is ProteinMPNN under?**
+MIT.

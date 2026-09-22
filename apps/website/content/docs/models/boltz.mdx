@@ -1,0 +1,50 @@
+export const metadata = {
+  title: "Boltz-2: protein structure & binding-affinity prediction",
+  description:
+    "Run Boltz-2 for joint biomolecular structure and binding-affinity prediction with MoleculeDesk. Requirements, input/output formats, and use cases.",
+};
+
+# Run Boltz-2 for protein structure and binding-affinity prediction
+
+[Boltz-2](https://github.com/jwohlwend/boltz) is an open-source biomolecular model that jointly predicts 3D structure and binding affinity, released under the MIT license by the Boltz team. MoleculeDesk manages Boltz-2's Python environment, checkpoints, and commands so you can use it without configuring CUDA, PyTorch, or dependency versions by hand.
+
+<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
+  <strong className="text-foreground">Status: planned.</strong> Boltz-2 is listed in the MoleculeDesk registry, but `moldesk install boltz` and `moldesk run boltz` are still in progress — installation verification, input validation, execution, and output collection aren't complete end-to-end yet. This page describes what's coming; check back or watch the repository for updates.
+</div>
+
+## What Boltz-2 is used for
+
+Boltz-2 is designed for:
+
+- **Protein structure prediction** — predicting 3D structure from sequence.
+- **Binding-affinity prediction** — estimating how strongly a ligand or biomolecule binds a target, jointly with structure.
+- **Biomolecular complex modeling** — modeling multi-chain complexes, not just single proteins.
+
+These are Boltz-2's upstream design goals; MoleculeDesk's job is to make installing and running it painless, not to change what it can predict.
+
+## Requirements (once installed)
+
+| | |
+| --- | --- |
+| Model version | 2.2.1 |
+| License | MIT |
+| Python | 3.11, via `uv` |
+| Platforms | `darwin-arm64`, `linux-x64` |
+| GPU | NVIDIA GPU/CUDA recommended (a CPU path exists but is slower) |
+| Input formats | `.yaml`, `.fasta` |
+| Output | structure files (`.cif`) |
+
+## Source
+
+MoleculeDesk pins Boltz-2 to a specific upstream commit rather than tracking a moving branch, so installs are reproducible. See the [upstream Boltz repository](https://github.com/jwohlwend/boltz) for full details on the model itself.
+
+## FAQ
+
+**When will `moldesk install boltz` work?**
+It's actively in progress — see the [main repository's status section](https://github.com/pooriyapfn/moldesk#status) for the latest.
+
+**What license is Boltz-2 under?**
+MIT. MoleculeDesk doesn't redistribute Boltz-2's weights; installing it fetches them under Boltz's own terms.
+
+**What models are available today?**
+[ProteinMPNN](/docs/models/proteinmpnn) and [LigandMPNN](/docs/models/ligandmpnn) both have working (beta) installation today.

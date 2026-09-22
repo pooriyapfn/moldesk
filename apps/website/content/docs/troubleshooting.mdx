@@ -1,0 +1,44 @@
+export const metadata = {
+  title: "Troubleshooting & FAQ",
+  description: "Common questions about installing and managing models with MoleculeDesk.",
+};
+
+# Troubleshooting & FAQ
+
+### Do I need a GPU?
+
+It depends on the model. `moldesk doctor` reports whether an NVIDIA GPU/CUDA is required or just recommended for each model, based on its manifest. Some models can run on CPU, just more slowly.
+
+### Where are models installed?
+
+By default under `~/.moldesk`. Set `MOLDESK_HOME` before installing to use a different location for managed models, state, locks, and caches.
+
+### How do I check what's installed?
+
+```bash
+moldesk list --installed
+```
+
+### How do I reinstall a model cleanly?
+
+```bash
+moldesk install <model> --reinstall --yes
+```
+
+Reinstallation is staged and promoted atomically — if it fails partway through, your previous working installation is left intact.
+
+### How do I remove a model?
+
+```bash
+moldesk uninstall <model> --yes
+```
+
+This removes the model's environment and state but keeps shared cached downloads (like checkpoints), so reinstalling later — or installing a different model that shares an asset — doesn't require redownloading.
+
+### A model shows as "planned" or "beta" — can I use it?
+
+`planned` means installation/run support isn't finished yet. `beta` means install and run both work, but broader verification is still in progress before promotion to `available`. See [Model compatibility & registry](/docs/model-compatibility) for what each status means.
+
+### Where can I ask for help or report a bug?
+
+Open an issue on the [MoleculeDesk GitHub repository](https://github.com/pooriyapfn/moldesk).
