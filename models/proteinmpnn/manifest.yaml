@@ -15,6 +15,26 @@ runtimes:
   - kind: python
     python: "3.11"
     installer: uv
+    # Real, per-platform, PyPI-verified sizes. A single scalar can't
+    # represent both accurately: torch's Linux wheel mandatorily pulls ~1.92
+    # GiB of NVIDIA CUDA + triton packages (verified via torch 2.2.1's real
+    # requires_dist) that its macOS ARM64 wheel doesn't need at all.
+    #   darwin-arm64: torch (59,714,930 B) + numpy 1.26.4 (13,997,127 B)
+    #     = 73,712,057 B.
+    #   linux-x64: torch (755,552,143 B) + numpy 1.26.4 (18,252,005 B) +
+    #     11 nvidia-*-cu12 packages + triton (2,013,169,234 B total,
+    #     dominated by nvidia-cudnn-cu12 731,725,872 B and nvidia-cublas-cu12
+    #     410,594,774 B) = 2,786,973,382 B.
+    # estimatedDiskBytes(ByPlatform) is an approximate 2x multiplier for
+    # unpacked venv overhead, not a measured value. The Linux disk figure
+    # alone (~5.19 GiB) is close to the 5 GiB disk-confirmation threshold —
+    # a second, independent reason Linux correctly requires confirmation.
+    estimatedDownloadBytesByPlatform:
+      darwin-arm64: 73712057
+      linux-x64: 2786973382
+    estimatedDiskBytesByPlatform:
+      darwin-arm64: 147424114
+      linux-x64: 5573946764
     requirements:
       - name: torch
         version: 2.2.1

@@ -15,6 +15,24 @@ runtimes:
   - kind: python
     python: "3.11"
     installer: uv
+    # darwin-arm64: real PyPI wheel sizes for boltz + its 4 explicitly-pinned
+    #   deps (dominated by torch 888,063,640 B) = 955,162,892 B — no NVIDIA
+    #   CUDA packages needed on Apple Silicon.
+    # linux-x64: the above + a conservative floor for torch 2.8.0's Linux
+    #   CUDA dependency set. Confirmed via real PyPI metadata that torch
+    #   2.8.0 requires 14 nvidia-*-cu12 packages + triton on Linux (more
+    #   packages, newer/larger versions than torch 2.2.1's already-verified
+    #   ~1.92 GiB bundle used for ProteinMPNN/LigandMPNN) — not exhaustively
+    #   priced here since it doesn't change the outcome: Boltz's checkpoint
+    #   assets alone (~6.2 GB) already force confirmation regardless. This
+    #   ~2.5 GiB floor is a documented, deliberately conservative
+    #   underestimate, not a precise measurement.
+    estimatedDownloadBytesByPlatform:
+      darwin-arm64: 955162892
+      linux-x64: 3455162892
+    estimatedDiskBytesByPlatform:
+      darwin-arm64: 1910325784
+      linux-x64: 6910325784
     requirements:
       - name: boltz
         version: 2.2.1

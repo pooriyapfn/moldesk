@@ -185,13 +185,19 @@ describe("installation runtime", () => {
     });
   });
 
-  it("extracts an uncompressed tar archive asset", async () => {
+  it("extracts an uncompressed tar archive that wraps its own top-level directory, without double-nesting", async () => {
+    // Regression test: the real Boltz mols.tar already contains a top-level
+    // "mols/" entry (boltz's own downloader extracts it straight into its
+    // cache root). Extracting it into a *created* assetsDir/mols directory
+    // would double-nest to assetsDir/mols/mols/..., which is the bug this
+    // test guards against.
     const paths = tempPaths();
     const stagingSource = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk-tar-src-"));
     homes.push(stagingSource);
-    fs.writeFileSync(path.join(stagingSource, "inner.txt"), "hello from mols.tar");
+    fs.mkdirSync(path.join(stagingSource, "mols"), { recursive: true });
+    fs.writeFileSync(path.join(stagingSource, "mols", "inner.txt"), "hello from mols.tar");
     const tarPath = path.join(stagingSource, "bundle.tar");
-    execFileSync("tar", ["-cf", tarPath, "-C", stagingSource, "inner.txt"]);
+    execFileSync("tar", ["-cf", tarPath, "-C", stagingSource, "mols"]);
     const bytes = fs.readFileSync(tarPath);
     const checksum = createHash("sha256").update(bytes).digest("hex");
     const object = await cacheAsset(
@@ -207,6 +213,30 @@ describe("installation runtime", () => {
     );
     expect(extracted).toBe(path.join(assetsDir, "mols"));
     expect(fs.readFileSync(path.join(extracted, "inner.txt"), "utf8")).toBe("hello from mols.tar");
+    expect(fs.existsSync(path.join(extracted, "mols"))).toBe(false);
+  });
+
+  it("throws when an archive does not produce its declared target", async () => {
+    const paths = tempPaths();
+    const stagingSource = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk-tar-src-"));
+    homes.push(stagingSource);
+    fs.writeFileSync(path.join(stagingSource, "unexpected.txt"), "wrong contents");
+    const tarPath = path.join(stagingSource, "bundle.tar");
+    execFileSync("tar", ["-cf", tarPath, "-C", stagingSource, "unexpected.txt"]);
+    const bytes = fs.readFileSync(tarPath);
+    const checksum = createHash("sha256").update(bytes).digest("hex");
+    const object = await cacheAsset(
+      { id: "bundle", url: "https://example.test/bundle.tar", sha256: checksum, target: "mols", archive: "tar" as const },
+      paths,
+      { fetch: async () => response(bytes) },
+    );
+    await expect(
+      materializeAsset(
+        { id: "bundle", url: "https://example.test/bundle.tar", sha256: checksum, target: "mols", archive: "tar" as const },
+        object,
+        path.join(paths.home, "assets"),
+      ),
+    ).rejects.toMatchObject({ code: "UNSAFE_ARCHIVE_ENTRY" });
   });
 
   it("resolves a full transitive lock via uv pip compile and folds it into a stable digest", async () => {

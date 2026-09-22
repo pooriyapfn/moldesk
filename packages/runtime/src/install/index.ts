@@ -465,7 +465,14 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     }
     return target;
   }
-  fs.mkdirSync(target, { recursive: true });
+  // Archives extract at assetsDir's root, not into a created assetsDir/target
+  // subdirectory — tar/unzip don't rename an archive's own top-level entry,
+  // and an archive that already wraps its contents in a directory (e.g. a
+  // tar containing "mols/...") would otherwise double-nest to
+  // assetsDir/target/mols/... instead of the expected assetsDir/mols/....
+  // `target` is the path the archive is expected to have produced; verified
+  // to exist after extraction.
+  fs.mkdirSync(assetsDir, { recursive: true });
   const listing = asset.archive === "tar.gz"
     ? await checked(runCommand, "tar", ["-tzf", objectPath])
     : asset.archive === "tar"
@@ -476,12 +483,14 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     return normalized.startsWith("/") || normalized.split("/").some((part) => part === "..");
   });
   if (unsafeEntry) {
-    fs.rmSync(target, { recursive: true, force: true });
     throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} contains unsafe path ${unsafeEntry}.`, "Report the registry asset as unsafe.");
   }
-  if (asset.archive === "tar.gz") await checked(runCommand, "tar", ["-xzf", objectPath, "-C", target]);
-  else if (asset.archive === "tar") await checked(runCommand, "tar", ["-xf", objectPath, "-C", target]);
-  else await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
+  if (asset.archive === "tar.gz") await checked(runCommand, "tar", ["-xzf", objectPath, "-C", assetsDir]);
+  else if (asset.archive === "tar") await checked(runCommand, "tar", ["-xf", objectPath, "-C", assetsDir]);
+  else await checked(runCommand, "unzip", ["-q", objectPath, "-d", assetsDir]);
+  if (!fs.existsSync(target)) {
+    throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} did not produce expected path ${asset.target}.`, "Fix the registry manifest's asset target.");
+  }
   return target;
 }
 

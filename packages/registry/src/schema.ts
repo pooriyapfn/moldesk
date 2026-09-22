@@ -73,6 +73,13 @@ const pythonRuntimeSchema = z
     installer: z.literal("uv"),
     estimatedDownloadBytes: z.number().int().nonnegative().optional(),
     estimatedDiskBytes: z.number().int().nonnegative().optional(),
+    // A Python package's real download cost can differ drastically by
+    // platform (e.g. torch's Linux wheel mandatorily pulls ~1.9 GiB of
+    // NVIDIA CUDA packages that its macOS ARM64 wheel doesn't need at
+    // all) — a single scalar estimate can't represent both accurately.
+    // Falls back to the scalar fields above for a platform not present here.
+    estimatedDownloadBytesByPlatform: z.record(platformId, z.number().int().nonnegative()).optional(),
+    estimatedDiskBytesByPlatform: z.record(platformId, z.number().int().nonnegative()).optional(),
     requirements: z.array(pythonRequirementSchema).min(1),
   })
   .strict();

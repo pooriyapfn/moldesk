@@ -42,6 +42,33 @@ describe("parseManifest", () => {
     }
   });
 
+  it("accepts per-platform download/disk estimates on a python runtime", () => {
+    const raw = baseManifest();
+    (raw["runtimes"] as Array<Record<string, unknown>>)[0] = {
+      kind: "python",
+      python: "3.11",
+      installer: "uv",
+      requirements: [{ name: "torch" }],
+      estimatedDownloadBytesByPlatform: { "darwin-arm64": 73712057, "linux-x64": 2786973382 },
+      estimatedDiskBytesByPlatform: { "darwin-arm64": 147424114, "linux-x64": 5573946764 },
+    };
+    const m = parseManifest(raw, "test/manifest.yaml");
+    const runtime = m.runtimes[0] as { estimatedDownloadBytesByPlatform?: Record<string, number> };
+    expect(runtime.estimatedDownloadBytesByPlatform?.["linux-x64"]).toBe(2786973382);
+  });
+
+  it("rejects a platform key outside the PlatformId enum in a per-platform estimate", () => {
+    const raw = baseManifest();
+    (raw["runtimes"] as Array<Record<string, unknown>>)[0] = {
+      kind: "python",
+      python: "3.11",
+      installer: "uv",
+      requirements: [{ name: "torch" }],
+      estimatedDownloadBytesByPlatform: { "windows-x64": 1 },
+    };
+    expect(() => parseManifest(raw, "test/manifest.yaml")).toThrow();
+  });
+
   it("rejects legacy top-level version without modelVersion", () => {
     const raw = baseManifest() as Record<string, unknown>;
     delete raw["modelVersion"];

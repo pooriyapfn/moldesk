@@ -15,6 +15,26 @@ runtimes:
   - kind: python
     python: "3.11"
     installer: uv
+    # Real, per-platform, PyPI-verified sizes. A single scalar can't
+    # represent both accurately: torch's Linux wheel mandatorily pulls ~1.92
+    # GiB of NVIDIA CUDA + triton packages that its macOS ARM64 wheel
+    # doesn't need at all (same real bundle verified for ProteinMPNN).
+    #   darwin-arm64: sum of real macOS ARM64 wheels across every pinned
+    #     requirement below (torch, numpy, and the rest) = 130,321,872 B.
+    #     (prody has no verified arm64 wheel in this data pull; its x86_64
+    #     macOS figure was used as a same-order-of-magnitude proxy.)
+    #   linux-x64: sum of real Linux x86_64 wheels across every pinned
+    #     requirement (837,600,299 B, dominated by torch 755,552,143 B) +
+    #     torch's 11 nvidia-*-cu12 packages + triton (2,013,169,234 B) =
+    #     2,850,769,533 B.
+    # estimatedDiskBytes(ByPlatform) is an approximate 2x multiplier for
+    # unpacked venv overhead, not a measured value.
+    estimatedDownloadBytesByPlatform:
+      darwin-arm64: 130321872
+      linux-x64: 2850769533
+    estimatedDiskBytesByPlatform:
+      darwin-arm64: 260643744
+      linux-x64: 5701539066
     requirements:
       - name: biopython
         version: "1.79"

@@ -75,7 +75,7 @@ describe("model installation lifecycle", () => {
     const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
     const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
     const runner = successfulRunner(manifest.source!.revision);
-    const planned = await createInstallationPlan(manifest, runtime, paths, { runner, uvExecutable: "uv" });
+    const planned = await createInstallationPlan(manifest, runtime, paths);
 
     const installed = await installModel(planned, { paths, runner, uvExecutable: "uv" });
     expect(installed.status).toBe("installed");
@@ -111,10 +111,9 @@ describe("model installation lifecycle", () => {
     const pythonRuntime = manifest.runtimes.find((item) => item.kind === "python")!;
     const otherRuntime = { ...pythonRuntime, python: "3.12" };
     const runner = successfulRunner(manifest.source!.revision);
-    const planOptions = { runner, uvExecutable: "uv" };
 
-    const plannedA = await createInstallationPlan(manifest, pythonRuntime, paths, planOptions);
-    const plannedB = await createInstallationPlan(manifest, otherRuntime, paths, planOptions);
+    const plannedA = await createInstallationPlan(manifest, pythonRuntime, paths);
+    const plannedB = await createInstallationPlan(manifest, otherRuntime, paths);
     expect(plannedA.runtimeFingerprint).not.toBe(plannedB.runtimeFingerprint);
     expect(plannedA.targetDir).not.toBe(plannedB.targetDir);
 
@@ -148,7 +147,7 @@ describe("model installation lifecycle", () => {
       if (command === "uv" && args[0] === "pip" && args[1] === "install") return { code: 2, stdout: "", stderr: "resolver failed" };
       return base(command, args, options);
     };
-    const planned = await createInstallationPlan(manifest, runtime, paths, { runner, uvExecutable: "uv" });
+    const planned = await createInstallationPlan(manifest, runtime, paths);
     await expect(installModel(planned, { paths, runner, uvExecutable: "uv" })).rejects.toMatchObject({ code: "INSTALL_COMMAND_FAILED" });
     expect(fs.existsSync(planned.targetDir)).toBe(false);
     expect(listInstalledModels(paths)).toEqual([]);
@@ -162,7 +161,7 @@ describe("model installation lifecycle", () => {
     const manifest = { ...listAvailableModels().find((item) => item.name === "boltz")!, assets: [] };
     const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
     const runner = successfulBoltzRunner(manifest.source!.revision);
-    const planned = await createInstallationPlan(manifest, runtime, paths, { runner, uvExecutable: "uv" });
+    const planned = await createInstallationPlan(manifest, runtime, paths);
 
     const installed = await installModel(planned, { paths, runner, uvExecutable: "uv" });
     expect(installed.status).toBe("installed");
@@ -174,6 +173,68 @@ describe("model installation lifecycle", () => {
     expect(removed).toHaveLength(1);
     expect(fs.existsSync(planned.targetDir)).toBe(false);
     expect(listInstalledModels(paths)).toEqual([]);
+  });
+});
+
+describe("per-platform download/disk estimate resolution", () => {
+  // Regression test for a real bug: an estimate correct on this machine's
+  // platform (darwin-arm64) does not prove it's correct on Linux, where
+  // torch's real dependency set is drastically larger (mandatory NVIDIA
+  // CUDA packages). Stubs process.platform/process.arch so the Linux branch
+  // is genuinely exercised even though this suite runs on macOS.
+  async function withPlatform<T>(platform: string, arch: string, fn: () => Promise<T>): Promise<T> {
+    // fn() is async — must await it *inside* this function before restoring
+    // the stub, otherwise the finally block runs as soon as fn() returns a
+    // pending promise (immediately, before any of its internal awaits
+    // complete), reverting process.platform/arch mid-flight.
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
+    const archDescriptor = Object.getOwnPropertyDescriptor(process, "arch")!;
+    Object.defineProperty(process, "platform", { value: platform, configurable: true });
+    Object.defineProperty(process, "arch", { value: arch, configurable: true });
+    try {
+      return await fn();
+    } finally {
+      Object.defineProperty(process, "platform", platformDescriptor);
+      Object.defineProperty(process, "arch", archDescriptor);
+    }
+  }
+
+  it("resolves the real ProteinMPNN Linux estimate (torch's CUDA deps included) and requires confirmation", async () => {
+    const paths = tempPaths();
+    const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
+    const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
+
+    const planned = await withPlatform("linux", "x64", () => createInstallationPlan(manifest, runtime, paths));
+
+    expect(planned.downloadSizeUnknown).toBe(false);
+    expect(planned.estimatedDownloadBytes).toBeGreaterThan(2 * 1024 ** 3); // > 2 GiB, not the ~738 MiB torch-only figure
+    expect(
+      requiresInstallConfirmation({
+        downloadBytes: planned.estimatedDownloadBytes,
+        downloadSizeUnknown: planned.downloadSizeUnknown,
+        diskBytes: planned.estimatedDiskBytes,
+        diskSizeUnknown: planned.diskSizeUnknown,
+      }),
+    ).toBe(true);
+  });
+
+  it("resolves the real ProteinMPNN darwin-arm64 estimate (no CUDA deps) and does not require confirmation", async () => {
+    const paths = tempPaths();
+    const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
+    const runtime = manifest.runtimes.find((item) => item.kind === "python")!;
+
+    const planned = await withPlatform("darwin", "arm64", () => createInstallationPlan(manifest, runtime, paths));
+
+    expect(planned.downloadSizeUnknown).toBe(false);
+    expect(planned.estimatedDownloadBytes).toBeLessThan(1024 ** 3); // < 1 GiB
+    expect(
+      requiresInstallConfirmation({
+        downloadBytes: planned.estimatedDownloadBytes,
+        downloadSizeUnknown: planned.downloadSizeUnknown,
+        diskBytes: planned.estimatedDiskBytes,
+        diskSizeUnknown: planned.diskSizeUnknown,
+      }),
+    ).toBe(false);
   });
 });
 

@@ -17,9 +17,8 @@ import {
   type InstallProgress,
   type AssetFetch,
   type MoldeskPaths,
-  type ResolvedPythonLock,
 } from "@moldesk/runtime";
-import type { ModelManifestV1, RuntimeSpec } from "@moldesk/registry";
+import type { ModelManifestV1, PlatformId, RuntimeSpec } from "@moldesk/registry";
 import { MoldeskError } from "./errors.js";
 import { digest } from "./hash.js";
 import {
@@ -46,20 +45,6 @@ export interface InstallationPlanResult {
   readonly downloadSizeUnknown: boolean;
   /** Same as {@link downloadSizeUnknown}, for additional disk usage. */
   readonly diskSizeUnknown: boolean;
-  /**
-   * For a python runtime, the fully resolved transitive dependency lock
-   * computed at plan time — its digest is folded into `runtimeFingerprint`
-   * so two installs that would resolve differently (e.g. a manifest
-   * requirement with an open version range) never silently land at the
-   * same install path. Installation installs from this exact lock.
-   */
-  readonly pythonLock?: ResolvedPythonLock;
-}
-
-export interface CreateInstallationPlanOptions {
-  runner?: InstallCommandRunner;
-  uvExecutable?: string;
-  fetch?: AssetFetch;
 }
 
 export interface InstallModelOptions {
@@ -82,13 +67,8 @@ export interface UninstallModelOptions {
   all?: boolean;
 }
 
-export function runtimeFingerprint(runtime: RuntimeSpec, options: { lockDigest?: string } = {}): string {
-  return `${runtime.kind}-${digest({
-    runtime,
-    platform: process.platform,
-    architecture: process.arch,
-    ...(options.lockDigest ? { lockDigest: options.lockDigest } : {}),
-  })}`;
+export function runtimeFingerprint(runtime: RuntimeSpec): string {
+  return `${runtime.kind}-${digest({ runtime, platform: process.platform, architecture: process.arch })}`;
 }
 
 function environmentFingerprint(data: unknown): string {
@@ -171,7 +151,6 @@ export async function createInstallationPlan(
   manifest: ModelManifestV1,
   runtime: RuntimeSpec,
   paths: MoldeskPaths = getMoldeskPaths(),
-  options: CreateInstallationPlanOptions = {},
 ): Promise<InstallationPlanResult> {
   const adapter = getAdapter(manifest.name);
   if (!adapter) {
@@ -180,10 +159,7 @@ export async function createInstallationPlan(
   if (!manifest.source) {
     throw installFailure("SOURCE_PROVENANCE_MISSING", `${manifest.name} has no pinned source provenance.`, "The registry entry must include a repository and immutable revision.");
   }
-  const pythonLock = runtime.kind === "python"
-    ? await resolvePythonLock(runtime, { runner: options.runner, uvExecutable: options.uvExecutable, fetch: options.fetch, paths })
-    : undefined;
-  const fingerprint = runtimeFingerprint(runtime, { lockDigest: pythonLock?.digest });
+  const fingerprint = runtimeFingerprint(runtime);
   const targetDir = modelInstallDir(manifest.name, manifest.modelVersion, fingerprint, { MOLDESK_HOME: paths.home });
   const adapterPlan = await adapter.installPlan({ manifestName: manifest.name, modelDir: targetDir, assetsDir: path.join(targetDir, "assets") });
   const plan = Object.freeze({ steps: Object.freeze([...adapterPlan.steps]) });
@@ -191,11 +167,21 @@ export async function createInstallationPlan(
   const assets = manifest.assets ?? [];
   const assetDownloadBytes = assets.reduce((sum, asset) => sum + (asset.sizeBytes ?? 0), 0);
   const assetSizeUnknown = assets.some((asset) => asset.sizeBytes === undefined);
-  // A Python runtime's estimatedDownloadBytes/estimatedDiskBytes describe dependency
-  // resolution cost that can't be known ahead of running `uv pip install`; treat an
-  // undeclared estimate as unknown rather than silently rounding it to zero.
-  const runtimeDownloadUnknown = runtime.estimatedDownloadBytes === undefined;
-  const runtimeDiskUnknown = runtime.estimatedDiskBytes === undefined;
+  // A Python package's real download cost can differ drastically by platform
+  // (e.g. torch's Linux wheel mandatorily pulls ~1.9 GiB of NVIDIA CUDA
+  // packages its macOS ARM64 wheel doesn't need at all) — resolve the
+  // current machine's platform-specific estimate first, falling back to the
+  // scalar fields. Treat an undeclared estimate as unknown rather than
+  // silently rounding it to zero.
+  const currentPlatformId = `${process.platform}-${process.arch}` as PlatformId;
+  const resolvedDownloadBytes = runtime.kind === "python"
+    ? runtime.estimatedDownloadBytesByPlatform?.[currentPlatformId] ?? runtime.estimatedDownloadBytes
+    : runtime.estimatedDownloadBytes;
+  const resolvedDiskBytes = runtime.kind === "python"
+    ? runtime.estimatedDiskBytesByPlatform?.[currentPlatformId] ?? runtime.estimatedDiskBytes
+    : runtime.estimatedDiskBytes;
+  const runtimeDownloadUnknown = resolvedDownloadBytes === undefined;
+  const runtimeDiskUnknown = resolvedDiskBytes === undefined;
 
   return Object.freeze({
     manifest,
@@ -204,12 +190,11 @@ export async function createInstallationPlan(
     targetDir,
     plan,
     alreadyInstalled: listInstalledModels(paths).some((record) => record.installDir === targetDir),
-    estimatedDownloadBytes: assetDownloadBytes + (runtime.estimatedDownloadBytes ?? 0) +
+    estimatedDownloadBytes: assetDownloadBytes + (resolvedDownloadBytes ?? 0) +
       (runtime.kind === "python" ? managedUvDownloadBytes(paths) : 0),
-    estimatedDiskBytes: runtime.estimatedDiskBytes ?? 0,
+    estimatedDiskBytes: resolvedDiskBytes ?? 0,
     downloadSizeUnknown: assetSizeUnknown || runtimeDownloadUnknown,
     diskSizeUnknown: runtimeDiskUnknown,
-    ...(pythonLock ? { pythonLock } : {}),
   });
 }
 
@@ -239,12 +224,17 @@ export async function installModel(
       let dependencyLock: string[] = [];
       let runtimeVersion = "";
       if (runtime.kind === "python") {
+        // Resolved here (post-lock, post-confirmation-gate) rather than during
+        // planning: resolving requires a real uv bootstrap + `uv pip compile`
+        // network/cache mutation, which must never happen before the CLI's
+        // confirmation gate has already been passed.
+        const resolvedLock = await resolvePythonLock(runtime, { runner: options.runner, uvExecutable: options.uvExecutable, fetch: options.fetch, paths });
         const prepared = await preparePythonEnvironment({
           targetDir: staging,
           repository: manifest.source.repository,
           revision: manifest.source.revision,
           runtime,
-          lock: planned.pythonLock?.lock,
+          lock: resolvedLock.lock,
           runner: options.runner,
           fetch: options.fetch,
           paths,
