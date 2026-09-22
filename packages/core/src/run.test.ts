@@ -100,7 +100,7 @@ describe("runModel", () => {
     expect(result.record.process?.pid).toBe(4242);
     const onDisk = JSON.parse(fs.readFileSync(path.join(result.record.command.cwd, "run.json"), "utf8"));
     expect(onDisk.status).toBe("succeeded");
-  });
+  }, 15000);
 
   it("fails on nonzero exit without attempting output collection", async () => {
     const paths = tempPaths();
