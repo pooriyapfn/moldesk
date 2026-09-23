@@ -309,3 +309,89 @@ describe("evaluateCompatibility", () => {
     }
   });
 });
+
+describe("per-platform accelerator resolution", () => {
+  /** A single manifest whose two python runtime entries declare genuinely different
+   * accelerator requirements: CUDA-required on linux-x64 (the "official" runtime),
+   * no CUDA/GPU requirement on darwin-arm64 (an MPS-style runtime) — mirroring a
+   * future Boltz-style dual-runtime manifest. */
+  function dualAcceleratorManifest(): ModelManifestV1 {
+    return baseManifest({
+      hardware: { platforms: ["darwin-arm64", "linux-x64"] }, // no manifest-wide accelerator signal
+      runtimes: [
+        {
+          kind: "python",
+          python: "3.11",
+          installer: "uv",
+          platforms: ["darwin-arm64"],
+          nvidiaGpu: "unsupported",
+          requirements: [{ name: "torch", version: "2.6.0" }],
+        },
+        {
+          kind: "python",
+          python: "3.11",
+          installer: "uv",
+          platforms: ["linux-x64"],
+          nvidiaGpu: "required",
+          cuda: { level: "required", minDriverCudaVersion: "12.1" },
+          minVramGb: 16,
+          requirements: [{ name: "torch", version: "2.2.1" }],
+        },
+      ],
+    });
+  }
+
+  it("reports MPS-style (no CUDA requirement) compatibility on a simulated darwin-arm64 host, even with no GPU", () => {
+    const manifest = dualAcceleratorManifest();
+    const report = baseReport({
+      platform: "darwin",
+      arch: "arm64",
+      appleSilicon: true,
+      nvidia: { available: false, gpus: [], error: "no gpu" },
+      docker: { available: false, running: false, gpuAccess: "unknown" },
+    });
+    const result = evaluateCompatibility(manifest, report);
+    expect(result.status).toBe("compatible");
+    expect(result.reasons.some((r) => r.code === "CUDA_NOT_DETECTED")).toBe(false);
+    expect(result.reasons.some((r) => r.code === "NVIDIA_GPU_REQUIRED")).toBe(false);
+  });
+
+  it("reports CUDA-required compatibility (or its absence as an error) on a simulated linux-x64 host, for the same manifest", () => {
+    const manifest = dualAcceleratorManifest();
+    const cudaReport = baseReport({ platform: "linux", arch: "x64" }); // has CUDA + 80GB VRAM per baseReport()
+    const compatible = evaluateCompatibility(manifest, cudaReport);
+    expect(compatible.status).toBe("compatible");
+
+    const noGpuReport = baseReport({
+      platform: "linux",
+      arch: "x64",
+      nvidia: { available: false, gpus: [], error: "no gpu" },
+    });
+    const unsupported = evaluateCompatibility(manifest, noGpuReport);
+    expect(unsupported.status).toBe("unsupported");
+    const codes = unsupported.reasons.map((r) => r.code);
+    expect(codes).toContain("NVIDIA_GPU_REQUIRED");
+    expect(codes).toContain("CUDA_NOT_DETECTED");
+  });
+
+  it("differs correctly between darwin-arm64 and linux-x64 for the identical manifest object (proves per-platform-entry resolution, not manifest-wide)", () => {
+    const manifest = dualAcceleratorManifest();
+    const darwinReport = baseReport({
+      platform: "darwin",
+      arch: "arm64",
+      appleSilicon: true,
+      nvidia: { available: false, gpus: [], error: "no gpu" },
+      docker: { available: false, running: false, gpuAccess: "unknown" },
+    });
+    const linuxReport = baseReport({ platform: "linux", arch: "x64" });
+
+    const darwinResult = evaluateCompatibility(manifest, darwinReport);
+    const linuxResult = evaluateCompatibility(manifest, linuxReport);
+
+    expect(darwinResult.status).toBe("compatible");
+    expect(linuxResult.status).toBe("compatible");
+    // Neither host's evaluation should carry the other platform's accelerator
+    // reasons — each host only ever evaluates its own matching runtime entry.
+    expect(darwinResult.reasons.some((r) => r.code.includes("CUDA"))).toBe(false);
+  });
+});

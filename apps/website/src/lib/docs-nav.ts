@@ -30,7 +30,7 @@ export const docsNav: DocNavSection[] = [
   {
     title: "Models",
     items: [
-      { title: "Boltz-2", slug: "models/boltz", status: "planned" },
+      { title: "Boltz-2", slug: "models/boltz", status: "beta" },
       { title: "ProteinMPNN", slug: "models/proteinmpnn", status: "beta" },
       { title: "LigandMPNN", slug: "models/ligandmpnn", status: "beta" },
       { title: "AlphaFold", slug: "models/alphafold", status: "soon" },

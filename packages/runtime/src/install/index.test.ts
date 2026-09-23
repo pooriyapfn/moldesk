@@ -117,6 +117,12 @@ describe("installation runtime", () => {
     expect(result.lock).toEqual(["numpy==1.26.4"]);
     expect(calls).toContainEqual(expect.objectContaining({ command: "git", args: ["-C", path.join(targetDir, "source"), "fetch", "--depth", "1", "origin", revision] }));
     expect(calls).toContainEqual(expect.objectContaining({ command: "uv", args: ["pip", "install", "--python", path.join(targetDir, ".venv", "bin", "python"), "numpy==1.26.4"] }));
+    // --relocatable: installs land in a `.partial-*` staging dir that gets
+    // renamed to its final target on success — without this, console-script
+    // shebangs bake in the staging path and break after the rename (confirmed
+    // by a real install+run: `exec: .../.partial-.../.venv/bin/python: No such
+    // file or directory`).
+    expect(calls).toContainEqual(expect.objectContaining({ command: "uv", args: ["venv", "--relocatable", "--python", "3.11", path.join(targetDir, ".venv")] }));
 
     // Every uv invocation must force provisioning/using a managed interpreter, never a host one —
     // this is what lets the Python provider work with host Python absent from PATH.
@@ -168,6 +174,162 @@ describe("installation runtime", () => {
       runner: async () => { throw new Error("must not run --version against an unverified receipt"); },
     })).rejects.toMatchObject({ code: "ASSET_SIZE_MISMATCH" });
     expect(fetchCalled).toBe(true);
+  });
+
+  it("installs via a hashed requirements file with --require-hashes when every requirement declares hashes", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-hashed");
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const revision = "b".repeat(40);
+    const result = await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/hashed-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        requirements: [
+          { name: "torch", version: "2.6.0", hashes: [createHash("sha256").update("torch").digest("hex")] },
+          { name: "numpy", version: "1.26.4", hashes: [createHash("sha256").update("numpy").digest("hex")] },
+        ],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\ntorch==2.6.0\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.lock).toEqual(["numpy==1.26.4", "torch==2.6.0"]);
+    const installCall = calls.find((c) => c.command === "uv" && c.args[0] === "pip" && c.args[1] === "install");
+    expect(installCall?.args).toContain("--require-hashes");
+    const requirementsFileIndex = installCall!.args.indexOf("-r") + 1;
+    const requirementsFile = installCall!.args[requirementsFileIndex]!;
+    const content = fs.readFileSync(requirementsFile, "utf8");
+    expect(content).toContain(`torch==2.6.0 --hash=sha256:${createHash("sha256").update("torch").digest("hex")}`);
+    expect(content).toContain(`numpy==1.26.4 --hash=sha256:${createHash("sha256").update("numpy").digest("hex")}`);
+  });
+
+  it("verifies hashed requirements by artifact digest (--no-deps) then installs the full closure normally", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-partial-hash");
+    const installCalls: string[][] = [];
+    const torchHash = createHash("sha256").update("torch").digest("hex");
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/partial-hash-model",
+      revision: "c".repeat(40),
+      runtime: {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        requirements: [
+          { name: "torch", version: "2.6.0", hashes: [torchHash] },
+          { name: "numpy", version: "1.26.4" },
+        ],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        if (command === "uv" && args[0] === "pip" && args[1] === "install") installCalls.push(args);
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${"c".repeat(40)}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\ntorch==2.6.0\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(installCalls).toHaveLength(2);
+    const hashedCall = installCalls.find((args) => args.includes("--require-hashes"))!;
+    expect(hashedCall).toContain("--no-deps");
+    const requirementsFile = hashedCall[hashedCall.indexOf("-r") + 1]!;
+    expect(fs.readFileSync(requirementsFile, "utf8")).toContain(`torch==2.6.0 --hash=sha256:${torchHash}`);
+    const closureCall = installCalls.find((args) => !args.includes("--require-hashes"))!;
+    expect(closureCall).toContain("torch==2.6.0");
+    expect(closureCall).toContain("numpy==1.26.4");
+  });
+
+  it("does not use --require-hashes when no requirement declares a hash (existing behavior unchanged)", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-no-hash");
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const revision = "d".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/no-hash-model",
+      revision,
+      runtime: { kind: "python", python: "3.11", installer: "uv", requirements: [{ name: "numpy", version: "1.26.4" }] },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const installCall = calls.find((c) => c.command === "uv" && c.args[0] === "pip" && c.args[1] === "install");
+    expect(installCall?.args).toEqual(["pip", "install", "--python", path.join(targetDir, ".venv", "bin", "python"), "numpy==1.26.4"]);
+    expect(installCall?.args).not.toContain("--require-hashes");
+  });
+
+  it("runs a declared postInstall hook exactly once via the venv bin dir, with no shell and no manifest-string interpolation", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-post-install");
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const revision = "e".repeat(40);
+    const result = await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/post-install-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        postInstall: ["boltz-fix-macos-libomp"],
+        requirements: [{ name: "boltz-community", version: "2.10.12" }],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "boltz-community==2.10.12\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        if (command === path.join(targetDir, ".venv", "bin", "boltz-fix-macos-libomp")) {
+          return { code: 0, stdout: "fixed libomp\n", stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.postInstall).toEqual([{ hook: "boltz-fix-macos-libomp", stdout: "fixed libomp\n", stderr: "" }]);
+    const hookCalls = calls.filter((c) => c.command === path.join(targetDir, ".venv", "bin", "boltz-fix-macos-libomp"));
+    expect(hookCalls).toHaveLength(1);
+    expect(hookCalls[0]?.args).toEqual([]);
+  });
+
+  it("returns an empty postInstall array when the runtime declares no hooks", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-no-post-install");
+    const result = await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/plain-model",
+      revision: "f".repeat(40),
+      runtime: { kind: "python", python: "3.11", installer: "uv", requirements: [{ name: "numpy", version: "1.26.4" }] },
+      uvExecutable: "uv",
+      paths,
+      runner: async (_command, args) => {
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${"f".repeat(40)}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.postInstall).toEqual([]);
   });
 
   it("fails clearly when the Docker daemon is stopped", async () => {

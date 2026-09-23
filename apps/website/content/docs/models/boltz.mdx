@@ -9,7 +9,7 @@ export const metadata = {
 [Boltz-2](https://github.com/jwohlwend/boltz) is an open-source biomolecular model that jointly predicts 3D structure and binding affinity, released under the MIT license by the Boltz team. MoleculeDesk manages Boltz-2's Python environment, checkpoints, and commands so you can use it without configuring CUDA, PyTorch, or dependency versions by hand.
 
 <div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-  <strong className="text-foreground">Status: planned.</strong> Boltz-2 is listed in the MoleculeDesk registry, but `moldesk install boltz` and `moldesk run boltz` are still in progress — installation verification, input validation, execution, and output collection aren't complete end-to-end yet. This page describes what's coming; check back or watch the repository for updates.
+  <strong className="text-foreground">Status: beta.</strong> `moldesk install boltz` and `moldesk run boltz` work end-to-end on Apple Silicon (Darwin arm64), verified with a real install and prediction using PyTorch MPS. The Linux x64/NVIDIA CUDA path is fully implemented and unit-tested but has not yet been verified on real GPU hardware.
 </div>
 
 ## What Boltz-2 is used for
@@ -22,29 +22,41 @@ Boltz-2 is designed for:
 
 These are Boltz-2's upstream design goals; MoleculeDesk's job is to make installing and running it painless, not to change what it can predict.
 
-## Requirements (once installed)
+## Requirements
 
 | | |
 | --- | --- |
 | Model version | 2.2.1 |
 | License | MIT |
 | Python | 3.11, via `uv` |
-| Platforms | `darwin-arm64`, `linux-x64` |
-| GPU | NVIDIA GPU/CUDA recommended (a CPU path exists but is slower) |
-| Input formats | `.yaml`, `.fasta` |
-| Output | structure files (`.cif`) |
+| Platforms | `darwin-arm64` (verified), `linux-x64` (implemented, unverified) |
+| Accelerator | Apple Silicon MPS (verified) or NVIDIA GPU/CUDA (unverified); CPU also accepted |
+| Input formats | `.yaml`, `.yml`, `.fasta` |
+| Output | structure (`.cif`), confidence (`.json`), optional affinity (`.json`) |
+
+Boltz-2 is a genuine dual-runtime integration: Linux x64 installs the
+official [`jwohlwend/boltz`](https://github.com/jwohlwend/boltz) with its
+CUDA extra, while Darwin arm64 installs the
+[`boltz-community`](https://github.com/Novel-Therapeutics/boltz-community)
+fork, which adds PyTorch MPS support. MoleculeDesk selects the right one
+automatically based on your platform.
 
 ## Source
 
-MoleculeDesk pins Boltz-2 to a specific upstream commit rather than tracking a moving branch, so installs are reproducible. See the [upstream Boltz repository](https://github.com/jwohlwend/boltz) for full details on the model itself.
+MoleculeDesk pins each platform's Boltz-2 distribution to a specific
+upstream commit rather than tracking a moving branch, so installs are
+reproducible. See the [upstream Boltz repository](https://github.com/jwohlwend/boltz)
+(Linux/CUDA) and [`boltz-community`](https://github.com/Novel-Therapeutics/boltz-community)
+(Darwin/MPS) for full details on the model itself.
 
 ## FAQ
 
-**When will `moldesk install boltz` work?**
-It's actively in progress — see the [main repository's status section](https://github.com/pooriyapfn/moldesk#status) for the latest.
+**Does `moldesk install boltz` work today?**
+Yes, on Apple Silicon — verified with a real install and MPS prediction. On
+Linux/NVIDIA it's fully implemented but not yet run on real GPU hardware.
 
 **What license is Boltz-2 under?**
 MIT. MoleculeDesk doesn't redistribute Boltz-2's weights; installing it fetches them under Boltz's own terms.
 
 **What models are available today?**
-[ProteinMPNN](/docs/models/proteinmpnn) and [LigandMPNN](/docs/models/ligandmpnn) both have working (beta) installation today.
+Boltz-2 (beta, Apple Silicon verified), [ProteinMPNN](/docs/models/proteinmpnn), and [LigandMPNN](/docs/models/ligandmpnn) all have working (beta) installation today.

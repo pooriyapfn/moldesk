@@ -23,9 +23,15 @@ export type {
   ModelManifestV1,
   ModelStatus,
   OutputSpec,
+  PlatformId,
+  PostInstallHook,
+  PythonRequirement,
+  PythonRuntimeSpec,
   RuntimeKind,
   RuntimeSpec,
+  SourceSpec,
 } from "@moldesk/registry";
+export { detectHostPlatformId, selectPythonRuntime } from "@moldesk/registry";
 export { MoldeskError } from "./errors.js";
 export type { MoldeskErrorData } from "./errors.js";
 export { evaluateCompatibility, shortReason } from "./compatibility.js";
@@ -39,7 +45,7 @@ export type {
 export {
   listInstalledModels,
 } from "./install-state.js";
-export type { InstalledModel } from "./install-state.js";
+export type { InstalledModel, InstalledPostInstallResult } from "./install-state.js";
 export {
   createInstallationPlan,
   installModel,

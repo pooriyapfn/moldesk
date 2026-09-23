@@ -31,10 +31,19 @@ export interface PythonInstallRequest {
   onProgress?: (progress: InstallProgress) => void;
 }
 
+export interface PostInstallHookResult {
+  hook: string;
+  stdout: string;
+  stderr: string;
+}
+
 export interface PreparedPythonEnvironment {
   executable: string;
   lock: string[];
   pythonVersion: string;
+  /** One entry per `runtime.postInstall` hook that ran, in declared order. Empty
+   * when the runtime declares no postInstall hooks. */
+  postInstall: PostInstallHookResult[];
 }
 
 export interface PreparedDockerImage {
@@ -197,15 +206,41 @@ export async function ensureManagedUv(options: {
   }
 }
 
-function requirementArgs(runtime: PythonRuntimeSpec): string[] {
-  return runtime.requirements.map((requirement) => {
-    if (requirement.source) {
-      const revision = requirement.revision ? `@${requirement.revision}` : "";
-      return `${requirement.name} @ git+${requirement.source}${revision}`;
-    }
-    return requirement.version ? `${requirement.name}==${requirement.version}` : requirement.name;
-  });
+function requirementSpecifier(requirement: PythonRuntimeSpec["requirements"][number]): string {
+  const nameWithExtras =
+    requirement.extras && requirement.extras.length > 0
+      ? `${requirement.name}[${requirement.extras.join(",")}]`
+      : requirement.name;
+  if (requirement.source) {
+    const revision = requirement.revision ? `@${requirement.revision}` : "";
+    return `${nameWithExtras} @ git+${requirement.source}${revision}`;
+  }
+  return requirement.version ? `${nameWithExtras}==${requirement.version}` : nameWithExtras;
 }
+
+/**
+ * One requirements-file line per requirement, with `--hash=sha256:<digest>` tokens
+ * appended when the requirement declares hashes. Hash-checking mode (uv/pip's
+ * `--require-hashes`) is only reliable via a requirements file — not as bare CLI
+ * args mixed across multiple packages — so hashed installs always go through
+ * `preparePythonEnvironment`'s `-r <file>` path, never the positional-args path.
+ */
+function requirementFileLine(requirement: PythonRuntimeSpec["requirements"][number]): string {
+  const specifier = requirementSpecifier(requirement);
+  if (!requirement.hashes || requirement.hashes.length === 0) return specifier;
+  return `${specifier} ${requirement.hashes.map((h) => `--hash=sha256:${h}`).join(" ")}`;
+}
+
+/**
+ * Fixed dispatch table for `postInstall` hook names: named, non-shell fixups. Each
+ * handler receives the venv's bin directory and runs a literal, reviewed executable
+ * name from it via the injected runner — never a shell, never an interpolated
+ * manifest string, so `postInstall` can never become a generic command escape hatch.
+ */
+const POST_INSTALL_HOOKS: Record<string, (venvBinDir: string, runner: InstallCommandRunner) => Promise<RunResult>> = {
+  "boltz-fix-macos-libomp": (venvBinDir, runner) =>
+    checked(runner, path.join(venvBinDir, "boltz-fix-macos-libomp"), []),
+};
 
 export async function preparePythonEnvironment(request: PythonInstallRequest): Promise<PreparedPythonEnvironment> {
   const runner = request.runner ?? runCommand;
@@ -235,15 +270,71 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
 
   request.onProgress?.({ step: "python", message: `Preparing managed Python ${request.runtime.python}` });
   await checked(runner, uv, ["python", "install", request.runtime.python], { env });
-  await checked(runner, uv, ["venv", "--python", request.runtime.python, venvDir], { env });
+  // --relocatable: installs happen in a `.partial-<pid>-<uuid>` staging directory
+  // that is atomically renamed to its final target on success (see
+  // packages/core/src/installation.ts). Without this flag, console scripts uv
+  // generates (e.g. `boltz`) bake the staging path into their shebang line and
+  // break after the rename — confirmed by a real install+run on this machine
+  // (`exec: .../.partial-.../.venv/bin/python: No such file or directory`).
+  await checked(runner, uv, ["venv", "--relocatable", "--python", request.runtime.python, venvDir], { env });
   request.onProgress?.({ step: "dependencies", message: "Installing pinned dependencies" });
-  await checked(runner, uv, ["pip", "install", "--python", python, ...requirementArgs(request.runtime)], { env });
+
+  // uv/pip's --require-hashes mode demands every requirement resolved by a given
+  // install invocation be hashed, including the full transitive closure — not
+  // just the manifest-declared top-level packages (confirmed directly: `uv pip
+  // install --require-hashes` refuses over an unhashed transitive dependency like
+  // `filelock`). Hand-pinning an entire transitive closure per model isn't
+  // practical or what this manifest schema is for. Instead, verify each
+  // hash-declared requirement's own artifact by digest with `--no-deps` (so only
+  // that one wheel/sdist is checked, no transitive resolution), then do a second,
+  // ordinary install pass over every requirement (hashed ones included, by their
+  // plain specifier) so normal dependency resolution installs the rest of the
+  // closure. A requirement pinned by git source+revision has no fixed artifact
+  // hash to check at all (it's built from source) — that's a distinct, equally
+  // valid provenance mechanism, not a gap.
+  const hashedRequirements = request.runtime.requirements.filter((r) => r.hashes && r.hashes.length > 0);
+  if (hashedRequirements.length > 0) {
+    const requirementsFile = path.join(request.targetDir, ".requirements-lock.txt");
+    const content = `${hashedRequirements.map((r) => requirementFileLine(r)).join("\n")}\n`;
+    fs.writeFileSync(requirementsFile, content, { mode: 0o600 });
+    await checked(
+      runner,
+      uv,
+      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", "-r", requirementsFile],
+      { env },
+    );
+  }
+  await checked(
+    runner,
+    uv,
+    ["pip", "install", "--python", python, ...request.runtime.requirements.map((r) => requirementSpecifier(r))],
+    { env },
+  );
+
+  const postInstall: PostInstallHookResult[] = [];
+  for (const hook of request.runtime.postInstall ?? []) {
+    const handler = POST_INSTALL_HOOKS[hook];
+    if (!handler) {
+      throw installError(
+        "POST_INSTALL_HOOK_UNKNOWN",
+        `Unknown postInstall hook "${hook}".`,
+        "This is a MoleculeDesk bug — report it; the schema should have rejected this value.",
+        { hook },
+      );
+    }
+    request.onProgress?.({ step: "post-install", message: `Running postInstall hook ${hook}` });
+    const venvBinDir = path.dirname(python);
+    const result = await handler(venvBinDir, runner);
+    postInstall.push({ hook, stdout: result.stdout, stderr: result.stderr });
+  }
+
   const freeze = await checked(runner, uv, ["pip", "freeze", "--python", python], { env });
   const version = await checked(runner, python, ["--version"], { env });
   return {
     executable: python,
     lock: freeze.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).sort(),
     pythonVersion: `${version.stdout}\n${version.stderr}`.trim(),
+    postInstall,
   };
 }
 
@@ -404,9 +495,9 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     return target;
   }
   fs.mkdirSync(target, { recursive: true });
-  const listing = asset.archive === "tar.gz"
-    ? await checked(runCommand, "tar", ["-tzf", objectPath])
-    : await checked(runCommand, "unzip", ["-Z1", objectPath]);
+  const listing = asset.archive === "zip"
+    ? await checked(runCommand, "unzip", ["-Z1", objectPath])
+    : await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-tzf" : "-tf", objectPath]);
   const unsafeEntry = listing.stdout.split(/\r?\n/).filter(Boolean).find((entry) => {
     const normalized = entry.replaceAll("\\", "/");
     return normalized.startsWith("/") || normalized.split("/").some((part) => part === "..");
@@ -415,8 +506,8 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     fs.rmSync(target, { recursive: true, force: true });
     throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} contains unsafe path ${unsafeEntry}.`, "Report the registry asset as unsafe.");
   }
-  if (asset.archive === "tar.gz") await checked(runCommand, "tar", ["-xzf", objectPath, "-C", target]);
-  else await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
+  if (asset.archive === "zip") await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
+  else await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-xzf" : "-xf", objectPath, "-C", target]);
   return target;
 }
 

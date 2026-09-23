@@ -3,6 +3,12 @@ export interface InstallContext {
   modelDir: string;
   assetsDir: string;
   runner?: import("@moldesk/runtime").InstallCommandRunner;
+  /** The host platform the runtime entry being installed/verified was resolved
+   * for. Populated by the core installer from its own platform-selection result
+   * — never guessed from `process.platform` by the adapter — so `verifyInstallation`
+   * can pick the right probe (e.g. CUDA vs MPS) even before `installation.json`
+   * exists (during the pre-promotion staging-directory verify). */
+  platform?: import("@moldesk/registry").PlatformId;
 }
 
 export interface RunContext {
@@ -17,6 +23,29 @@ export interface RunContext {
   params: Record<string, unknown>;
   /** Resolved runtime executable (e.g. the managed venv's `python`) for this run. */
   runtimeExecutable: string;
+  /** The host platform the installed runtime was resolved for, when determinable.
+   * Lets an adapter's `command()` cross-validate a param (e.g. accelerator) against
+   * the *installed* runtime rather than guessing from `process.platform`. */
+  platform?: import("@moldesk/registry").PlatformId;
+}
+
+/**
+ * Minimal, structural view of an `InstalledModel` record (from `@moldesk/core`)
+ * that `resolveParamDefaults` needs. Defined locally rather than importing
+ * `InstalledModel` from `@moldesk/core` because `@moldesk/core` depends on
+ * `@moldesk/adapters` — importing the other way would be a package cycle.
+ */
+export interface ResolveParamDefaultsInstalledRuntime {
+  kind: string;
+  python?: {
+    platform?: import("@moldesk/registry").PlatformId;
+    platformSelected?: boolean;
+  };
+}
+
+export interface ResolveParamDefaultsContext {
+  manifestName: string;
+  installed: { runtime: ResolveParamDefaultsInstalledRuntime };
 }
 
 export interface ParamDescriptor {
@@ -58,6 +87,18 @@ export interface ModelAdapterDefinition {
   command(context: RunContext): Promise<import("@moldesk/registry").CommandSpec>;
   collectOutputs(context: RunContext): Promise<CollectedOutput[]>;
   verifyInstallation(context: InstallContext): Promise<VerificationResult>;
+  /**
+   * Optional hook for params whose correct default depends on which platform's
+   * runtime entry was actually installed (e.g. Boltz's `accelerator`: `mps` on a
+   * Darwin/boltz-community install, `gpu` on a Linux/CUDA install) rather than a
+   * single static `ParamDescriptor.default`. When present, `runModel` calls this
+   * *before* `validateParams`, merging the result in as additional defaults — a
+   * key here only fills in when the caller didn't explicitly supply `--param
+   * <key>=...`, and a declared `ParamDescriptor.default` only applies when this
+   * hook doesn't supply that key. This makes the resolved value visible in
+   * `run.json`'s `parameters.effective` up front, not only deep inside `command()`.
+   */
+  resolveParamDefaults?(context: ResolveParamDefaultsContext): Record<string, unknown>;
 }
 
 export { adapterCatalog, getAdapter, hasAdapter, validateAdapterCatalog } from "./catalog.js";

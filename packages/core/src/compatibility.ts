@@ -89,10 +89,32 @@ interface RuntimeEvaluation {
   warnings: CompatibilityReason[];
 }
 
+type AcceleratorRequirements = Pick<ModelManifestV1["hardware"], "nvidiaGpu" | "cuda" | "minVramGb">;
+
+/**
+ * Resolves the effective accelerator requirement (CUDA vs MPS/none) for the
+ * runtime entry matching the *current* host, not a single manifest-wide value.
+ * A per-platform python runtime entry's own `nvidiaGpu`/`cuda`/`minVramGb` — when
+ * set — wins field-by-field over the manifest-level `hardware` equivalent, so a
+ * two-entry Boltz-style manifest can declare CUDA-required on Linux and no CUDA
+ * requirement (MPS instead) on Darwin from the *same* manifest.
+ */
+function effectiveAcceleratorRequirements(manifest: ModelManifestV1, runtime: RuntimeSpec): AcceleratorRequirements {
+  if (runtime.kind !== "python") {
+    return { nvidiaGpu: manifest.hardware.nvidiaGpu, cuda: manifest.hardware.cuda, minVramGb: manifest.hardware.minVramGb };
+  }
+  return {
+    nvidiaGpu: runtime.nvidiaGpu ?? manifest.hardware.nvidiaGpu,
+    cuda: runtime.cuda ?? manifest.hardware.cuda,
+    minVramGb: runtime.minVramGb ?? manifest.hardware.minVramGb,
+  };
+}
+
 function evaluateSharedHardware(
   manifest: ModelManifestV1,
   report: SystemReport,
   currentId: string,
+  accelerator: AcceleratorRequirements,
 ): RuntimeEvaluation {
   const errors: CompatibilityReason[] = [];
   const warnings: CompatibilityReason[] = [];
@@ -140,7 +162,7 @@ function evaluateSharedHardware(
     }
   }
 
-  const gpuLevel = hw.nvidiaGpu ?? "unsupported";
+  const gpuLevel = accelerator.nvidiaGpu ?? "unsupported";
   if (gpuLevel === "required" && !report.nvidia.available) {
     errors.push({
       code: "NVIDIA_GPU_REQUIRED",
@@ -157,9 +179,10 @@ function evaluateSharedHardware(
     });
   }
 
-  if (typeof hw.minVramGb === "number") {
-    // Schema requires nvidiaGpu whenever minVramGb is set (superRefine), so
-    // gpuLevel here is never the ambiguous "no signal" case.
+  if (typeof accelerator.minVramGb === "number") {
+    // Schema requires nvidiaGpu whenever minVramGb is set (superRefine, at both the
+    // manifest-hardware and per-runtime-entry level), so gpuLevel here is never the
+    // ambiguous "no signal" case.
     const vramSeverity: "error" | "warning" = gpuLevel === "required" ? "error" : "warning";
     const vramList = vramSeverity === "error" ? errors : warnings;
     const verb = vramSeverity === "error" ? "requires" : "recommends";
@@ -167,7 +190,7 @@ function evaluateSharedHardware(
       vramList.push({
         code: "INSUFFICIENT_VRAM",
         severity: vramSeverity,
-        message: `${verb} >= ${hw.minVramGb} GB VRAM but no NVIDIA GPU was detected`,
+        message: `${verb} >= ${accelerator.minVramGb} GB VRAM but no NVIDIA GPU was detected`,
         remediation: "Use a GPU host with enough VRAM.",
       });
     } else {
@@ -176,21 +199,21 @@ function evaluateSharedHardware(
         vramList.push({
           code: "INSUFFICIENT_VRAM",
           severity: vramSeverity,
-          message: `${verb} >= ${hw.minVramGb} GB VRAM but VRAM could not be determined`,
+          message: `${verb} >= ${accelerator.minVramGb} GB VRAM but VRAM could not be determined`,
           remediation: "Verify nvidia-smi reports memory.total for each GPU.",
         });
-      } else if (!(gb(maxVram) >= hw.minVramGb)) {
+      } else if (!(gb(maxVram) >= accelerator.minVramGb)) {
         vramList.push({
           code: "INSUFFICIENT_VRAM",
           severity: vramSeverity,
-          message: `${verb} >= ${hw.minVramGb} GB VRAM, detected max ${gb(maxVram).toFixed(1)} GB`,
+          message: `${verb} >= ${accelerator.minVramGb} GB VRAM, detected max ${gb(maxVram).toFixed(1)} GB`,
           remediation: "Use a GPU with more VRAM.",
         });
       }
     }
   }
 
-  const cudaLevel = hw.cuda?.level;
+  const cudaLevel = accelerator.cuda?.level;
   if (cudaLevel === "required" && (!report.nvidia.available || !report.nvidia.driverCudaVersion)) {
     errors.push({
       code: "CUDA_NOT_DETECTED",
@@ -205,15 +228,15 @@ function evaluateSharedHardware(
       message: "CUDA recommended but not detected; CPU execution will be slow",
       remediation: "For full speed, use a CUDA host.",
     });
-  } else if (cudaLevel && report.nvidia.driverCudaVersion && hw.cuda?.minDriverCudaVersion) {
+  } else if (cudaLevel && report.nvidia.driverCudaVersion && accelerator.cuda?.minDriverCudaVersion) {
     const detected = parseMajorMinor(report.nvidia.driverCudaVersion);
-    const required = parseMajorMinor(hw.cuda.minDriverCudaVersion);
+    const required = parseMajorMinor(accelerator.cuda.minDriverCudaVersion);
     if (detected && required && !isCudaVersionSufficient(detected, required)) {
       const severity = cudaLevel === "required" ? "error" : "warning";
       (severity === "error" ? errors : warnings).push({
         code: "CUDA_VERSION_UNSUPPORTED",
         severity,
-        message: `requires driver CUDA >= ${hw.cuda.minDriverCudaVersion}, detected ${report.nvidia.driverCudaVersion}`,
+        message: `requires driver CUDA >= ${accelerator.cuda.minDriverCudaVersion}, detected ${report.nvidia.driverCudaVersion}`,
         remediation: "Update the NVIDIA driver to one supporting a newer CUDA version.",
       });
     }
@@ -228,7 +251,7 @@ function evaluateRuntime(
   report: SystemReport,
   currentId: string,
 ): RuntimeEvaluation {
-  const shared = evaluateSharedHardware(manifest, report, currentId);
+  const shared = evaluateSharedHardware(manifest, report, currentId, effectiveAcceleratorRequirements(manifest, runtime));
   const errors = [...shared.errors];
   const warnings = [...shared.warnings];
 
@@ -338,11 +361,11 @@ export function evaluateCompatibility(
   }
 
   const currentId = currentPlatformId(report);
-  const candidates = options.requestedRuntime
+  const kindCandidates = options.requestedRuntime
     ? manifest.runtimes.filter((r) => r.kind === options.requestedRuntime)
     : [...manifest.runtimes];
 
-  if (options.requestedRuntime && candidates.length === 0) {
+  if (options.requestedRuntime && kindCandidates.length === 0) {
     return {
       status: "unsupported",
       runtimes: [],
@@ -357,7 +380,7 @@ export function evaluateCompatibility(
     };
   }
 
-  if (candidates.length === 0) {
+  if (kindCandidates.length === 0) {
     return {
       status: "unsupported",
       runtimes: [],
@@ -367,6 +390,30 @@ export function evaluateCompatibility(
           severity: "error",
           message: `model "${manifest.name}" declares no runtimes`,
           remediation: "Report this manifest bug to the registry maintainers.",
+        },
+      ],
+    };
+  }
+
+  // A per-platform python runtime entry (its own `platforms` field, distinct from
+  // the manifest-wide `hardware.platforms` filter) only ever candidates on a
+  // matching host — this is what lets a two-entry Boltz-style manifest report the
+  // *matching* entry's accelerator requirement per host, instead of evaluating
+  // every platform's entry (and its accelerator reasons) on every host.
+  const candidates = kindCandidates.filter(
+    (r) => r.kind !== "python" || r.platforms === undefined || r.platforms.includes(currentId as never),
+  );
+
+  if (candidates.length === 0) {
+    return {
+      status: "unsupported",
+      runtimes: [],
+      reasons: [
+        {
+          code: "RUNTIME_PLATFORM_UNSUPPORTED",
+          severity: "error",
+          message: `model "${manifest.name}" declares no runtime entry for platform ${currentId}`,
+          remediation: "Run on a platform this model's runtimes[] declares support for.",
         },
       ],
     };

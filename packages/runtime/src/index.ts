@@ -77,6 +77,7 @@ export type {
   AssetFetch,
   InstallCommandRunner,
   InstallProgress,
+  PostInstallHookResult,
   PreparedPythonEnvironment,
   PythonInstallRequest,
 } from "./install/index.js";

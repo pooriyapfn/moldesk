@@ -136,7 +136,18 @@ export async function runModel(
   }
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
-  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], options.params ?? {});
+
+  // Platform-dependent defaults (e.g. Boltz's `accelerator`) come from the adapter,
+  // not a static `ParamDescriptor.default`, since the right value depends on which
+  // platform-specific runtime entry was actually installed. Pre-seed `supplied` with
+  // them (as strings, since `validateParams` coerces from `--param` strings) for any
+  // key the caller didn't explicitly pass — an explicit `--param` always wins.
+  const dynamicDefaults = adapter.resolveParamDefaults?.({ manifestName: manifest.name, installed }) ?? {};
+  const suppliedParams = { ...(options.params ?? {}) };
+  for (const [key, value] of Object.entries(dynamicDefaults)) {
+    if (suppliedParams[key] === undefined) suppliedParams[key] = String(value);
+  }
+  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], suppliedParams);
   if (paramErrors.length > 0) {
     throw runFailure("INVALID_RUN_PARAMS", paramErrors.join("; "), "Fix the listed --param values and retry.", { errors: paramErrors });
   }
@@ -189,6 +200,7 @@ export async function runModel(
       assetsDir: path.join(installed.installDir, "assets"),
       params: effectiveParams,
       runtimeExecutable: installed.runtime.python.executable,
+      platform: installed.runtime.python.platform,
     });
     record.command = {
       executable: commandSpec.executable,
@@ -238,6 +250,7 @@ export async function runModel(
         assetsDir: path.join(installed.installDir, "assets"),
         params: effectiveParams,
         runtimeExecutable: installed.runtime.python.executable,
+        platform: installed.runtime.python.platform,
       });
       // --- Step 12: checksum + size each output. ---
       record.outputs = await Promise.all(

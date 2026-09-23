@@ -171,6 +171,92 @@ describe("parseManifest", () => {
     expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
   });
 
+  it("accepts per-platform python runtime fields: platforms, source override, postInstall, accelerator, hashes", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        platforms: ["darwin-arm64"],
+        source: { repository: "https://github.com/example/darwin-fork", revision: "a".repeat(40) },
+        postInstall: ["boltz-fix-macos-libomp"],
+        nvidiaGpu: "unsupported",
+        requirements: [{ name: "torch", version: "2.6.0", hashes: ["b".repeat(64)] }],
+      },
+      {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        platforms: ["linux-x64"],
+        source: { repository: "https://github.com/example/official", revision: "c".repeat(40) },
+        nvidiaGpu: "required",
+        cuda: { level: "required", minDriverCudaVersion: "12.1" },
+        minVramGb: 16,
+        requirements: [{ name: "torch", version: "2.2.1" }],
+      },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).not.toThrow();
+    const parsed = parseManifest(raw, "m.yaml");
+    expect(parsed.runtimes).toHaveLength(2);
+  });
+
+  it("rejects an unlisted postInstall value", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        postInstall: ["curl-pipe-sh"],
+        requirements: [{ name: "torch" }],
+      },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
+  it("still rejects unknown keys on a python runtime entry (.strict())", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        requirements: [{ name: "torch" }],
+        platforms: ["darwin-arm64"],
+        extraField: "not allowed",
+      },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
+  it("rejects a python requirement with an invalid hash shape", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", requirements: [{ name: "torch", hashes: ["not-a-hash"] }] },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
+  it("requires nvidiaGpu on a runtime entry whenever that entry sets minVramGb", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", minVramGb: 16, requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", minVramGb: 16, nvidiaGpu: "required", requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).not.toThrow();
+  });
+
+  it("existing single-runtime manifests with no platforms field still validate unmodified", () => {
+    const m = parseManifest(baseManifest(), "test/manifest.yaml");
+    expect(m.runtimes).toHaveLength(1);
+    expect((m.runtimes[0] as { platforms?: unknown }).platforms).toBeUndefined();
+  });
+
   it("corrupt fixtures name manifest, field, and remediation", () => {
     try {
       parseManifest({ schemaVersion: 1, name: "Bad Name!" }, "models/bad/manifest.yaml");
