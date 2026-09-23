@@ -1,0 +1,34 @@
+export const metadata = {
+  title: "Model compatibility & registry",
+  description: "How MoleculeDesk's model registry, manifests, and status field work.",
+};
+
+# Model compatibility & registry
+
+Every model MoleculeDesk supports (or plans to support) is described by a manifest — a small, validated metadata file. The registry reads every manifest and exposes it to the CLI, so `moldesk list` always shows accurate, consistent information across very different upstream projects.
+
+A manifest records things like:
+
+- **Category** — e.g. `structure-prediction`, `sequence-design`.
+- **Status** — `available`, `beta`, or `planned` (see below).
+- **Runtime requirements** — Python version, installer, package pins.
+- **Hardware** — supported platforms (`darwin-arm64`, `linux-x64`), and whether an NVIDIA GPU/CUDA is required or just recommended.
+- **Input/output formats** — what files the model expects and produces.
+- **License and source** — upstream repository and a pinned, immutable revision.
+
+## What `status` means
+
+- **`available`** — install and run are both verified end-to-end across environments.
+- **`beta`** — install and run both work today, but broader verification is still in progress before promotion to `available`.
+- **`planned`** — listed for visibility, but installation/run support isn't complete yet.
+
+A model being listed in the registry does not mean MoleculeDesk redistributes its weights — each model remains subject to its own upstream license and usage terms.
+
+## Checking compatibility
+
+`moldesk doctor` compares your machine's Python, Docker, CUDA, GPU, RAM, and disk against what's declared in each manifest, so you know ahead of time whether a model can run on your hardware.
+
+## See also
+
+- [Boltz-2](/docs/models/boltz), [ProteinMPNN](/docs/models/proteinmpnn), [LigandMPNN](/docs/models/ligandmpnn) — current model pages.
+- Contributing a new model adapter is documented in the [repository's `docs/adding-a-model.md`](https://github.com/pooriyapfn/moldesk/blob/main/docs/adding-a-model.md).

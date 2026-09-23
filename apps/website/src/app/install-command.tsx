@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { highlightMoldesk } from "@/components/copy-command";
 
 const INSTALL_COMMAND = "npm install -g moldesk";
 
@@ -23,7 +24,7 @@ export function InstallCommand() {
     <div className="mt-9 flex w-full max-w-[480px] items-center gap-4 rounded-lg border border-border bg-white py-[15px] pl-5 pr-3.5">
       <code className="overflow-x-auto whitespace-nowrap font-mono text-[15.5px] text-foreground">
         <span className="text-muted">$ </span>
-        {INSTALL_COMMAND}
+        {highlightMoldesk(INSTALL_COMMAND)}
       </code>
       <button
         onClick={copy}

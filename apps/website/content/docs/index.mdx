@@ -1,0 +1,37 @@
+export const metadata = {
+  title: "MoleculeDesk documentation",
+  description:
+    "Learn how to install MoleculeDesk, manage molecular AI models, and understand its architecture.",
+};
+
+# MoleculeDesk documentation
+
+MoleculeDesk is an open-source package manager and runtime for computational biology models. It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecular AI models easier to install and run on local machines, workstations, and remote GPU servers — without hand-rolling Python environments, CUDA setups, or model-specific commands.
+
+```bash
+npm install -g @moldesk/cli
+
+moldesk doctor
+moldesk install proteinmpnn
+moldesk list --installed
+```
+
+MoleculeDesk is currently in **early development**. System detection, model discovery, and installing/running ProteinMPNN and LigandMPNN already work end-to-end; more model adapters (Boltz, AlphaFold, ColabFold, Chai) are in progress. Every page below states a model's current status plainly.
+
+## Where to start
+
+- **[Installation](/docs/installation)** — install the CLI and confirm your machine is ready.
+- **[CLI usage](/docs/cli-usage)** — the day-to-day `doctor` / `install` / `run` / `uninstall` workflow.
+- **[Architecture](/docs/architecture)** — how the CLI, core engine, runtime, and model registry fit together.
+- **[Model compatibility & registry](/docs/model-compatibility)** — how MoleculeDesk decides whether a model can run on your machine.
+
+## Models
+
+Each supported (or planned) model has its own page with setup details, requirements, and use cases:
+
+- [Boltz-2](/docs/models/boltz) — joint structure & binding-affinity prediction (planned)
+- [ProteinMPNN](/docs/models/proteinmpnn) — structure-conditioned sequence design (beta)
+- [LigandMPNN](/docs/models/ligandmpnn) — ligand- and multimer-aware sequence design (beta)
+- [AlphaFold](/docs/models/alphafold) — structure prediction (coming soon)
+- [ColabFold](/docs/models/colabfold) — fast structure prediction (coming soon)
+- [Chai](/docs/models/chai) — biomolecular structure prediction (coming soon)

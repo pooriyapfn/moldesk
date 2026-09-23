@@ -1,0 +1,33 @@
+export const metadata = {
+  title: "Architecture",
+  description: "How MoleculeDesk's CLI, core engine, runtime, and model registry fit together.",
+};
+
+# Architecture
+
+MoleculeDesk is built as a layered engine, so the CLI and future desktop app can share the exact same logic:
+
+```text
+CLI / Desktop
+      |
+    Core
+      |
+   Runtime
+      |
+Model Registry
+      |
+Boltz / AlphaFold / ColabFold / Chai / ...
+```
+
+- **CLI / Desktop** — `moldesk` parses commands and delegates to the core engine. It has no business logic of its own, which is what lets the future desktop app reuse the exact same engine.
+- **Core** — the shared engine. It composes the runtime, adapters, and registry; owns atomic installation transactions and installed-model state; and exposes `doctor`, `list`, `install`, and (in progress) `run`.
+- **Runtime** — everything that touches your machine: hardware detection, Python/Docker discovery, subprocess execution, isolated `uv` environments, and checksum-verified asset caching.
+- **Model Registry** — validates and loads model manifests, so every model is described the same way regardless of what it does upstream.
+- **Adapters** — thin, model-specific translations for installation and execution. Each supported model (Boltz, ProteinMPNN, LigandMPNN, ...) has one.
+
+## Why this matters as a user
+
+You don't need to know which layer does what to use MoleculeDesk — but it explains two things you'll notice:
+
+1. Every model is installed and listed the same way, no matter how different its upstream setup normally is.
+2. A model's registry `status` (`available`, `beta`, `planned`) reflects how much of this pipeline has been verified end-to-end for that model — see [Model compatibility & registry](/docs/model-compatibility).

@@ -1,0 +1,63 @@
+import { CopyCommand } from "@/components/copy-command";
+
+export const metadata = {
+  title: "LigandMPNN: ligand- and multimer-aware sequence design",
+  description:
+    "Install and use LigandMPNN for protein-ligand and multimer-aware sequence design with MoleculeDesk. Commands, requirements, and use cases.",
+};
+
+# Design ligand- and multimer-aware sequences with LigandMPNN
+
+[LigandMPNN](https://github.com/dauparas/LigandMPNN) (Dauparas et al., 2023) extends ProteinMPNN's structure-conditioned design approach to protein-ligand and multimer systems, released under the MIT license.
+
+<div className="not-prose my-6 rounded-md border border-accent bg-accent-soft px-4 py-3 text-[14px] text-foreground">
+  <strong>Status: beta.</strong> Install and run both work today. The registry keeps this at `beta` (rather than `available`) until execution is verified across more environments.
+</div>
+
+## Install
+
+<CopyCommand command="moldesk install ligandmpnn" />
+
+See [CLI usage](/docs/cli-usage) for reinstalling, uninstalling, and other commands.
+
+## Example
+
+Download a sample protein-ligand structure — [trypsin bound to benzamidine (3PTB)](https://www.rcsb.org/structure/3PTB) from the RCSB PDB — and design new sequences around it:
+
+<CopyCommand command="curl -O https://files.rcsb.org/download/3PTB.pdb" />
+
+<CopyCommand command="moldesk run ligandmpnn 3PTB.pdb --output ./results" />
+
+MoleculeDesk prints the run's status and the path to each output file as it completes. `--output ./results` also copies the designed sequences into `./results` as `.fa` (FASTA) files you can open directly.
+
+## What LigandMPNN is used for
+
+LigandMPNN is designed for cases where ProteinMPNN's protein-only view isn't enough:
+
+- **Protein-ligand interface design** — designing sequences that account for a bound small molecule or cofactor.
+- **Multimer design** — designing sequences across multi-chain assemblies rather than a single chain.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Model version | 0.1.2 |
+| License | MIT |
+| Python | 3.11, via `uv` |
+| Key dependencies | `torch` 2.2.1, `numpy` 1.23.5, `prody` 2.4.1, `biopython` 1.79, `scipy` 1.12.0 |
+| Platforms | `darwin-arm64`, `linux-x64` |
+| Input format | `.pdb` |
+| Output | sequences (`seqs/*.fa`) |
+
+MoleculeDesk pins LigandMPNN to a specific upstream commit and verifies its model checkpoint (~10.5 MB) by SHA-256 before use.
+
+## FAQ
+
+**Can I run LigandMPNN through MoleculeDesk today?**
+Yes — both `moldesk install ligandmpnn` and `moldesk run ligandmpnn <input>.pdb` work today (see the example above). See [Model compatibility & registry](/docs/model-compatibility) for what `beta` means.
+
+**How is this different from ProteinMPNN?**
+LigandMPNN adds awareness of bound ligands and multi-chain (multimer) context; use [ProteinMPNN](/docs/models/proteinmpnn) for simpler single-chain, protein-only design.
+
+**What license is LigandMPNN under?**
+MIT.

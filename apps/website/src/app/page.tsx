@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { InstallCommand } from "./install-command";
 import { TerminalDemo } from "./terminal-demo";
 
@@ -42,12 +43,12 @@ export default function Home() {
               >
                 GitHub
               </a>
-              <a
-                href="#docs"
+              <Link
+                href="/docs"
                 className="rounded-md border border-border bg-transparent px-[22px] py-[11px] text-sm font-medium text-muted hover:border-foreground hover:text-foreground"
               >
                 Docs
-              </a>
+              </Link>
             </div>
           </div>
 
@@ -108,9 +109,9 @@ export default function Home() {
             <a href="#github" className="text-muted hover:text-foreground">
               GitHub
             </a>
-            <a href="#docs" className="text-muted hover:text-foreground">
+            <Link href="/docs" className="text-muted hover:text-foreground">
               Docs
-            </a>
+            </Link>
             <a href="#license" className="text-muted hover:text-foreground">
               License
             </a>

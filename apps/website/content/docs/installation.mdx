@@ -1,0 +1,58 @@
+export const metadata = {
+  title: "Installation",
+  description: "Install the MoleculeDesk CLI via npm, Docker, or from source, and run moldesk doctor.",
+};
+
+# Installation
+
+## npm (recommended)
+
+```bash
+npm install -g @moldesk/cli
+moldesk --version
+moldesk doctor
+```
+
+`moldesk doctor` checks your system and hardware — Python, Docker, CUDA, GPU, RAM, and disk — and explains what's compatible with which models.
+
+## Docker
+
+```bash
+docker run --rm moldesk/moldesk:latest doctor
+```
+
+## From source
+
+```bash
+git clone https://github.com/pooriyapfn/moldesk.git
+cd moldesk
+pnpm install
+pnpm --filter @moldesk/cli dev -- doctor
+```
+
+## Installing models
+
+ProteinMPNN and LigandMPNN have beta installation adapters:
+
+```bash
+moldesk install proteinmpnn       # review plan, then confirm
+moldesk install ligandmpnn --yes  # non-interactive
+moldesk list --installed
+moldesk install proteinmpnn --reinstall --yes
+moldesk uninstall proteinmpnn --yes
+```
+
+Each Python model gets a pinned source checkout and its own uv-managed virtual environment. Checkpoints use a resumable, content-addressed cache and are verified before use. Installation is staged and promoted atomically — a failed reinstall leaves the prior installation intact. `uninstall` retains shared cached downloads so another model or a later reinstall can reuse them.
+
+## Where things are stored
+
+State defaults to `~/.moldesk`. Set `MOLDESK_HOME` to relocate managed models, state, locks, caches, and future run records:
+
+```bash
+export MOLDESK_HOME=/path/to/moldesk-data
+```
+
+## Next steps
+
+- [CLI usage](/docs/cli-usage) — the full day-to-day workflow.
+- [Model compatibility & registry](/docs/model-compatibility) — what "beta" and "planned" mean for a model.
