@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Shared engine logic for MoleculeDesk (CLI + desktop)",
   "license": "MIT",
   "type": "module",

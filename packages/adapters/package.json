@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/adapters",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Thin model-specific adapters for MoleculeDesk (translation/verification only)",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/runtime",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Hardware detection and Python/Docker/process execution for MoleculeDesk",
   "license": "MIT",
   "type": "module",
