@@ -1,0 +1,29 @@
+export const metadata = {
+  title: "Which MoleculeDesk models support Apple Silicon?",
+  description:
+    "Current MoleculeDesk model support on Apple Silicon, with working beta adapters distinguished from planned integrations.",
+};
+
+# Which molecular AI models run on Apple Silicon?
+
+MoleculeDesk lists Darwin arm64 as a platform for its beta ProteinMPNN and LigandMPNN adapters. Use `moldesk doctor` to check your particular Mac. Model support remains in beta, so a registry entry does not establish that every Apple Silicon configuration has been verified. Boltz-2 is currently **planned** in MoleculeDesk; an Apple Silicon prediction through its CLI is not available yet.
+
+## Current MoleculeDesk status
+
+| Model | Purpose | MoleculeDesk status on Apple Silicon |
+| --- | --- | --- |
+| [ProteinMPNN](/docs/models/proteinmpnn) | Structure-conditioned sequence design | Darwin arm64 listed; beta install and run adapter |
+| [LigandMPNN](/docs/models/ligandmpnn) | Ligand- and multimer-aware sequence design | Darwin arm64 listed; beta install and run adapter |
+| [Boltz-2](/docs/models/boltz) | Structure and binding-affinity prediction | Planned; `moldesk install boltz` and `moldesk run boltz` are not ready |
+
+AlphaFold, ColabFold, and Chai are also upcoming integrations, not currently runnable through MoleculeDesk. See [model compatibility](/docs/model-compatibility) for status definitions and hardware requirements.
+
+## Check your Mac and choose a workflow
+
+```bash
+npm install -g @moldesk/cli
+moldesk doctor
+moldesk list
+```
+
+For a working example, follow the [ProteinMPNN guide](/docs/models/proteinmpnn#example). If your task requires Boltz-2 structure or affinity prediction, read the [current Boltz-2 status](/docs/guides/run-boltz-locally) and use [upstream Boltz](https://github.com/jwohlwend/boltz) directly until the MoleculeDesk integration is ready.

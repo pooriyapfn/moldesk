@@ -39,6 +39,13 @@ export const docsNav: DocNavSection[] = [
     ],
   },
   {
+    title: "Guides",
+    items: [
+      { title: "Boltz-2 local status", slug: "guides/run-boltz-locally" },
+      { title: "Molecular AI on Apple Silicon", slug: "guides/apple-silicon" },
+    ],
+  },
+  {
     title: "Help",
     items: [{ title: "Troubleshooting & FAQ", slug: "troubleshooting" }],
   },

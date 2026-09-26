@@ -5,13 +5,13 @@ import { useEffect, useRef, useState } from "react";
 type Line = { text: string; color: string; pause: number };
 
 const SCRIPT: Line[] = [
-  { text: "$ moldesk install boltz", color: "#F3F7F5", pause: 900 },
+  { text: "$ moldesk install proteinmpnn", color: "#F3F7F5", pause: 900 },
   { text: "✓ environment resolved", color: "#A7B3AE", pause: 600 },
   { text: "✓ weights cached", color: "#A7B3AE", pause: 600 },
-  { text: "✓ boltz ready", color: "#59B89A", pause: 1100 },
+  { text: "✓ proteinmpnn ready", color: "#59B89A", pause: 1100 },
   { text: "", color: "#A7B3AE", pause: 200 },
-  { text: "$ moldesk run boltz --input complex.yaml", color: "#F3F7F5", pause: 900 },
-  { text: "running prediction...", color: "#A7B3AE", pause: 1400 },
+  { text: "$ moldesk run proteinmpnn structure.pdb", color: "#F3F7F5", pause: 900 },
+  { text: "designing sequences...", color: "#A7B3AE", pause: 1400 },
   { text: "✓ run complete", color: "#59B89A", pause: 3800 },
 ];
 

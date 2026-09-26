@@ -1,0 +1,30 @@
+export const metadata = {
+  title: "Running Boltz-2 locally: current MoleculeDesk status",
+  description:
+    "Can you run Boltz-2 locally with MoleculeDesk? Current support status, planned requirements, and working model alternatives.",
+};
+
+# Can you run Boltz-2 locally with MoleculeDesk?
+
+**Not yet.** Boltz-2 is listed in MoleculeDesk's registry, but `moldesk install boltz` and `moldesk run boltz` are still in progress. MoleculeDesk has not completed end-to-end verification of Boltz installation, input validation, execution, and output collection. The [Boltz-2 model page](/docs/models/boltz) is the source of truth for its current status.
+
+## What Boltz-2 is for
+
+[Boltz-2](https://github.com/jwohlwend/boltz) is an open-source model for biomolecular structure and binding-affinity prediction. Its input and output formats differ from MoleculeDesk's working sequence-design models. A ProteinMPNN run is **not** a substitute for a Boltz-2 structure or affinity prediction.
+
+## What you can do today
+
+Use `moldesk doctor` to inspect your machine and `moldesk list` to see model status. For a working MoleculeDesk workflow, [ProteinMPNN](/docs/models/proteinmpnn) and [LigandMPNN](/docs/models/ligandmpnn) have beta installation and run support. They design amino-acid sequences from a supplied structure.
+
+```bash
+npm install -g @moldesk/cli
+moldesk doctor
+moldesk list
+moldesk install proteinmpnn
+```
+
+The [ProteinMPNN model page](/docs/models/proteinmpnn#example) includes a real structure input and runnable command. If you need Boltz-2 now, use the [upstream Boltz installation and prediction instructions](https://github.com/jwohlwend/boltz) directly until MoleculeDesk's adapter is ready.
+
+## Planned MoleculeDesk integration
+
+The registry describes a pinned Boltz-2 source and expected YAML or FASTA inputs. These are **planned requirements**, not proof that the CLI can install or run Boltz-2 today. Check the [model compatibility guide](/docs/model-compatibility) for what `planned` and `beta` mean, and revisit the [Boltz-2 model page](/docs/models/boltz) for status updates.

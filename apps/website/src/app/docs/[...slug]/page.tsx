@@ -44,5 +44,6 @@ export async function generateMetadata({
   return {
     title: `${doc.metadata.title} — MoleculeDesk Docs`,
     description: doc.metadata.description,
+    alternates: { canonical: `/docs/${slug.join("/")}` },
   };
 }
