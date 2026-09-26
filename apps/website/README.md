@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MoleculeDesk website
 
-## Getting Started
+This Next.js app serves [moleculedesk.com](https://moleculedesk.com/). MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally. The public docs describe the CLI, supported models, and current limitations.
 
-First, run the development server:
+## Run locally
+
+From the repository root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm --filter website dev
+pnpm --filter website build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The site runs at [localhost:3000](http://localhost:3000) during development.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## PostHog analytics
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The website uses `posthog-js` from `src/instrumentation-client.ts`. It captures pageviews for the homepage and docs, plus a `cli_command_copied` event when a visitor successfully copies a CLI command. The event has a `source` of `homepage` or `documentation`; documentation copies also include the page path. It does not send the copied command text.
 
-## Learn More
+Set these build-time variables in the website deployment and restart/redeploy it:
 
-To learn more about Next.js, take a look at the following resources:
+```shell
+NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=<PostHog project token>
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+For local development, put the same values in `apps/website/.env.local` (gitignored). The token comes from PostHog project 629665's manual SDK setup. The host above is for that project's US Cloud region. Without either variable, analytics stays disabled. After deployment, open the site and check PostHog's live events for `$pageview` and `cli_command_copied`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Content and discovery
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Edit model and guide content in `content/docs/`; register each page in `src/lib/docs-nav.ts` so it receives a route and appears in the sitemap.
+- Keep model status, platform support, commands, and output descriptions aligned with the implementation and root README. Link to upstream methods and source fixtures where useful.
+- `src/app/robots.ts` allows crawlers and points to `src/app/sitemap.ts`; `public/llms.txt` is an optional navigation index. None guarantees AI citations.
+- Each doc route has a title, description, and canonical URL. Keep visible content and structured data consistent.
+- After deployment, check that `/robots.txt`, `/sitemap.xml`, and guide URLs return successfully. Verify any CDN bot rules separately; app files cannot override edge blocks.

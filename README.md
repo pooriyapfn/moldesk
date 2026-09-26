@@ -1,10 +1,12 @@
 # MoleculeDesk
 
-MoleculeDesk is an open-source package manager and runtime for computational biology models.
+MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally.
 
 It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecular AI models easier to install and run on local machines, workstations, and remote GPU servers.
 
 Think of it as a simpler interface for scientific models:
+
+Read the [documentation](https://moleculedesk.com/docs), [Boltz-2 status guide](https://moleculedesk.com/docs/guides/run-boltz-locally), and [Apple Silicon support guide](https://moleculedesk.com/docs/guides/apple-silicon) for current commands and platform limits.
 
 ```bash
 npm install -g @moldesk/cli
@@ -120,12 +122,14 @@ pnpm --filter @moldesk/cli dev -- doctor
 
 Model support is being added incrementally.
 
-| Model     | Status      |
-| --------- | ----------- |
-| Boltz     | In progress |
-| ColabFold | Planned     |
-| AlphaFold | Planned     |
-| Chai      | Planned     |
+| Model | Status |
+| --- | --- |
+| Boltz-2 | Planned |
+| ProteinMPNN | Beta |
+| LigandMPNN | Beta |
+| ColabFold | Planned |
+| AlphaFold | Planned |
+| Chai | Planned |
 
 A model being listed here does not mean MoleculeDesk redistributes that model or its weights. Each model remains subject to its own license and usage terms.
 

@@ -15,18 +15,37 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MoleculeDesk — Take control of your molecular AI",
+  metadataBase: new URL("https://moleculedesk.com"),
+  title: "MoleculeDesk — Run molecular AI models locally",
   description:
-    "A simpler way to run and inspect molecular AI models while keeping control of your data.",
+    "MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally. Install, run, and inspect supported models from one CLI.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "MoleculeDesk",
+    title: "MoleculeDesk — Run molecular AI models locally",
+    description: "An open-source package manager and runtime for molecular AI models.",
+    url: "https://moleculedesk.com/",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const software = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "MoleculeDesk",
+    url: "https://moleculedesk.com/",
+    applicationCategory: "DeveloperApplication",
+    description: "Open-source package manager and runtime for running molecular AI models locally.",
+    codeRepository: "https://github.com/pooriyapfn/moldesk",
+  };
   return (
     <html
       lang="en"
       className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(software) }} />
         {children}
       </body>
     </html>
