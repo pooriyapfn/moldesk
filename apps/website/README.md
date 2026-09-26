@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## PostHog analytics
+
+The site initializes `posthog-js` in `src/instrumentation-client.ts` for pageviews and autocaptured interactions. Copying a CLI command emits `cli_command_copied` with a `source` of `homepage` or `documentation`; documentation copies also include the page path. Command text is not sent.
+
+Set these build-time variables for the website deployment:
+
+```shell
+NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=<PostHog project token>
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+```
+
+For local development, put them in the gitignored `apps/website/.env.local`. The live project is PostHog US Cloud project 629665. Analytics is disabled when either variable is missing. Redeploy after changing Vercel environment variables.

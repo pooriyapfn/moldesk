@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import posthog from "posthog-js";
 import { highlightMoldesk } from "@/components/copy-command";
 
-const INSTALL_COMMAND = "npm install -g moldesk";
+const INSTALL_COMMAND = "npm install -g @moldesk/cli";
 
 export function InstallCommand() {
   const [copied, setCopied] = useState(false);
@@ -11,13 +12,16 @@ export function InstallCommand() {
     undefined,
   );
 
-  const copy = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(INSTALL_COMMAND).catch(() => {});
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(INSTALL_COMMAND);
+      posthog.capture("cli_command_copied", { source: "homepage" });
+      setCopied(true);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard access can be unavailable or denied.
     }
-    setCopied(true);
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setCopied(false), 1600);
   };
 
   return (
