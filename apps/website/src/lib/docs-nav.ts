@@ -31,11 +31,19 @@ export const docsNav: DocNavSection[] = [
     title: "Models",
     items: [
       { title: "Boltz-2", slug: "models/boltz", status: "beta" },
+      { title: "DiffDock-L", slug: "models/diffdock", status: "planned" },
       { title: "ProteinMPNN", slug: "models/proteinmpnn", status: "beta" },
       { title: "LigandMPNN", slug: "models/ligandmpnn", status: "beta" },
       { title: "AlphaFold", slug: "models/alphafold", status: "soon" },
       { title: "ColabFold", slug: "models/colabfold", status: "soon" },
       { title: "Chai", slug: "models/chai", status: "soon" },
+    ],
+  },
+  {
+    title: "Guides",
+    items: [
+      { title: "Run Boltz-2 locally", slug: "guides/run-boltz-locally" },
+      { title: "Molecular AI on Apple Silicon", slug: "guides/apple-silicon" },
     ],
   },
   {

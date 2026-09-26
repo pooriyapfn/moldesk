@@ -1,0 +1,39 @@
+export const metadata = {
+  title: "How to run Boltz-2 locally",
+  description:
+    "Install and run Boltz-2 locally with MoleculeDesk: platform support, a real YAML input, CLI commands, and expected outputs.",
+};
+
+# How to run Boltz-2 locally
+
+MoleculeDesk can install and run Boltz-2 on an Apple Silicon Mac using its MPS runtime. This path has been verified with a real prediction. A Linux x64/NVIDIA CUDA path is implemented and unit-tested, but has not yet been verified on GPU hardware. Boltz-2 support is **beta**.
+
+## What you need
+
+- An Apple Silicon Mac for the verified path, or a Linux x64 machine for the currently unverified CUDA path.
+- Node.js and npm to install the MoleculeDesk CLI.
+- Disk space and a network connection for the model environment and checkpoints during installation.
+
+Run `moldesk doctor` before installing. It reports your detected hardware and software compatibility. See [Boltz-2 model requirements](/docs/models/boltz#requirements) for the current Python, platform, accelerator, and file-format details.
+
+## Install and run a prediction
+
+```bash
+npm install -g @moldesk/cli
+moldesk doctor
+moldesk install boltz
+git clone https://github.com/pooriyapfn/moldesk.git
+moldesk run boltz moldesk/examples/boltz/protein.yaml
+```
+
+The [example YAML input](https://github.com/pooriyapfn/moldesk/blob/main/examples/boltz/protein.yaml) is a single-protein job sourced from Boltz's upstream examples. It uses `msa: empty`, so the prediction does not need an MSA search service. You can also provide your own Boltz `.yaml`, `.yml`, or `.fasta` file.
+
+## Find the outputs
+
+The CLI reports the run status, run directory, and declared output file paths. Boltz-2 produces a predicted structure (`.cif`) and confidence data (`.json`); affinity output (`.json`) applies when the input requests it. See [CLI usage](/docs/cli-usage) for `--output <dir>` and machine-readable `--json` results.
+
+## Is this the right model?
+
+Boltz-2 predicts biomolecular structures and can estimate binding affinity for suitable inputs. For structure-conditioned **sequence design**, see [ProteinMPNN](/docs/models/proteinmpnn) or [LigandMPNN](/docs/models/ligandmpnn). For blind small-molecule docking, [DiffDock-L](/docs/models/diffdock) is planned in MoleculeDesk and is not yet live-verified.
+
+MoleculeDesk manages installation and execution; scientific interpretation and validation of predictions remain part of the research workflow. See the [upstream Boltz project](https://github.com/jwohlwend/boltz) for model methods and input details.
