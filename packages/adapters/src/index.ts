@@ -27,6 +27,10 @@ export interface RunContext {
    * Lets an adapter's `command()` cross-validate a param (e.g. accelerator) against
    * the *installed* runtime rather than guessing from `process.platform`. */
   platform?: import("@moldesk/registry").PlatformId;
+  /** Staged companion inputs (see `resolveCompanionInputs`), keyed by the same
+   * `id` the adapter declared. Populated only when `resolveCompanionInputs`
+   * returned entries for this run's job file; absent for single-file models. */
+  companionInputs?: Array<{ id: string; path: string }>;
 }
 
 /**
@@ -99,6 +103,19 @@ export interface ModelAdapterDefinition {
    * `run.json`'s `parameters.effective` up front, not only deep inside `command()`.
    */
   resolveParamDefaults?(context: ResolveParamDefaultsContext): Record<string, unknown>;
+  /**
+   * Optional hook for models whose job file references companion files that must
+   * be safely staged alongside the primary input (e.g. DiffDock-L's job JSON
+   * referencing a separate protein PDB and ligand file). Given the *original*
+   * (pre-copy) resolved job file path, returns the companion references to
+   * stage; `run.ts` then validates and copies each one via
+   * `@moldesk/runtime`'s `stageCompanionInputs` and passes the staged paths back
+   * as `RunContext.companionInputs`. Absent means unchanged single-file
+   * behavior — no companion staging occurs. All job-format-specific parsing
+   * (what a reference means, how it's found) stays here in the adapter; `core`/
+   * `runtime` only provide generic, validated staging.
+   */
+  resolveCompanionInputs?(inputPath: string): Promise<import("@moldesk/runtime").CompanionInputRef[]>;
 }
 
 export { adapterCatalog, getAdapter, hasAdapter, validateAdapterCatalog } from "./catalog.js";

@@ -121,6 +121,40 @@ const pythonRuntimeSchema = z
     nvidiaGpu: requirementLevel.optional(),
     cuda: cudaSchema.optional(),
     minVramGb: z.number().positive().optional(),
+    // Additional PEP-503-style pip/uv package indexes, ADDED alongside the default
+    // PyPI index (never replacing it — a manifest never loses access to ordinary
+    // packages like pandas/scipy just because it needs a CUDA-specific extra
+    // index). Maps to `UV_EXTRA_INDEX_URL`. For a pinned build whose exact wheels
+    // (e.g. a CUDA-specific PyTorch build) live on a PEP-503-compatible extra
+    // index rather than default PyPI.
+    extraIndexUrls: z.array(httpsUrl).min(1).max(4).optional(),
+    // Flat `--find-links` wheel-listing pages (not PEP-503 indexes — a single page
+    // listing wheel files directly, e.g. PyTorch Geometric's CUDA extension wheel
+    // pages). Maps to `UV_FIND_LINKS`. Kept structurally distinct from
+    // `extraIndexUrls` because the two have different pip/uv semantics and mixing
+    // them up silently breaks resolution (this is exactly what an earlier version
+    // of this schema got wrong for DiffDock-L).
+    findLinks: z.array(httpsUrl).min(1).max(4).optional(),
+    // Package names (matching a `requirements[].name`) that must resolve to a
+    // prebuilt wheel and must never be built from source, mapped to `--only-binary
+    // <name>` on every install invocation. Exists so an ABI-sensitive CUDA
+    // extension package (torch-scatter, torch-sparse, …) can never silently fall
+    // back to a from-source sdist build if wheel resolution ever fails for some
+    // reason — install fails closed instead.
+    binaryOnly: z.array(z.string().min(1)).min(1).optional(),
+    // Requirements installed first, each in its own `uv pip install` invocation, in
+    // array order, before anything in `requirements` — for a package (e.g. a pinned
+    // `setuptools` version) that a later requirement's own source build depends on
+    // being fully resolved beforehand, not just present somewhere in the same
+    // resolver graph.
+    preInstall: z.array(pythonRequirementSchema).min(1).optional(),
+    // Names (matching `requirements[].name`) deferred to their own final install
+    // invocation, strictly after every other requirement (including `preInstall`)
+    // has finished installing — for a package whose own build process imports an
+    // earlier dependency (e.g. an unpackaged git build that imports `torch` at
+    // setup time to select CUDA architecture flags), which a single combined
+    // resolver invocation cannot reliably sequence.
+    buildAfter: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 
@@ -255,6 +289,18 @@ export const modelManifestV1Schema = z
           message: "nvidiaGpu must be set (\"required\" or \"recommended\") whenever this runtime entry's minVramGb is specified",
           path: ["runtimes", runtimeIndex, "nvidiaGpu"],
         });
+      }
+      if (runtime.buildAfter) {
+        const requirementNames = new Set(runtime.requirements.map((r) => r.name));
+        for (const deferredName of runtime.buildAfter) {
+          if (!requirementNames.has(deferredName)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `buildAfter references "${deferredName}", which is not in this runtime entry's requirements`,
+              path: ["runtimes", runtimeIndex, "buildAfter"],
+            });
+          }
+        }
       }
     }
     const names = new Set<string>();

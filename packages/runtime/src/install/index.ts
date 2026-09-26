@@ -101,7 +101,11 @@ async function checked(
   return result;
 }
 
-function managedEnvironment(paths: MoldeskPaths, pythonVersion: string): NodeJS.ProcessEnv {
+function managedEnvironment(
+  paths: MoldeskPaths,
+  pythonVersion: string,
+  options: { extraIndexUrls?: string[]; findLinks?: string[] } = {},
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env["PATH"],
     TMPDIR: process.env["TMPDIR"],
@@ -112,6 +116,20 @@ function managedEnvironment(paths: MoldeskPaths, pythonVersion: string): NodeJS.
     UV_PYTHON_PREFERENCE: "only-managed",
     UV_NO_PROGRESS: "1",
   };
+  // Deliberately never overrides UV_INDEX_URL (the default/primary index stays
+  // PyPI) — a runtime entry that needs a CUDA-specific extra index (e.g. PyTorch's
+  // own cu117 index) must not lose access to ordinary packages like pandas/scipy
+  // by replacing the default index outright. `extraIndexUrls` (PEP-503-style
+  // indexes) and `findLinks` (flat wheel-listing pages, a distinct pip/uv
+  // mechanism) are kept as separate fields precisely because conflating them
+  // breaks resolution — a page meant for `--find-links` is not always a valid
+  // PEP-503 index.
+  if (options.extraIndexUrls && options.extraIndexUrls.length > 0) {
+    env["UV_EXTRA_INDEX_URL"] = options.extraIndexUrls.join(" ");
+  }
+  if (options.findLinks && options.findLinks.length > 0) {
+    env["UV_FIND_LINKS"] = options.findLinks.join(" ");
+  }
   for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]) {
     if (process.env[name]) env[name] = process.env[name];
   }
@@ -242,11 +260,61 @@ const POST_INSTALL_HOOKS: Record<string, (venvBinDir: string, runner: InstallCom
     checked(runner, path.join(venvBinDir, "boltz-fix-macos-libomp"), []),
 };
 
+/**
+ * Runs the existing two-pass install (verify hash-declared requirements by
+ * artifact digest with `--no-deps`, then a normal resolving pass over every
+ * requirement in the set) for one *stage* of requirements — a stage being
+ * either the main `requirements[]` set or a `buildAfter`-deferred subset,
+ * installed via its own separate invocation so a git-built package that
+ * imports an earlier dependency at build time (e.g. openfold importing torch)
+ * only ever builds after that dependency is already fully installed.
+ * `--only-binary <name>` is appended for every requirement in `binaryOnlyNames`
+ * so an ABI-sensitive CUDA extension package can never silently fall back to
+ * building from source — install fails closed instead.
+ */
+async function installRequirementSet(
+  runner: InstallCommandRunner,
+  uv: string,
+  python: string,
+  targetDir: string,
+  requirements: PythonRuntimeSpec["requirements"],
+  binaryOnlyNames: Set<string>,
+  env: NodeJS.ProcessEnv,
+  lockFileSuffix: string,
+): Promise<void> {
+  if (requirements.length === 0) return;
+  const binaryOnlyArgs = requirements
+    .filter((r) => binaryOnlyNames.has(r.name))
+    .flatMap((r) => ["--only-binary", r.name]);
+
+  const hashedRequirements = requirements.filter((r) => r.hashes && r.hashes.length > 0);
+  if (hashedRequirements.length > 0) {
+    const requirementsFile = path.join(targetDir, `.requirements-lock${lockFileSuffix}.txt`);
+    const content = `${hashedRequirements.map((r) => requirementFileLine(r)).join("\n")}\n`;
+    fs.writeFileSync(requirementsFile, content, { mode: 0o600 });
+    await checked(
+      runner,
+      uv,
+      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", ...binaryOnlyArgs, "-r", requirementsFile],
+      { env },
+    );
+  }
+  await checked(
+    runner,
+    uv,
+    ["pip", "install", "--python", python, ...binaryOnlyArgs, ...requirements.map((r) => requirementSpecifier(r))],
+    { env },
+  );
+}
+
 export async function preparePythonEnvironment(request: PythonInstallRequest): Promise<PreparedPythonEnvironment> {
   const runner = request.runner ?? runCommand;
   const paths = request.paths ?? getMoldeskPaths();
   const uv = request.uvExecutable ?? await ensureManagedUv({ paths, fetch: request.fetch, runner, onProgress: request.onProgress });
-  const env = managedEnvironment(paths, request.runtime.python);
+  const env = managedEnvironment(paths, request.runtime.python, {
+    extraIndexUrls: request.runtime.extraIndexUrls,
+    findLinks: request.runtime.findLinks,
+  });
   const sourceDir = path.join(request.targetDir, "source");
   const venvDir = path.join(request.targetDir, ".venv");
   const python = process.platform === "win32"
@@ -279,6 +347,15 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   await checked(runner, uv, ["venv", "--relocatable", "--python", request.runtime.python, venvDir], { env });
   request.onProgress?.({ step: "dependencies", message: "Installing pinned dependencies" });
 
+  // Stage 0: preInstall requirements, each its own separate invocation, strictly
+  // before anything else — for a package (e.g. a pinned older `setuptools`) whose
+  // own version a later requirement's source build depends on already being fully
+  // resolved, not merely present somewhere in the same combined resolver graph.
+  for (const req of request.runtime.preInstall ?? []) {
+    request.onProgress?.({ step: "dependencies", message: `Installing ${req.name} (preInstall)` });
+    await checked(runner, uv, ["pip", "install", "--python", python, requirementSpecifier(req)], { env });
+  }
+
   // uv/pip's --require-hashes mode demands every requirement resolved by a given
   // install invocation be hashed, including the full transitive closure — not
   // just the manifest-declared top-level packages (confirmed directly: `uv pip
@@ -291,25 +368,26 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   // plain specifier) so normal dependency resolution installs the rest of the
   // closure. A requirement pinned by git source+revision has no fixed artifact
   // hash to check at all (it's built from source) — that's a distinct, equally
-  // valid provenance mechanism, not a gap.
-  const hashedRequirements = request.runtime.requirements.filter((r) => r.hashes && r.hashes.length > 0);
-  if (hashedRequirements.length > 0) {
-    const requirementsFile = path.join(request.targetDir, ".requirements-lock.txt");
-    const content = `${hashedRequirements.map((r) => requirementFileLine(r)).join("\n")}\n`;
-    fs.writeFileSync(requirementsFile, content, { mode: 0o600 });
-    await checked(
-      runner,
-      uv,
-      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", "-r", requirementsFile],
-      { env },
-    );
+  // valid provenance mechanism, not a gap. `binaryOnly` names get `--only-binary`
+  // on both passes so an ABI-sensitive package can never silently fall back to a
+  // from-source build.
+  const binaryOnlyNames = new Set(request.runtime.binaryOnly ?? []);
+  const deferredNames = new Set(request.runtime.buildAfter ?? []);
+  const immediateRequirements = request.runtime.requirements.filter((r) => !deferredNames.has(r.name));
+  const deferredRequirements = request.runtime.requirements.filter((r) => deferredNames.has(r.name));
+
+  await installRequirementSet(runner, uv, python, request.targetDir, immediateRequirements, binaryOnlyNames, env, "");
+
+  // Stage 2: buildAfter requirements, in their own separate final invocation,
+  // strictly after every other requirement (including preInstall) has finished —
+  // for a package whose own build process imports an earlier dependency (e.g. an
+  // unpackaged git build that imports torch at setup time to select CUDA
+  // architecture flags), which a single combined resolver invocation cannot
+  // reliably sequence.
+  if (deferredRequirements.length > 0) {
+    request.onProgress?.({ step: "dependencies", message: "Installing buildAfter dependencies" });
+    await installRequirementSet(runner, uv, python, request.targetDir, deferredRequirements, binaryOnlyNames, env, "-deferred");
   }
-  await checked(
-    runner,
-    uv,
-    ["pip", "install", "--python", python, ...request.runtime.requirements.map((r) => requirementSpecifier(r))],
-    { env },
-  );
 
   const postInstall: PostInstallHookResult[] = [];
   for (const hook of request.runtime.postInstall ?? []) {

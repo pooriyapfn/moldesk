@@ -9,21 +9,51 @@ function segmentPattern(segment: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-/** Matches a manifest output glob (segment-wise `*` wildcards, e.g. "seqs/*.fa") against files under `root`. */
+/**
+ * Matches a manifest output glob (segment-wise `*` wildcards, e.g. "seqs/*.fa")
+ * against files under `root`. Uses `lstat`, never `stat`, at every level — a
+ * symlink (whether an intermediate directory-like entry or the final matched
+ * file) is never followed or trusted as a legitimate output. A model process
+ * could in principle write a symlink pointing outside `outputDir`; collecting
+ * and checksumming whatever that symlink resolves to would silently break
+ * output confinement, so any symlink is simply excluded from matching rather
+ * than resolved.
+ */
 function matchGlob(root: string, glob: string): string[] {
   let candidates = [root];
   for (const segment of glob.split("/")) {
     const pattern = segmentPattern(segment);
     const next: string[] = [];
     for (const dir of candidates) {
-      if (!fs.existsSync(dir)) continue;
+      // A prior segment's `*` wildcard matches any entry name, files included —
+      // only descend into it here if it's actually a real (non-symlink)
+      // directory. Without this check, a stray file (or a directory-symlink)
+      // sitting alongside the expected subdirectory would make `readdirSync`
+      // throw ENOTDIR instead of simply not matching.
+      let stat: fs.Stats;
+      try {
+        stat = fs.lstatSync(dir);
+      } catch {
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
       for (const entry of fs.readdirSync(dir)) {
         if (pattern.test(entry)) next.push(path.join(dir, entry));
       }
     }
     candidates = next;
   }
-  return candidates.filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile()).sort();
+  return candidates
+    .filter((entry) => {
+      let stat: fs.Stats;
+      try {
+        stat = fs.lstatSync(entry);
+      } catch {
+        return false;
+      }
+      return stat.isFile();
+    })
+    .sort();
 }
 
 /**

@@ -134,6 +134,183 @@ describe("installation runtime", () => {
     }
   });
 
+  it("wires extraIndexUrls into UV_EXTRA_INDEX_URL and findLinks into UV_FIND_LINKS, never replacing the default PyPI index, never as a raw CLI arg", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-index");
+    const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv }> = [];
+    const revision = "d".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/cuda-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        extraIndexUrls: ["https://download.pytorch.org/whl/cu117"],
+        findLinks: ["https://data.pyg.org/whl/torch-1.13.1+cu117.html"],
+        requirements: [{ name: "torch", version: "1.13.1+cu117" }],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args, options) => {
+        calls.push({ command, args, env: options?.env });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==1.13.1+cu117\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const uvCalls = calls.filter((call) => call.command === "uv");
+    expect(uvCalls.length).toBeGreaterThan(0);
+    for (const call of uvCalls) {
+      // Default PyPI is never overridden — only an extra index is added.
+      expect(call.env?.["UV_INDEX_URL"]).toBeUndefined();
+      expect(call.env?.["UV_EXTRA_INDEX_URL"]).toBe("https://download.pytorch.org/whl/cu117");
+      expect(call.env?.["UV_FIND_LINKS"]).toBe("https://data.pyg.org/whl/torch-1.13.1+cu117.html");
+      // Never passed as a bare positional/CLI arg — only via env, so it can never be
+      // mistaken for (or smuggled in as) an arbitrary pip command fragment.
+      expect(call.args.join(" ")).not.toContain("download.pytorch.org");
+    }
+  });
+
+  it("omits UV_EXTRA_INDEX_URL/UV_FIND_LINKS when a runtime entry declares neither", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-no-index");
+    const calls: Array<{ command: string; env?: NodeJS.ProcessEnv }> = [];
+    const revision = "e".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/plain-model",
+      revision,
+      runtime: { kind: "python", python: "3.11", installer: "uv", requirements: [{ name: "numpy", version: "1.26.4" }] },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args, options) => {
+        calls.push({ command, env: options?.env });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "numpy==1.26.4\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    for (const call of calls.filter((c) => c.command === "uv")) {
+      expect(call.env?.["UV_INDEX_URL"]).toBeUndefined();
+      expect(call.env?.["UV_EXTRA_INDEX_URL"]).toBeUndefined();
+      expect(call.env?.["UV_FIND_LINKS"]).toBeUndefined();
+    }
+  });
+
+  it("passes --only-binary for every binaryOnly-named package, on both the hashed and main install passes", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-binary-only");
+    const installCalls: string[][] = [];
+    const torchHash = createHash("sha256").update("torch").digest("hex");
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/binary-only-model",
+      revision: "f".repeat(40),
+      runtime: {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        binaryOnly: ["torch", "torch-scatter"],
+        requirements: [
+          { name: "torch", version: "1.13.1+cu117", hashes: [torchHash] },
+          { name: "torch-scatter", version: "2.1.0+pt113cu117" },
+          { name: "torch-geometric", version: "2.2.0" },
+        ],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        if (args[0] === "pip" && args[1] === "install") installCalls.push(args);
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${"f".repeat(40)}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==1.13.1+cu117\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.10.13\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(installCalls.length).toBeGreaterThan(0);
+    for (const args of installCalls) {
+      expect(args).toContain("--only-binary");
+      const binaryOnlyValues = args.flatMap((a, i) => (args[i - 1] === "--only-binary" ? [a] : []));
+      expect(binaryOnlyValues.sort()).toEqual(["torch", "torch-scatter"]);
+      // torch-geometric has no --only-binary flag of its own (no wheel exists for it at all).
+      expect(binaryOnlyValues).not.toContain("torch-geometric");
+    }
+  });
+
+  it("installs preInstall requirements first, each in its own call, before any other dependency install", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-pre-install");
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const revision = "1".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/pre-install-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        preInstall: [{ name: "setuptools", version: "69.5.1" }],
+        requirements: [{ name: "torch", version: "1.13.1+cu117" }],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==1.13.1+cu117\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.10.13\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const installCalls = calls.filter((c) => c.command === "uv" && c.args[0] === "pip" && c.args[1] === "install");
+    expect(installCalls[0]?.args).toEqual(expect.arrayContaining(["setuptools==69.5.1"]));
+    expect(installCalls[0]?.args).not.toContain("torch==1.13.1+cu117");
+    // preInstall's own call never bundles other requirements into the same invocation.
+    expect(installCalls[0]?.args.filter((a) => a === "setuptools==69.5.1")).toHaveLength(1);
+  });
+
+  it("defers buildAfter requirements to their own final install call, strictly after every other requirement", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-build-after");
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const revision = "2".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/build-after-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        buildAfter: ["openfold"],
+        requirements: [
+          { name: "torch", version: "1.13.1+cu117" },
+          { name: "openfold", source: "https://github.com/aqlaboratory/openfold", revision: "a".repeat(40) },
+        ],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==1.13.1+cu117\nopenfold==0.0.0\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.10.13\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const installCalls = calls.filter((c) => c.command === "uv" && c.args[0] === "pip" && c.args[1] === "install");
+    expect(installCalls).toHaveLength(2);
+    expect(installCalls[0]?.args).toContain("torch==1.13.1+cu117");
+    expect(installCalls[0]?.args.join(" ")).not.toContain("openfold");
+    expect(installCalls[1]?.args.join(" ")).toContain("openfold @ git+https://github.com/aqlaboratory/openfold");
+    expect(installCalls[1]?.args).not.toContain("torch==1.13.1+cu117");
+  });
+
   it("reuses an already-verified managed uv install without downloading", async () => {
     if (!release) return; // unsupported platform in UV_RELEASES; nothing to assert here.
     const paths = tempPaths();

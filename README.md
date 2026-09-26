@@ -1,10 +1,12 @@
 # MoleculeDesk
 
-MoleculeDesk is an open-source package manager and runtime for computational biology models.
+MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally.
 
 It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecular AI models easier to install and run on local machines, workstations, and remote GPU servers.
 
 Think of it as a simpler interface for scientific models:
+
+Read the [documentation](https://moleculedesk.com/docs), [Boltz-2 local guide](https://moleculedesk.com/docs/guides/run-boltz-locally), and [Apple Silicon support guide](https://moleculedesk.com/docs/guides/apple-silicon) for current commands and platform limits.
 
 ```bash
 npm install -g @moldesk/cli
@@ -26,14 +28,13 @@ Available:
 * `moldesk list` for model discovery
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
+* beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA is implemented but not yet verified on GPU hardware
 * `moldesk list --installed`, reinstall, and uninstall state management
 * `moldesk --version`
 * initial CLI and runtime architecture
 
 In progress:
 
-* `moldesk install boltz`
-* `moldesk run boltz input.yaml`
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
@@ -120,12 +121,15 @@ pnpm --filter @moldesk/cli dev -- doctor
 
 Model support is being added incrementally.
 
-| Model     | Status      |
-| --------- | ----------- |
-| Boltz     | In progress |
-| ColabFold | Planned     |
-| AlphaFold | Planned     |
-| Chai      | Planned     |
+| Model | Status |
+| --- | --- |
+| Boltz-2 | Beta; Apple Silicon MPS verified |
+| ProteinMPNN | Beta |
+| LigandMPNN | Beta |
+| DiffDock-L | Planned; adapter not yet live-verified |
+| ColabFold | Planned |
+| AlphaFold | Planned |
+| Chai | Planned |
 
 A model being listed here does not mean MoleculeDesk redistributes that model or its weights. Each model remains subject to its own license and usage terms.
 

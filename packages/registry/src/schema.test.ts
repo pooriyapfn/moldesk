@@ -230,6 +230,81 @@ describe("parseManifest", () => {
     expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
   });
 
+  it("accepts a python runtime entry's extraIndexUrls and findLinks (kept structurally distinct)", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        extraIndexUrls: ["https://download.pytorch.org/whl/cu117"],
+        findLinks: ["https://data.pyg.org/whl/torch-1.13.1+cu117.html"],
+        binaryOnly: ["torch", "torch-scatter"],
+        requirements: [{ name: "torch", version: "1.13.1+cu117", hashes: ["b".repeat(64)] }],
+      },
+    ];
+    const parsed = parseManifest(raw, "m.yaml");
+    expect(parsed.runtimes[0]).toMatchObject({
+      extraIndexUrls: ["https://download.pytorch.org/whl/cu117"],
+      findLinks: ["https://data.pyg.org/whl/torch-1.13.1+cu117.html"],
+      binaryOnly: ["torch", "torch-scatter"],
+    });
+  });
+
+  it("rejects a non-https extraIndexUrls/findLinks URL", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", extraIndexUrls: ["http://insecure.example/whl"], requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+    const raw2 = baseManifest();
+    raw2["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", findLinks: ["http://insecure.example/whl"], requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(raw2, "m.yaml")).toThrowError(MoldeskError);
+  });
+
+  it("rejects an empty extraIndexUrls array", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", extraIndexUrls: [], requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
+  it("accepts preInstall requirements and a buildAfter list referencing a real requirement", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        preInstall: [{ name: "setuptools", version: "69.5.1" }],
+        buildAfter: ["openfold"],
+        requirements: [
+          { name: "torch", version: "1.13.1+cu117" },
+          { name: "openfold", source: "https://github.com/aqlaboratory/openfold", revision: "a".repeat(40) },
+        ],
+      },
+    ];
+    const parsed = parseManifest(raw, "m.yaml");
+    expect(parsed.runtimes[0]).toMatchObject({ buildAfter: ["openfold"] });
+  });
+
+  it("rejects a buildAfter entry that does not match any requirement name", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        buildAfter: ["not-a-real-requirement"],
+        requirements: [{ name: "torch", version: "1.13.1+cu117" }],
+      },
+    ];
+    expect(() => parseManifest(raw, "m.yaml")).toThrowError(MoldeskError);
+  });
+
   it("rejects a python requirement with an invalid hash shape", () => {
     const raw = baseManifest();
     raw["runtimes"] = [
