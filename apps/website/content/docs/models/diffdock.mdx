@@ -50,6 +50,8 @@ DiffDock-L's pinned dependency stack (`torch==1.13.1+cu117` plus matching CUDA-b
 
 MoleculeDesk pins DiffDock-L to a specific upstream commit on `main` — which already ships the current DiffDock-L architecture by default (upstream's own legacy v1 model is reachable only via an old git tag) — plus the exact model-weights release asset and the ESM2 language-model checkpoint DiffDock-L's own pipeline always downloads to compute protein embeddings. See the [upstream DiffDock repository](https://github.com/gcorso/DiffDock) for full details on the model itself.
 
+<BenchmarkTable model="diffdock" />
+
 ## Verification status
 
 `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm pack:verify` all pass with DiffDock-L registered. `moldesk install diffdock` correctly fails closed on this (Darwin/arm64, no NVIDIA GPU) development machine, since no advertised platform matches. The real live gate — a clean install plus a docking run against the checked-in [example](https://github.com/gcorso/DiffDock) job — has not been executed and requires real Linux/NVIDIA hardware:
