@@ -47,7 +47,9 @@ export function BenchmarkTable({ model }: { model: string }) {
           {bench.displayName} benchmarks
         </h2>
         <p className="rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-          Pace and cost numbers for {bench.displayName} on NVIDIA CUDA are being measured and will appear here.
+          {bench.comingSoon
+            ? `${bench.displayName} is coming soon. Pace and cost numbers will be published here when it ships.`
+            : `Pace and cost numbers for ${bench.displayName} on NVIDIA CUDA are being measured and will appear here.`}
         </p>
       </section>
     );

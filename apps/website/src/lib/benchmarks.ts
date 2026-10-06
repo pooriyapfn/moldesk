@@ -39,6 +39,8 @@ export type ModelBenchmark = {
   /** Unit one "run" is billed in, e.g. "prediction", "design batch". */
   runUnit: string;
   results: BenchmarkResult[];
+  /** Model is not released yet; show "coming soon" instead of "being measured". */
+  comingSoon?: boolean;
 };
 
 export const hardware: Record<string, BenchmarkHardware> = {
@@ -121,7 +123,7 @@ export const benchmarks: ModelBenchmark[] = [
       },
     ],
   },
-  { model: "diffdock", displayName: "DiffDock-L", runUnit: "docking job", results: [] },
+  { model: "diffdock", displayName: "DiffDock-L", runUnit: "docking job", results: [], comingSoon: true },
   {
     model: "opendde",
     displayName: "OpenDDE Preview",
