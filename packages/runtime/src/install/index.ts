@@ -200,7 +200,9 @@ export async function ensureManagedUv(options: {
     if (listing.stdout.split(/\r?\n/).filter(Boolean).some((entry) => entry.startsWith("/") || entry.split("/").includes(".."))) {
       throw installError("UNSAFE_ARCHIVE_ENTRY", "Managed uv archive contains an unsafe path.", "Report the release artifact as unsafe.");
     }
-    await checked(runner, "tar", ["-xzf", object, "-C", staging]);
+    // Managed volumes may forbid chown even for root; archive owners are not
+    // part of the tool's provenance and should never replace the local owner.
+    await checked(runner, "tar", ["-xzf", object, "--no-same-owner", "-C", staging]);
     const extracted = path.join(staging, `uv-${release.triple}`, "uv");
     if (!fs.existsSync(extracted)) {
       throw installError("UV_ARCHIVE_INVALID", `Managed uv archive did not contain ${extracted}.`, "Retry download or report the pinned artifact.");
@@ -589,7 +591,7 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} contains unsafe path ${unsafeEntry}.`, "Report the registry asset as unsafe.");
   }
   if (asset.archive === "zip") await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
-  else await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-xzf" : "-xf", objectPath, "-C", target]);
+  else await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-xzf" : "-xf", objectPath, "--no-same-owner", "-C", target]);
   return target;
 }
 

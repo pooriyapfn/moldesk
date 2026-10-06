@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getMoldeskPaths } from "../filesystem/index.js";
 import {
   cacheAsset,
+  materializeAsset,
   ensureManagedUv,
   MANAGED_UV_VERSION,
   prepareDockerImage,
@@ -44,6 +46,25 @@ afterEach(() => {
 });
 
 describe("installation runtime", () => {
+  it.skipIf(process.platform === "win32").each(["tar", "tar.gz"] as const)("extracts %s assets with local ownership rather than archive uid/gid", async (archive) => {
+    const paths = tempPaths();
+    const source = path.join(paths.home, "fixture");
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, "weights.bin"), "verified checkpoint fixture");
+    const object = path.join(paths.home, `fixture.${archive}`);
+    const uid = process.getuid?.() ?? 0;
+    const gid = process.getgid?.() ?? 0;
+    const ownerArgs = process.platform === "darwin"
+      ? ["--uid", String(uid + 10000), "--gid", String(gid + 10000)]
+      : [`--owner=${uid + 10000}`, `--group=${gid + 10000}`];
+    execFileSync("tar", [archive === "tar.gz" ? "-czf" : "-cf", object, ...ownerArgs, "-C", source, "weights.bin"]);
+    const target = await materializeAsset({ id: "fixture", url: "https://example.test/fixture", sha256: createHash("sha256").update(fs.readFileSync(object)).digest("hex"), target: "weights", archive }, object, path.join(paths.home, "assets"));
+    const extracted = path.join(target, "weights.bin");
+    expect(fs.readFileSync(extracted, "utf8")).toBe("verified checkpoint fixture");
+    expect(fs.statSync(extracted).uid).toBe(uid);
+    expect(fs.statSync(extracted).gid).toBe(gid);
+  });
+
   it("resumes downloads, verifies SHA-256, and reuses the content-addressed object", async () => {
     const paths = tempPaths();
     const bytes = Buffer.from("checkpoint-content");
