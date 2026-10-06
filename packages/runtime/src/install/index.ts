@@ -129,6 +129,11 @@ function managedEnvironment(
   // PEP-503 index.
   if (options.extraIndexUrls && options.extraIndexUrls.length > 0) {
     env["UV_EXTRA_INDEX_URL"] = options.extraIndexUrls.join(" ");
+    // uv's default first-index strategy would let a manifest-declared extra index
+    // (PyTorch's cu117 index also lists e.g. `torchmetrics`) shadow an exact PyPI
+    // pin it lacks. The extra indexes are schema-validated manifest entries and
+    // every requirement is an exact `==` pin, so best-match across them is safe.
+    env["UV_INDEX_STRATEGY"] = "unsafe-best-match";
   }
   if (options.findLinks && options.findLinks.length > 0) {
     env["UV_FIND_LINKS"] = options.findLinks.join(" ");

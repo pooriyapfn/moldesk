@@ -40,6 +40,10 @@ runtimes:
         version: 3.1.1
       - name: scipy
         version: 1.12.0
+      # prody 2.4.1 imports `pkg_resources` at import time; a bare uv venv has no
+      # setuptools, and setuptools >= 81 no longer ships pkg_resources.
+      - name: setuptools
+        version: 69.5.1
 assets:
   - id: ligandmpnn-checkpoint
     url: https://files.ipd.uw.edu/pub/ligandmpnn/ligandmpnn_v_32_010_25.pt

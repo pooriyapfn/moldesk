@@ -364,6 +364,8 @@ describe("installation runtime", () => {
     expect(installs[0]?.env?.["UV_EXTRA_INDEX_URL"]).toBeUndefined();
     expect(installs[0]?.env?.["UV_FIND_LINKS"]).toBeUndefined();
     expect(installs[1]?.env?.["UV_EXTRA_INDEX_URL"]).toBe("https://download.pytorch.org/whl/cu117");
+    expect(installs[1]?.env?.["UV_INDEX_STRATEGY"]).toBe("unsafe-best-match");
+    expect(installs[0]?.env?.["UV_INDEX_STRATEGY"]).toBeUndefined();
   });
 
   it("defers buildAfter requirements to their own final install call, strictly after every other requirement", async () => {
