@@ -8,6 +8,7 @@ import {
   getSystemReport,
   redactEnv,
   runDir,
+  stageCompanionInputs,
   PythonRuntimeProvider,
   type MoldeskPaths,
   type RuntimeProvider,
@@ -53,7 +54,11 @@ export interface RunRecord {
   installationFingerprint: string;
   manifestSha256: string;
   hardware: SystemReport;
-  input: Array<{ originalPath: string; storedPath: string; sha256: string }>;
+  /** `role` is `"job"` for the primary submitted input and the companion's
+   * declared `id` for anything staged via `resolveCompanionInputs`/
+   * `stageCompanionInputs`. Optional/additive so existing single-input records
+   * (every entry implicitly the primary input) remain valid. */
+  input: Array<{ originalPath: string; storedPath: string; sha256: string; role?: string }>;
   parameters: { supplied: Record<string, unknown>; effective: Record<string, unknown> };
   command: { executable: string; args: string[]; cwd: string; env?: Record<string, string> };
   startedAt: string;
@@ -136,7 +141,18 @@ export async function runModel(
   }
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
-  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], options.params ?? {});
+
+  // Platform-dependent defaults (e.g. Boltz's `accelerator`) come from the adapter,
+  // not a static `ParamDescriptor.default`, since the right value depends on which
+  // platform-specific runtime entry was actually installed. Pre-seed `supplied` with
+  // them (as strings, since `validateParams` coerces from `--param` strings) for any
+  // key the caller didn't explicitly pass — an explicit `--param` always wins.
+  const dynamicDefaults = adapter.resolveParamDefaults?.({ manifestName: manifest.name, installed }) ?? {};
+  const suppliedParams = { ...(options.params ?? {}) };
+  for (const [key, value] of Object.entries(dynamicDefaults)) {
+    if (suppliedParams[key] === undefined) suppliedParams[key] = String(value);
+  }
+  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], suppliedParams);
   if (paramErrors.length > 0) {
     throw runFailure("INVALID_RUN_PARAMS", paramErrors.join("; "), "Fix the listed --param values and retry.", { errors: paramErrors });
   }
@@ -153,6 +169,27 @@ export async function runModel(
   const storedInputPath = path.join(inputDir, path.basename(resolvedInputPath));
   fs.copyFileSync(resolvedInputPath, storedInputPath);
   const inputSha256 = await sha256File(storedInputPath);
+  const inputRecords: RunRecord["input"] = [
+    { originalPath: resolvedInputPath, storedPath: storedInputPath, sha256: inputSha256, role: "job" },
+  ];
+
+  // Models whose job file references separate companion files (e.g. DiffDock-L's
+  // protein PDB + ligand file) declare them via `resolveCompanionInputs`, given the
+  // *original* (pre-copy) resolved job path so relative references resolve against
+  // where the job file actually lives. Absent means unchanged single-file behavior.
+  const companionRefs = await adapter.resolveCompanionInputs?.(resolvedInputPath) ?? [];
+  const stagedCompanions = companionRefs.length > 0
+    ? stageCompanionInputs({ jobFilePath: resolvedInputPath, refs: companionRefs, inputDir })
+    : [];
+  for (const staged of stagedCompanions) {
+    inputRecords.push({
+      originalPath: staged.originalPath,
+      storedPath: staged.storedPath,
+      sha256: await sha256File(staged.storedPath),
+      role: staged.id,
+    });
+  }
+  const companionInputs = stagedCompanions.map((staged) => ({ id: staged.id, path: staged.storedPath }));
 
   const hardware = await getSystemReport();
   const startedAt = new Date().toISOString();
@@ -168,7 +205,7 @@ export async function runModel(
     installationFingerprint: installed.runtime.fingerprint,
     manifestSha256: digest(manifest),
     hardware,
-    input: [{ originalPath: resolvedInputPath, storedPath: storedInputPath, sha256: inputSha256 }],
+    input: inputRecords,
     parameters: { supplied: options.params ?? {}, effective: effectiveParams },
     command: { executable: "", args: [], cwd: runDirPath },
     startedAt,
@@ -189,6 +226,8 @@ export async function runModel(
       assetsDir: path.join(installed.installDir, "assets"),
       params: effectiveParams,
       runtimeExecutable: installed.runtime.python.executable,
+      platform: installed.runtime.python.platform,
+      ...(companionInputs.length > 0 ? { companionInputs } : {}),
     });
     record.command = {
       executable: commandSpec.executable,
@@ -238,6 +277,8 @@ export async function runModel(
         assetsDir: path.join(installed.installDir, "assets"),
         params: effectiveParams,
         runtimeExecutable: installed.runtime.python.executable,
+        platform: installed.runtime.python.platform,
+        ...(companionInputs.length > 0 ? { companionInputs } : {}),
       });
       // --- Step 12: checksum + size each output. ---
       record.outputs = await Promise.all(

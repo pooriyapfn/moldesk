@@ -1,0 +1,34 @@
+export const metadata = {
+  title: "Model benchmarks: speed, GPU memory and cost per run",
+  description:
+    "Measured runtime, peak GPU memory and cost per run for every MoleculeDesk model (Boltz-2, ProteinMPNN, LigandMPNN, DiffDock-L, OpenDDE, BindCraft2) on NVIDIA CUDA hardware.",
+};
+
+# Model benchmarks: speed, GPU memory and cost per run
+
+These are real measurements from `moldesk run` on rented NVIDIA GPU hardware, so you can estimate how long a job will take and what it will cost before you start. Every model page shows the same table, and this page collects them all.
+
+## How to read these tables
+
+- **Cold** is the first run after install. It includes one-time work such as caching and kernel compilation.
+- **Warm** is the typical time for later runs. Use this for planning.
+- **Cost per run** is time multiplied by the GPU-hour price. If no price is shown, use `seconds ÷ 3600 × your provider's hourly price`.
+- **Peak GPU memory** tells you whether a model fits your card. A job that needs more memory than your GPU has will fail, so check this first.
+- Times depend on input size. Each table states the exact workload that was measured.
+
+<BenchmarkTable model="boltz" />
+
+<BenchmarkTable model="proteinmpnn" />
+
+<BenchmarkTable model="ligandmpnn" />
+
+<BenchmarkTable model="diffdock" />
+
+<BenchmarkTable model="opendde" />
+
+<BenchmarkTable model="bindcraft2" />
+
+## See also
+
+- [Model compatibility & registry](/docs/model-compatibility)
+- [Installation](/docs/installation)

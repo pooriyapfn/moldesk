@@ -60,4 +60,19 @@ describe("PythonRuntimeProvider.execute", () => {
     expect(fs.readFileSync(result.stderrPath, "utf8")).toContain("err");
     expect(chunks.some((c) => c.stream === "stdout" && c.text.includes("out"))).toBe(true);
   });
+
+  it("overlays adapter env vars on the inherited environment instead of replacing it", async () => {
+    const cwd = tempDir();
+    const provider = new PythonRuntimeProvider();
+    const result = await provider.execute({
+      executable: process.execPath,
+      args: ["-e", "process.stdout.write(JSON.stringify({ path: process.env.PATH ?? null, extra: process.env.MOLDESK_TEST_EXTRA ?? null }))"],
+      cwd,
+      env: { MOLDESK_TEST_EXTRA: "set-by-adapter" },
+    });
+    expect(result.exitCode).toBe(0);
+    const seen = JSON.parse(fs.readFileSync(result.stdoutPath, "utf8")) as { path: string | null; extra: string | null };
+    expect(seen.extra).toBe("set-by-adapter");
+    expect(seen.path).toBe(process.env["PATH"] ?? null);
+  });
 });

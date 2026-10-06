@@ -17,7 +17,16 @@ import {
   type AssetFetch,
   type MoldeskPaths,
 } from "@moldesk/runtime";
-import type { ModelManifestV1, RuntimeSpec } from "@moldesk/registry";
+import {
+  detectHostPlatformId,
+  effectiveRuntimeSource,
+  selectPythonRuntime,
+  type ModelManifestV1,
+  type PlatformId,
+  type PythonRuntimeSpec,
+  type RuntimeSpec,
+  type SourceSpec,
+} from "@moldesk/registry";
 import { MoldeskError } from "./errors.js";
 import { digest } from "./hash.js";
 import {
@@ -26,11 +35,23 @@ import {
   writeInstallState,
   readInstallState,
   type InstalledModel,
+  type InstalledPostInstallResult,
 } from "./install-state.js";
 
 export interface InstallationPlanResult {
   readonly manifest: ModelManifestV1;
+  /** The runtime entry actually selected for install: for a platform-aware python
+   * manifest (more than one python `runtimes[]` entry, or one declaring
+   * `platforms`), this is re-derived from `manifest.runtimes` for the current host
+   * platform, which may differ from the `runtime` argument passed in beyond its
+   * `kind`. Legacy single-entry, no-`platforms` manifests keep the argument as-is. */
   readonly runtime: RuntimeSpec;
+  /** The runtime's effective source: its own per-entry `source` override when
+   * present, otherwise `manifest.source`. Always defined when planning succeeds. */
+  readonly effectiveSource: SourceSpec;
+  /** The host platform `runtime` was resolved for, when determinable. `undefined`
+   * for a docker runtime or a host outside the supported `PlatformId` set. */
+  readonly resolvedPlatform?: PlatformId;
   readonly runtimeFingerprint: string;
   readonly targetDir: string;
   readonly plan: InstallPlan;
@@ -105,6 +126,33 @@ function installFailure(code: string, message: string, remediation: string, deta
   return new MoldeskError({ code, message, remediation, details });
 }
 
+/**
+ * Resolves the python runtime entry to actually install for `platform`.
+ *
+ * A legacy manifest whose `runtimes[]` has a single python entry with no
+ * `platforms` field (e.g. ProteinMPNN, LigandMPNN) trusts `requested` as-is,
+ * exactly as before per-platform runtime entries existed — this keeps every
+ * pre-existing manifest and caller (including tests that construct a synthetic
+ * runtime variant not literally present in `manifest.runtimes`, to exercise
+ * fingerprint coexistence) behaving identically.
+ *
+ * Any manifest that is platform-aware — more than one python `runtimes[]` entry,
+ * or a single entry that declares `platforms` — has its installed entry re-derived
+ * from `manifest.runtimes` for the current host platform via `selectPythonRuntime`,
+ * ignoring the literal identity of `requested` beyond its `kind`, and failing
+ * closed (before any staging directory is created) on zero or multiple matches.
+ */
+function resolvePythonRuntimeForInstall(
+  manifest: ModelManifestV1,
+  requested: PythonRuntimeSpec,
+  platform: PlatformId | undefined,
+): PythonRuntimeSpec {
+  const pythonEntries = manifest.runtimes.filter((r): r is PythonRuntimeSpec => r.kind === "python");
+  const platformAware = pythonEntries.length > 1 || pythonEntries.some((r) => r.platforms !== undefined);
+  if (!platformAware) return requested;
+  return selectPythonRuntime(manifest.runtimes, platform);
+}
+
 async function withModelLock<T>(paths: MoldeskPaths, key: string, operation: () => Promise<T>): Promise<T> {
   if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(key)) {
     throw installFailure("UNSAFE_MODEL_ID", `Unsafe installation lock key: ${JSON.stringify(key)}.`, "Use a lowercase model id from `moldesk list`.");
@@ -150,15 +198,29 @@ export async function createInstallationPlan(
   manifest: ModelManifestV1,
   runtime: RuntimeSpec,
   paths: MoldeskPaths = getMoldeskPaths(),
+  options: { platform?: PlatformId } = {},
 ): Promise<InstallationPlanResult> {
   const adapter = getAdapter(manifest.name);
   if (!adapter) {
     throw installFailure("ADAPTER_NOT_FOUND", `No installation adapter is registered for ${manifest.name}.`, "Choose an installable model from `moldesk list`.");
   }
-  if (!manifest.source) {
+
+  // Resolve the platform-specific runtime entry (and its effective source) before
+  // doing anything else, including before computing the fingerprint/targetDir that
+  // depend on it — fails closed via selectPythonRuntime's MoldeskError for a
+  // platform-aware manifest with zero or multiple matches.
+  const resolvedPlatform = options.platform ?? detectHostPlatformId();
+  const resolvedRuntime: RuntimeSpec = runtime.kind === "python"
+    ? resolvePythonRuntimeForInstall(manifest, runtime, resolvedPlatform)
+    : runtime;
+  const effectiveSource = resolvedRuntime.kind === "python"
+    ? effectiveRuntimeSource(manifest, resolvedRuntime)
+    : manifest.source;
+  if (!effectiveSource) {
     throw installFailure("SOURCE_PROVENANCE_MISSING", `${manifest.name} has no pinned source provenance.`, "The registry entry must include a repository and immutable revision.");
   }
-  const fingerprint = runtimeFingerprint(runtime);
+
+  const fingerprint = runtimeFingerprint(resolvedRuntime);
   const targetDir = modelInstallDir(manifest.name, manifest.modelVersion, fingerprint, { MOLDESK_HOME: paths.home });
   const adapterPlan = await adapter.installPlan({ manifestName: manifest.name, modelDir: targetDir, assetsDir: path.join(targetDir, "assets") });
   const plan = Object.freeze({ steps: Object.freeze([...adapterPlan.steps]) });
@@ -169,19 +231,21 @@ export async function createInstallationPlan(
   // A Python runtime's estimatedDownloadBytes/estimatedDiskBytes describe dependency
   // resolution cost that can't be known ahead of running `uv pip install`; treat an
   // undeclared estimate as unknown rather than silently rounding it to zero.
-  const runtimeDownloadUnknown = runtime.estimatedDownloadBytes === undefined;
-  const runtimeDiskUnknown = runtime.estimatedDiskBytes === undefined;
+  const runtimeDownloadUnknown = resolvedRuntime.estimatedDownloadBytes === undefined;
+  const runtimeDiskUnknown = resolvedRuntime.estimatedDiskBytes === undefined;
 
   return Object.freeze({
     manifest,
-    runtime,
+    runtime: resolvedRuntime,
+    effectiveSource,
+    resolvedPlatform: resolvedRuntime.kind === "python" ? resolvedPlatform : undefined,
     runtimeFingerprint: fingerprint,
     targetDir,
     plan,
     alreadyInstalled: listInstalledModels(paths).some((record) => record.installDir === targetDir),
-    estimatedDownloadBytes: assetDownloadBytes + (runtime.estimatedDownloadBytes ?? 0) +
-      (runtime.kind === "python" ? managedUvDownloadBytes(paths) : 0),
-    estimatedDiskBytes: runtime.estimatedDiskBytes ?? 0,
+    estimatedDownloadBytes: assetDownloadBytes + (resolvedRuntime.estimatedDownloadBytes ?? 0) +
+      (resolvedRuntime.kind === "python" ? managedUvDownloadBytes(paths) : 0),
+    estimatedDiskBytes: resolvedRuntime.estimatedDiskBytes ?? 0,
     downloadSizeUnknown: assetSizeUnknown || runtimeDownloadUnknown,
     diskSizeUnknown: runtimeDiskUnknown,
   });
@@ -192,14 +256,14 @@ export async function installModel(
   options: InstallModelOptions = {},
 ): Promise<InstallModelResult> {
   const paths = options.paths ?? getMoldeskPaths();
-  const { manifest, runtime, runtimeFingerprint: fingerprint, targetDir } = planned;
+  const { manifest, runtime, effectiveSource, resolvedPlatform, runtimeFingerprint: fingerprint, targetDir } = planned;
   const key = `${manifest.name}-${manifest.modelVersion}-${fingerprint}`;
   return withModelLock(paths, key, async () => {
     const adapter = getAdapter(manifest.name);
-    if (!adapter || !manifest.source) throw installFailure("ADAPTER_NOT_FOUND", `Cannot install ${manifest.name}.`, "Repair the registry installation.");
+    if (!adapter || !effectiveSource) throw installFailure("ADAPTER_NOT_FOUND", `Cannot install ${manifest.name}.`, "Repair the registry installation.");
     const existing = listInstalledModels(paths).find((record) => record.installDir === targetDir);
     if (existing && !options.reinstall) {
-      const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir: targetDir, assetsDir: path.join(targetDir, "assets"), runner: options.runner });
+      const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir: targetDir, assetsDir: path.join(targetDir, "assets"), runner: options.runner, ...(resolvedPlatform !== undefined ? { platform: resolvedPlatform } : {}) });
       if (verification.passed) return { status: "already-installed", installation: existing };
       throw installFailure("INSTALLATION_DAMAGED", `${manifest.name} is installed but verification failed: ${verification.output ?? "unknown reason"}.`, `Run \`moldesk install ${manifest.name} --reinstall --yes\`.`);
     }
@@ -212,11 +276,12 @@ export async function installModel(
     try {
       let dependencyLock: string[] = [];
       let runtimeVersion = "";
+      let postInstall: InstalledPostInstallResult[] = [];
       if (runtime.kind === "python") {
         const prepared = await preparePythonEnvironment({
           targetDir: staging,
-          repository: manifest.source.repository,
-          revision: manifest.source.revision,
+          repository: effectiveSource.repository,
+          revision: effectiveSource.revision,
           runtime,
           runner: options.runner,
           fetch: options.fetch,
@@ -226,6 +291,7 @@ export async function installModel(
         });
         dependencyLock = prepared.lock;
         runtimeVersion = prepared.pythonVersion;
+        postInstall = prepared.postInstall;
       } else {
         const prepared = await prepareDockerImage(runtime, options.runner);
         dependencyLock = [prepared.image];
@@ -239,7 +305,7 @@ export async function installModel(
       }
 
       options.onProgress?.({ step: "verify", message: "Verifying installation" });
-      const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir: staging, assetsDir: path.join(staging, "assets"), runner: options.runner });
+      const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir: staging, assetsDir: path.join(staging, "assets"), runner: options.runner, ...(resolvedPlatform !== undefined ? { platform: resolvedPlatform } : {}) });
       if (!verification.passed) {
         throw installFailure("INSTALL_VERIFICATION_FAILED", `Verification failed for ${manifest.name}: ${verification.output ?? "unknown reason"}.`, "Review logs and retry with --reinstall.");
       }
@@ -260,6 +326,9 @@ export async function installModel(
               version: runtimeVersion,
               executable: path.join(targetDir, ".venv", "bin", "python"),
               lockSha256: digest(dependencyLock),
+              ...(resolvedPlatform !== undefined ? { platform: resolvedPlatform } : {}),
+              platformSelected: runtime.platforms !== undefined,
+              postInstall,
             },
           } : { docker: { image: runtime.image, digest: runtime.digest } }),
         },
@@ -267,13 +336,13 @@ export async function installModel(
           runtime,
           runtimeVersion,
           dependencyLock,
-          sourceRevision: manifest.source.revision,
+          sourceRevision: effectiveSource.revision,
           platform: process.platform,
           architecture: process.arch,
           release: os.release(),
         }),
         installDir: targetDir,
-        source: manifest.source,
+        source: effectiveSource,
         assets: (manifest.assets ?? []).map((asset) => ({
           id: asset.id,
           path: path.join(targetDir, "assets", asset.target),

@@ -1,0 +1,219 @@
+schemaVersion: 1
+name: diffdock
+displayName: DiffDock-L
+modelVersion: "1.1"
+adapterVersion: 0.2.0
+description: Blind small-molecule docking against a protein, returning ranked poses and confidence (not binding affinity).
+category: docking
+status: planned
+license: MIT
+homepage: https://github.com/gcorso/DiffDock
+source:
+  repository: https://github.com/gcorso/DiffDock
+  # `main` already ships DiffDock-L by default (upstream README: "By default the
+  # repository now runs the new model [DiffDock-L]... use GitHub commit history
+  # to run the original DiffDock model" for legacy v1). Verified live against
+  # upstream on 2026-09-23 via `git ls-remote` (this was HEAD of `main` at that
+  # time) — re-verify before promoting this model past `planned`, since `main`
+  # moves.
+  revision: 85c49b60d3e0b0182a59ee43a34a6d7036981284
+runtimes:
+  # Linux/NVIDIA only. Upstream's pinned dependency stack (torch==1.13.1+cu117
+  # plus matching cu117-built torch-geometric extension wheels) is CUDA/Linux
+  # specific with no Apple Silicon build; there is no genuine CPU-only path
+  # either (upstream exposes no --device/--cpu/--gpu flag — device selection is
+  # its own unconditional `torch.device('cuda' if torch.cuda.is_available() else
+  # 'cpu')`). `nvidiaGpu`/`cuda` are `required`, not `recommended`: this
+  # adapter's verifyInstallation runs a mandatory CUDA probe, matching the
+  # Boltz Linux/CUDA precedent, so a CUDA-less host fails install verification
+  # rather than silently succeeding into a CPU-fallback-capable install.
+  - kind: python
+    # torch==1.13.1+cu117's matching PyTorch Geometric extension wheels
+    # (torch-scatter/torch-cluster/torch-sparse/torch-spline-conv at the exact
+    # pinned +pt113cu117 build) are published on data.pyg.org only up to
+    # cp310 — verified live on 2026-09-23 by listing
+    # https://data.pyg.org/whl/torch-1.13.1+cu117.html: no cp311 build exists
+    # for these packages at this torch+CUDA combination. Python 3.10, not
+    # 3.11, is required for this runtime entry.
+    python: "3.10"
+    installer: uv
+    platforms:
+      - linux-x64
+    # PyTorch's own cu117 build is on a real PEP-503-compatible extra index
+    # (the officially documented `--extra-index-url` pattern) — added
+    # ALONGSIDE default PyPI, never replacing it, so ordinary packages
+    # (pandas, scipy, rdkit, …) still resolve normally. PyTorch Geometric's
+    # CUDA extension wheels (torch-scatter/torch-cluster/torch-sparse/
+    # torch-spline-conv) are published only as a flat wheel-listing page —
+    # genuinely a `--find-links` page, not a PEP-503 index (verified live on
+    # 2026-09-24: the page has no per-package subdirectory structure) —
+    # upstream's own environment.yml uses exactly this split
+    # (`--extra-index-url https://download.pytorch.org/whl/cu117` /
+    # `--find-links https://pytorch-geometric.com/whl/torch-1.13.1+cu117.html`;
+    # findLinks below points at data.pyg.org directly, the canonical host
+    # that URL redirects to, confirmed to serve the identical wheel listing).
+    extraIndexUrls:
+      - https://download.pytorch.org/whl/cu117
+    findLinks:
+      - https://data.pyg.org/whl/torch-1.13.1+cu117.html
+    # Every ABI-sensitive CUDA extension package pinned below also carries a
+    # real `hashes` entry (downloaded and verified byte-for-byte on
+    # 2026-09-24) AND is listed here so `--only-binary <name>` is passed on
+    # every install invocation — install fails closed rather than silently
+    # falling back to a from-source build if wheel resolution ever fails.
+    # torch-geometric is deliberately excluded: it has no published wheel at
+    # all (PyPI only ships an sdist), and it is pure Python with no CUDA/ABI
+    # concern, so building it from source is normal and expected.
+    binaryOnly:
+      - torch
+      - torch-cluster
+      - torch-scatter
+      - torch-sparse
+      - torch-spline-conv
+    nvidiaGpu: required
+    cuda:
+      level: required
+    # Upstream's own environment.yml (not requirements.txt, which omits this
+    # entirely) installs an older `setuptools` via conda BEFORE anything else
+    # (verified live on 2026-09-24). It also keeps `pkg_resources`, which several
+    # of the pinned packages expect, available in the bare uv venv.
+    preInstall:
+      - name: setuptools
+        version: 69.5.1
+    # `openfold` is intentionally NOT installed. Upstream builds it so ESMFold can
+    # predict a structure from a bare sequence (`inference.py --protein_sequence`,
+    # `esm.pretrained.esmfold_v1()`), but compiling its CUDA extension needs a
+    # full CUDA 11.7 toolkit (nvcc) matching torch 1.13.1+cu117, which modern GPU
+    # hosts (CUDA 12.x) do not have and which PyPI does not ship (the cu11 nvcc
+    # wheel has no compiler driver). This adapter only accepts a protein
+    # structure file (`proteinPath`), so that code path is never reached; docking
+    # from a PDB uses only ESM2 embeddings (`esm.pretrained`), which do not need
+    # openfold.
+    requirements:
+      - name: torch
+        version: 1.13.1+cu117
+        hashes:
+          - 14c5c9db09df8cf1b3942a3479c779da6e293a84a162d8a6ac71e2bde30e30c5
+      - name: torch-geometric
+        version: "2.2.0"
+        hashes:
+          - fdb282451fc33270e8e0b81d9aec7b70590363227dab0b1a7cb50a91d7b98e1d
+      - name: torch-cluster
+        version: 1.6.0+pt113cu117
+        hashes:
+          - ee94470e92ec17ec94fdeae19e2c0a7bf1cb15505c8f8c4206388774f6c4886a
+      - name: torch-scatter
+        version: 2.1.0+pt113cu117
+        hashes:
+          - 9e26507e54f0cf7b09fe039c5a5d897f53bbbb991c86d4c27115909411236168
+      - name: torch-sparse
+        version: 0.6.16+pt113cu117
+        hashes:
+          - c23999bc4e24379d8ae807176bb31eb6ce47288fc5e0126141761339b0f07225
+      - name: torch-spline-conv
+        version: 1.2.1+pt113cu117
+        hashes:
+          - cf39e3af57084261afaabb233055f5f0b00df5bba51bd58947112ee4f9a7eb6f
+      # environment.yml pins e3nn==0.5.1 and adds pytorch-lightning==1.9.5,
+      # neither of which matches/exists in requirements.txt (which pins
+      # e3nn==0.5.0 and omits pytorch-lightning entirely) — verified live on
+      # 2026-09-24 that environment.yml is the more carefully maintained,
+      # explicitly-sequenced install recipe (it has ordering-rationale
+      # comments requirements.txt lacks), so its pins are followed here.
+      - name: e3nn
+        version: "0.5.1"
+      - name: pytorch-lightning
+        version: "1.9.5"
+      - name: fair-esm
+        version: "2.0.0"
+        extras:
+          - esmfold
+      - name: rdkit
+        version: 2022.03.3
+      - name: scipy
+        version: "1.12.0"
+      - name: scikit-learn
+        version: "1.1.0"
+      - name: networkx
+        version: 2.8.4
+      - name: pandas
+        version: 1.5.1
+      # Upstream pins prody 2.2.0, which has no wheel for CPython 3.10 and whose C
+      # extension (rtbtools.c) fails to compile on current toolchains. 2.4.1 builds
+      # and imports on 3.10 (verified on Linux x64) and DiffDock only uses it for
+      # PDB parsing/chi angles in datasets/parse_chi.py.
+      - name: prody
+        version: "2.4.1"
+      # Upstream leaves numpy unpinned; unpinned resolves to numpy 2.x, which breaks
+      # the pinned pandas 1.5.1 and torch 1.13.1 builds. 1.23.5 matches that era.
+      - name: numpy
+        version: "1.23.5"
+      - name: pybind11
+        version: 2.11.1
+      - name: torchmetrics
+        version: 0.11.0
+      # Upstream's own requirements.txt/environment.yml pin dllogger unpinned
+      # (`dllogger@git+https://github.com/NVIDIA/dllogger.git`, no @revision) —
+      # a real upstream laxity, not something to carry over. This pins the
+      # exact commit that was dllogger's HEAD when verified on 2026-09-23; a
+      # future revalidation should re-check whether upstream has since pinned
+      # a specific commit of its own to adopt instead.
+      - name: dllogger
+        source: https://github.com/NVIDIA/dllogger
+        revision: 0478734ff7be75adde8d160e04872664d1c62e5f
+# `inference.py` silently downloads `diffdock_models.zip` from a GitHub release
+# on first run when `--model_dir` doesn't already exist
+# (`utils/download.py:download_and_extract`), and separately, every run
+# unconditionally computes ESM2 language-model embeddings
+# (`utils/inference_utils.py`'s `InferenceDataset` is always constructed with
+# `lm_embeddings=True`), which downloads the `esm2_t33_650M_UR50D` checkpoint
+# into torch.hub's cache dir on first use — both are real, verified network
+# fetches into an otherwise uncontrolled location, not just the one obvious
+# weights archive. All three artifacts are pinned here with checksums
+# downloaded and verified byte-for-byte on 2026-09-23, and the adapter always
+# passes `--model_dir`/`--confidence_model_dir` pointing at the pre-populated
+# `diffdock-weights` target plus `TORCH_HOME` pointing at the pre-populated
+# `torch-home` target, so neither download path is ever reached during a real
+# run.
+assets:
+  - id: diffdock-l-weights
+    url: https://github.com/gcorso/DiffDock/releases/download/v1.1/diffdock_models.zip
+    source: https://github.com/gcorso/DiffDock
+    sha256: 5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d
+    sizeBytes: 129825226
+    archive: zip
+    target: diffdock-weights
+  - id: esm2-t33-650m-ur50d
+    url: https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t33_650M_UR50D.pt
+    source: https://github.com/facebookresearch/esm
+    license: MIT
+    sha256: ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c
+    sizeBytes: 2604537549
+    target: torch-home/hub/checkpoints/esm2_t33_650M_UR50D.pt
+  - id: esm2-t33-650m-ur50d-contact-regression
+    url: https://dl.fbaipublicfiles.com/fair-esm/regression/esm2_t33_650M_UR50D-contact-regression.pt
+    source: https://github.com/facebookresearch/esm
+    license: MIT
+    sha256: 8ffe6edbd4173dc8d45c2cd5cb27d43aad77ec26b4c768200c58ae1f96693575
+    sizeBytes: 3687
+    target: torch-home/hub/checkpoints/esm2_t33_650M_UR50D-contact-regression.pt
+hardware:
+  platforms:
+    - linux-x64
+  nvidiaGpu: required
+  cuda:
+    level: required
+input:
+  formats:
+    - .json
+  required: true
+outputs:
+  - id: top_pose
+    glob: "*/rank1.sdf"
+    required: true
+  - id: ranked_poses
+    glob: "*/rank*_confidence*.sdf"
+    required: true
+  - id: poses_summary
+    glob: "poses_summary.json"
+    required: true

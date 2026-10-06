@@ -3,11 +3,17 @@ import type { ModelManifestV1 } from "@moldesk/registry";
 import { proteinmpnnAdapter } from "./proteinmpnn/index.js";
 import { ligandmpnnAdapter } from "./ligandmpnn/index.js";
 import { boltzAdapter } from "./boltz/index.js";
+import { diffdockAdapter } from "./diffdock/index.js";
+import { openddeAdapter } from "./opendde/index.js";
+import { bindcraft2Adapter } from "./bindcraft2/index.js";
 
 export const adapterCatalog: Record<string, ModelAdapterDefinition> = {
+  bindcraft2: bindcraft2Adapter,
   proteinmpnn: proteinmpnnAdapter,
   ligandmpnn: ligandmpnnAdapter,
   boltz: boltzAdapter,
+  diffdock: diffdockAdapter,
+  opendde: openddeAdapter,
 };
 
 export function getAdapter(modelName: string): ModelAdapterDefinition | undefined {

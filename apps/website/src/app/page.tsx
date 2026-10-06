@@ -63,7 +63,7 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Supported models
             </span>
-            {["ProteinMPNN", "LigandMPNN"].map((name) => (
+            {["Boltz", "OpenDDE", "ProteinMPNN", "LigandMPNN"].map((name) => (
               <span
                 key={name}
                 className="rounded-full border border-accent bg-accent-soft px-4 py-[7px] font-mono text-[13px] text-foreground"
@@ -76,7 +76,7 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Coming soon
             </span>
-            {["Boltz-2", "AlphaFold", "ColabFold", "Chai"].map((name) => (
+            {["DiffDock-L", "BindCraft2", "AlphaFold", "ColabFold", "Chai"].map((name) => (
               <span
                 key={name}
                 className="rounded-full border border-border px-4 py-[7px] font-mono text-[13px] text-muted"
@@ -105,19 +105,19 @@ export default function Home() {
 
       <section className="border-t border-border bg-white">
         <div className="mx-auto w-full max-w-[1240px] px-8 py-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Start with the current model workflow</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Start with a real workflow</h2>
           <p className="mt-3 max-w-2xl leading-relaxed text-muted">
-            Check platform support, follow a working model example, and see which integrations are planned.
+            Check platform support, run a prediction, and inspect the files the CLI reports.
           </p>
           <div className="mt-6 flex flex-col gap-3 text-sm">
-            <Link href="/docs/models/proteinmpnn" className="text-accent hover:underline">
-              Run a ProteinMPNN sequence-design example →
-            </Link>
             <Link href="/docs/guides/run-boltz-locally" className="text-accent hover:underline">
-              Check Boltz-2 local support →
+              How to run Boltz-2 locally →
             </Link>
             <Link href="/docs/guides/apple-silicon" className="text-accent hover:underline">
               Which molecular AI models run on Apple Silicon? →
+            </Link>
+            <Link href="/docs/model-compatibility" className="text-accent hover:underline">
+              Check model status and compatibility →
             </Link>
           </div>
         </div>

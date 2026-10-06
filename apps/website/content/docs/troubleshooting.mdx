@@ -5,6 +5,18 @@ export const metadata = {
 
 # Troubleshooting & FAQ
 
+### The installer finished but `moldesk` says "command not found"
+
+Open a **new** terminal window: the installer adds `moldesk` to your shell profile, and already-open terminals do not see the change. To use it in the current window, run `export PATH="$HOME/.moldesk/bin:$PATH"`. If you installed with `MOLDESK_NO_MODIFY_PATH=1`, add that folder to your PATH yourself.
+
+### The installer says my system is not supported
+
+The installer supports macOS and Linux on 64-bit Intel/AMD or ARM processors. On Windows, use [WSL2](https://learn.microsoft.com/windows/wsl/install) and run the install command in the Ubuntu terminal. Alpine Linux (musl) is not supported yet. If `curl` or `wget` is missing on Ubuntu or Debian, run `sudo apt-get install -y curl` first.
+
+### How do I update or remove MoleculeDesk itself?
+
+See [Update and Remove](/docs/installation#update) on the installation page. Updating is re-running the install command.
+
 ### Do I need a GPU?
 
 It depends on the model. `moldesk doctor` reports whether an NVIDIA GPU/CUDA is required or just recommended for each model, based on its manifest. Some models can run on CPU, just more slowly.

@@ -1,30 +1,39 @@
 export const metadata = {
-  title: "Running Boltz-2 locally: current MoleculeDesk status",
+  title: "How to run Boltz-2 locally",
   description:
-    "Can you run Boltz-2 locally with MoleculeDesk? Current support status, planned requirements, and working model alternatives.",
+    "Install and run Boltz-2 locally with MoleculeDesk: platform support, a real YAML input, CLI commands, and expected outputs.",
 };
 
-# Can you run Boltz-2 locally with MoleculeDesk?
+# How to run Boltz-2 locally
 
-**Not yet.** Boltz-2 is listed in MoleculeDesk's registry, but `moldesk install boltz` and `moldesk run boltz` are still in progress. MoleculeDesk has not completed end-to-end verification of Boltz installation, input validation, execution, and output collection. The [Boltz-2 model page](/docs/models/boltz) is the source of truth for its current status.
+MoleculeDesk can install and run Boltz-2 on an Apple Silicon Mac using its MPS runtime. This path has been verified with a real prediction. The Linux x64/NVIDIA CUDA path has also been verified with real installs and predictions on an NVIDIA RTX 3090 (see the [benchmarks](/docs/models/boltz#bench-boltz)). Boltz-2 support is **beta**.
 
-## What Boltz-2 is for
+## What you need
 
-[Boltz-2](https://github.com/jwohlwend/boltz) is an open-source model for biomolecular structure and binding-affinity prediction. Its input and output formats differ from MoleculeDesk's working sequence-design models. A ProteinMPNN run is **not** a substitute for a Boltz-2 structure or affinity prediction.
+- An Apple Silicon Mac (MPS), or a Linux x64 machine with an NVIDIA GPU (CUDA).
+- A Mac or Linux computer. Nothing else needs to be installed first: the MoleculeDesk installer sets up what it needs.
+- Disk space and a network connection for the model environment and checkpoints during installation.
 
-## What you can do today
+Run `moldesk doctor` before installing. It reports your detected hardware and software compatibility. See [Boltz-2 model requirements](/docs/models/boltz#requirements) for the current Python, platform, accelerator, and file-format details.
 
-Use `moldesk doctor` to inspect your machine and `moldesk list` to see model status. For a working MoleculeDesk workflow, [ProteinMPNN](/docs/models/proteinmpnn) and [LigandMPNN](/docs/models/ligandmpnn) have beta installation and run support. They design amino-acid sequences from a supplied structure.
+## Install and run a prediction
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
 moldesk doctor
-moldesk list
-moldesk install proteinmpnn
+moldesk install boltz
+git clone https://github.com/pooriyapfn/moldesk.git
+moldesk run boltz moldesk/examples/boltz/protein.yaml
 ```
 
-The [ProteinMPNN model page](/docs/models/proteinmpnn#example) includes a real structure input and runnable command. If you need Boltz-2 now, use the [upstream Boltz installation and prediction instructions](https://github.com/jwohlwend/boltz) directly until MoleculeDesk's adapter is ready.
+The [example YAML input](https://github.com/pooriyapfn/moldesk/blob/main/examples/boltz/protein.yaml) is a single-protein job sourced from Boltz's upstream examples. It uses `msa: empty`, so the prediction does not need an MSA search service. You can also provide your own Boltz `.yaml`, `.yml`, or `.fasta` file.
 
-## Planned MoleculeDesk integration
+## Find the outputs
 
-The registry describes a pinned Boltz-2 source and expected YAML or FASTA inputs. These are **planned requirements**, not proof that the CLI can install or run Boltz-2 today. Check the [model compatibility guide](/docs/model-compatibility) for what `planned` and `beta` mean, and revisit the [Boltz-2 model page](/docs/models/boltz) for status updates.
+The CLI reports the run status, run directory, and declared output file paths. Boltz-2 produces a predicted structure (`.cif`) and confidence data (`.json`); affinity output (`.json`) applies when the input requests it. See [CLI usage](/docs/cli-usage) for `--output <dir>` and machine-readable `--json` results.
+
+## Is this the right model?
+
+Boltz-2 predicts biomolecular structures and can estimate binding affinity for suitable inputs. For structure-conditioned **sequence design**, see [ProteinMPNN](/docs/models/proteinmpnn) or [LigandMPNN](/docs/models/ligandmpnn). For blind small-molecule docking, [DiffDock-L](/docs/models/diffdock) is planned in MoleculeDesk and is not yet live-verified.
+
+MoleculeDesk manages installation and execution; scientific interpretation and validation of predictions remain part of the research workflow. See the [upstream Boltz project](https://github.com/jwohlwend/boltz) for model methods and input details.

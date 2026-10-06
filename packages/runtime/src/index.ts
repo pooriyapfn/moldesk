@@ -36,8 +36,9 @@ export {
   pythonToolDir,
   runDir,
   uvToolDir,
+  stageCompanionInputs,
 } from "./filesystem/index.js";
-export type { MoldeskPaths } from "./filesystem/index.js";
+export type { MoldeskPaths, CompanionInputRef, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
 export type {
   ExecuteRequest,
   ExecutionResult,
@@ -77,6 +78,7 @@ export type {
   AssetFetch,
   InstallCommandRunner,
   InstallProgress,
+  PostInstallHookResult,
   PreparedPythonEnvironment,
   PythonInstallRequest,
 } from "./install/index.js";

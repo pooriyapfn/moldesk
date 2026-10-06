@@ -1,0 +1,9 @@
+{
+  "targets": [{ "name": "dynorphin_a", "target_path": "target.fasta" }],
+  "modality": "binder",
+  "binder_lengths": [50, 50],
+  "number_of_final_designs": 1,
+  "max_trajectories": 1,
+  "campaign_seed": 101,
+  "resume": false
+}

@@ -15,11 +15,14 @@ export type {
   ModelStatus,
   OutputSpec,
   PlatformId,
+  PostInstallHook,
+  PythonRequirement,
   PythonRuntimeSpec,
   DockerRuntimeSpec,
   RequirementLevel,
   RuntimeKind,
   RuntimeSpec,
+  SourceSpec,
 } from "./schema.js";
 export type { LegacyModelManifest } from "./types.js";
 export {
@@ -28,3 +31,8 @@ export {
   loadManifestFile,
   parseManifest,
 } from "./loader.js";
+export {
+  detectHostPlatformId,
+  effectiveRuntimeSource,
+  selectPythonRuntime,
+} from "./runtime-selection.js";

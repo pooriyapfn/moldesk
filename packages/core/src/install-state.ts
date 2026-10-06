@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getMoldeskPaths, modelInstallDir, type MoldeskPaths } from "@moldesk/runtime";
-import type { RuntimeKind } from "@moldesk/registry";
+import type { PlatformId, PostInstallHook, RuntimeKind } from "@moldesk/registry";
+
+export interface InstalledPostInstallResult {
+  hook: PostInstallHook | string;
+  stdout: string;
+  stderr: string;
+}
 
 export interface InstalledModel {
   schemaVersion: 1;
@@ -14,7 +20,20 @@ export interface InstalledModel {
   runtime: {
     kind: RuntimeKind;
     fingerprint: string;
-    python?: { version: string; executable: string; lockSha256: string };
+    python?: {
+      version: string;
+      executable: string;
+      lockSha256: string;
+      /** The host platform the selected runtime entry was resolved for, when
+       * determinable (`undefined` on a host outside the supported PlatformId set). */
+      platform?: PlatformId;
+      /** True when the manifest declared a `platforms` field on the selected entry
+       * (a genuine per-platform selection happened) vs. a legacy entry with none. */
+      platformSelected: boolean;
+      /** One entry per `postInstall` hook that ran, in declared order; empty when
+       * the selected runtime entry declared none. */
+      postInstall: InstalledPostInstallResult[];
+    };
     docker?: { image: string; digest: string };
   };
   environmentFingerprint: string;

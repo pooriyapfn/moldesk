@@ -57,12 +57,45 @@ const requirementLevel = z.enum(["required", "recommended", "unsupported"]);
 const category = z.enum(["sequence-design", "structure-prediction", "docking", "other"]);
 const platformId = z.enum(["darwin-arm64", "linux-x64"]);
 
+/** Closed enum of named, non-shell post-install fixups. Never a free-form command
+ * string — this keeps the manifest from becoming a generic shell escape hatch. */
+const postInstallHookSchema = z.enum(["boltz-fix-macos-libomp"]);
+
+const cudaSchema = z
+  .object({
+    level: requirementLevel,
+    // Minimum driver-supported CUDA version, e.g. "12.1" — compared against the
+    // driver's max-supported CUDA (not the local CUDA toolkit) as a major.minor
+    // floor, not a semver range.
+    minDriverCudaVersion: z
+      .string()
+      .regex(/^\d+\.\d+$/, "must be a major.minor CUDA version, e.g. \"12.1\"")
+      .optional(),
+  })
+  .strict();
+
+const sourceSchema = z
+  .object({
+    repository: httpsUrl,
+    revision: z
+      .string()
+      .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a full immutable commit digest"),
+  })
+  .strict();
+
 const pythonRequirementSchema = z
   .object({
     name: z.string().min(1),
     version: z.string().min(1).optional(),
     source: z.string().min(1).optional(),
     revision: z.string().min(1).optional(),
+    // Optional PEP 508 extras, e.g. ["cuda"] for `boltz[cuda]`. Valid with either a
+    // PyPI version pin or a git source+revision pin (pip/uv both support
+    // `name[extra] @ git+url@rev`).
+    extras: z.array(z.string().min(1)).min(1).optional(),
+    // sha256 hex digests of the expected wheel/sdist artifact(s), enforced natively
+    // by uv/pip's hash-checking install mode when present.
+    hashes: z.array(sha256Hex).min(1).optional(),
   })
   .strict();
 
@@ -74,6 +107,60 @@ const pythonRuntimeSchema = z
     estimatedDownloadBytes: z.number().int().nonnegative().optional(),
     estimatedDiskBytes: z.number().int().nonnegative().optional(),
     requirements: z.array(pythonRequirementSchema).min(1),
+    // When present, this runtime entry only applies to hosts matching one of these
+    // platforms; absent means it applies unconditionally (legacy single-runtime
+    // manifests, e.g. ProteinMPNN/LigandMPNN, always match this way).
+    platforms: z.array(platformId).min(1).optional(),
+    // Per-entry source override, falling back to the manifest-level `source` when
+    // absent — needed when different platforms build from genuinely different repos.
+    source: sourceSchema.optional(),
+    postInstall: z.array(postInstallHookSchema).min(1).optional(),
+    // Per-platform-runtime-entry accelerator requirements, same shape as the
+    // manifest-level `hardware.nvidiaGpu`/`hardware.cuda`/`hardware.minVramGb`, so a
+    // single manifest can declare CUDA on one platform and MPS (no CUDA) on another.
+    nvidiaGpu: requirementLevel.optional(),
+    cuda: cudaSchema.optional(),
+    minVramGb: z.number().positive().optional(),
+    // Additional PEP-503-style pip/uv package indexes, ADDED alongside the default
+    // PyPI index (never replacing it — a manifest never loses access to ordinary
+    // packages like pandas/scipy just because it needs a CUDA-specific extra
+    // index). Maps to `UV_EXTRA_INDEX_URL`. For a pinned build whose exact wheels
+    // (e.g. a CUDA-specific PyTorch build) live on a PEP-503-compatible extra
+    // index rather than default PyPI.
+    extraIndexUrls: z.array(httpsUrl).min(1).max(4).optional(),
+    // Flat `--find-links` wheel-listing pages (not PEP-503 indexes — a single page
+    // listing wheel files directly, e.g. PyTorch Geometric's CUDA extension wheel
+    // pages). Maps to `UV_FIND_LINKS`. Kept structurally distinct from
+    // `extraIndexUrls` because the two have different pip/uv semantics and mixing
+    // them up silently breaks resolution (this is exactly what an earlier version
+    // of this schema got wrong for DiffDock-L).
+    findLinks: z.array(httpsUrl).min(1).max(4).optional(),
+    // Package names (matching a `requirements[].name`) that must resolve to a
+    // prebuilt wheel and must never be built from source, mapped to `--only-binary
+    // <name>` on every install invocation. Exists so an ABI-sensitive CUDA
+    // extension package (torch-scatter, torch-sparse, …) can never silently fall
+    // back to a from-source sdist build if wheel resolution ever fails for some
+    // reason — install fails closed instead.
+    binaryOnly: z.array(z.string().min(1)).min(1).optional(),
+    // Requirements installed first, each in its own `uv pip install` invocation, in
+    // array order, before anything in `requirements` — for a package (e.g. a pinned
+    // `setuptools` version) that a later requirement's own source build depends on
+    // being fully resolved beforehand, not just present somewhere in the same
+    // resolver graph.
+    preInstall: z.array(pythonRequirementSchema).min(1).optional(),
+    // Names (matching `requirements[].name`) deferred to their own final install
+    // invocation, strictly after every other requirement (including `preInstall`)
+    // has finished installing — for a package whose own build process imports an
+    // earlier dependency (e.g. an unpackaged git build that imports `torch` at
+    // setup time to select CUDA architecture flags), which a single combined
+    // resolver invocation cannot reliably sequence.
+    buildAfter: z.array(z.string().min(1)).min(1).optional(),
+    // PyTorch build selection for uv's native `--torch-backend` (mapped to
+    // `UV_TORCH_BACKEND`), which routes torch-ecosystem packages to the matching
+    // official PyTorch index. A closed enum, never a free-form index URL or pip
+    // argument fragment — extend it only alongside a manifest that actually pins
+    // and verifies that backend's wheels.
+    torchBackend: z.enum(["cpu", "cu126"]).optional(),
   })
   .strict();
 
@@ -92,19 +179,6 @@ const runtimeSpecSchema = z.discriminatedUnion("kind", [
   pythonRuntimeSchema,
   dockerRuntimeSchema,
 ]);
-
-const cudaSchema = z
-  .object({
-    level: requirementLevel,
-    // Minimum driver-supported CUDA version, e.g. "12.1" — compared against the
-    // driver's max-supported CUDA (not the local CUDA toolkit) as a major.minor
-    // floor, not a semver range.
-    minDriverCudaVersion: z
-      .string()
-      .regex(/^\d+\.\d+$/, "must be a major.minor CUDA version, e.g. \"12.1\"")
-      .optional(),
-  })
-  .strict();
 
 const hardwareSchema = z
   .object({
@@ -126,7 +200,7 @@ const assetSchema = z
     sha256: sha256Hex,
     target: safeTarget,
     sizeBytes: z.number().int().nonnegative().optional(),
-    archive: z.enum(["none", "tar.gz", "zip"]).optional(),
+    archive: z.enum(["none", "tar.gz", "tar", "zip"]).optional(),
   })
   .strict();
 
@@ -148,15 +222,6 @@ const outputSpecSchema = z
     message: "must be a safe path relative to the staged output directory",
     path: ["glob"],
   });
-
-const sourceSchema = z
-  .object({
-    repository: httpsUrl,
-    revision: z
-      .string()
-      .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a full immutable commit digest"),
-  })
-  .strict();
 
 const adapterVerificationSchema = z
   .object({
@@ -222,6 +287,28 @@ export const modelManifestV1Schema = z
         path: ["hardware", "nvidiaGpu"],
       });
     }
+    for (const [runtimeIndex, runtime] of val.runtimes.entries()) {
+      if (runtime.kind !== "python") continue;
+      if (runtime.minVramGb !== undefined && runtime.nvidiaGpu === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "nvidiaGpu must be set (\"required\" or \"recommended\") whenever this runtime entry's minVramGb is specified",
+          path: ["runtimes", runtimeIndex, "nvidiaGpu"],
+        });
+      }
+      if (runtime.buildAfter) {
+        const requirementNames = new Set(runtime.requirements.map((r) => r.name));
+        for (const deferredName of runtime.buildAfter) {
+          if (!requirementNames.has(deferredName)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `buildAfter references "${deferredName}", which is not in this runtime entry's requirements`,
+              path: ["runtimes", runtimeIndex, "buildAfter"],
+            });
+          }
+        }
+      }
+    }
     const names = new Set<string>();
     for (const out of val.outputs) {
       if (names.has(out.id)) {
@@ -280,6 +367,8 @@ export type RuntimeKind = z.infer<typeof runtimeKind>;
 export type RequirementLevel = z.infer<typeof requirementLevel>;
 export type ModelCategory = z.infer<typeof category>;
 export type PlatformId = z.infer<typeof platformId>;
+export type PostInstallHook = z.infer<typeof postInstallHookSchema>;
+export type PythonRequirement = z.infer<typeof pythonRequirementSchema>;
 export type PythonRuntimeSpec = z.infer<typeof pythonRuntimeSchema>;
 export type DockerRuntimeSpec = z.infer<typeof dockerRuntimeSchema>;
 export type RuntimeSpec = z.infer<typeof runtimeSpecSchema>;
@@ -287,5 +376,6 @@ export type HardwareRequirements = z.infer<typeof hardwareSchema>;
 export type AssetSpec = z.infer<typeof assetSchema>;
 export type InputSpec = z.infer<typeof inputSpecSchema>;
 export type OutputSpec = z.infer<typeof outputSpecSchema>;
+export type SourceSpec = z.infer<typeof sourceSchema>;
 export type ModelManifestV1 = z.infer<typeof modelManifestV1Schema>;
 export type CommandSpec = z.infer<typeof commandSpecSchema>;

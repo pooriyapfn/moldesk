@@ -1,19 +1,69 @@
 export const metadata = {
   title: "Installation",
-  description: "Install the MoleculeDesk CLI via npm, Docker, or from source, and run moldesk doctor.",
+  description: "Install the MoleculeDesk CLI on macOS or Linux with one command, no Node.js or npm needed, then run moldesk doctor.",
 };
 
 # Installation
 
-## npm (recommended)
+## Quick install (macOS and Linux)
+
+Open a terminal and paste:
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
+```
+
+Then open a **new** terminal window and run:
+
+```bash
 moldesk --version
 moldesk doctor
 ```
 
+You do not need to install anything first: no Node.js, no npm, no Python, and no administrator password. The installer:
+
+- checks your computer and explains clearly if something is not supported;
+- downloads a private copy of Node.js (checksum verified) only if you do not already have a recent one;
+- installs the MoleculeDesk command into `~/.moldesk`, and adds one line to your shell profile so the `moldesk` command is found in new terminals.
+
 `moldesk doctor` checks your system and hardware — Python, Docker, CUDA, GPU, RAM, and disk — and explains what's compatible with which models.
+
+Windows: install [WSL2](https://learn.microsoft.com/windows/wsl/install), open the Ubuntu terminal, and run the same command there.
+
+### Update
+
+Run the same command again. It updates MoleculeDesk and keeps your models.
+
+### Remove
+
+```bash
+rm -rf ~/.moldesk/cli ~/.moldesk/node ~/.moldesk/bin
+```
+
+Then delete the line ending in `# MoleculeDesk` from `~/.zshrc`, `~/.bashrc` or `~/.profile`. Installed models live in `~/.moldesk/models`; delete the whole `~/.moldesk` folder to remove them too.
+
+### Remote GPU servers
+
+Home folders on cloud GPU machines are often small. Put everything on the large disk by setting `MOLDESK_HOME` for the installer (and for later commands):
+
+```bash
+curl -fsSL https://moleculedesk.com/install.sh | MOLDESK_HOME=/workspace/.moldesk sh
+export MOLDESK_HOME=/workspace/.moldesk
+export PATH="$MOLDESK_HOME/bin:$PATH"
+moldesk doctor
+```
+
+Models need disk space: a single model can use 6 to 17 GB, so check `moldesk doctor` first.
+
+### Installer options
+
+Set these before `sh` as shown above:
+
+- `MOLDESK_HOME=<folder>` — install and data location (default `~/.moldesk`).
+- `MOLDESK_NO_MODIFY_PATH=1` — do not edit your shell profile.
+- `MOLDESK_CLI_SPEC=<npm package>` — install a specific version, for example `@moldesk/cli@0.0.1`.
+
+You can read the script before running it: [moleculedesk.com/install.sh](/install.sh).
 
 ## Docker
 

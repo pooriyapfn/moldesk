@@ -31,10 +31,19 @@ export interface PythonInstallRequest {
   onProgress?: (progress: InstallProgress) => void;
 }
 
+export interface PostInstallHookResult {
+  hook: string;
+  stdout: string;
+  stderr: string;
+}
+
 export interface PreparedPythonEnvironment {
   executable: string;
   lock: string[];
   pythonVersion: string;
+  /** One entry per `runtime.postInstall` hook that ran, in declared order. Empty
+   * when the runtime declares no postInstall hooks. */
+  postInstall: PostInstallHookResult[];
 }
 
 export interface PreparedDockerImage {
@@ -82,9 +91,12 @@ async function checked(
 ): Promise<RunResult> {
   const result = await runner(command, args, { ...options, timeoutMs: options.timeoutMs ?? 30 * 60_000 });
   if (result.code !== 0 || result.timedOut) {
+    // Surface the tail of the tool's own output so a failed install is diagnosable
+    // from the CLI message alone, without digging through structured details.
+    const tail = (result.stderr || result.stdout || "").trim().split("\n").slice(-15).join("\n");
     throw installError(
       "INSTALL_COMMAND_FAILED",
-      `${command} ${args.join(" ")} failed${result.timedOut ? " (timed out)" : ` with exit code ${result.code}`}.`,
+      `${command} ${args.join(" ")} failed${result.timedOut ? " (timed out)" : ` with exit code ${result.code}`}.${tail ? `\n${tail}` : ""}`,
       "Review command output, network access, and disk space, then run install --reinstall.",
       { command, args, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut },
     );
@@ -92,7 +104,11 @@ async function checked(
   return result;
 }
 
-function managedEnvironment(paths: MoldeskPaths, pythonVersion: string): NodeJS.ProcessEnv {
+function managedEnvironment(
+  paths: MoldeskPaths,
+  pythonVersion: string,
+  options: { extraIndexUrls?: string[]; findLinks?: string[]; torchBackend?: string } = {},
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env["PATH"],
     TMPDIR: process.env["TMPDIR"],
@@ -103,6 +119,28 @@ function managedEnvironment(paths: MoldeskPaths, pythonVersion: string): NodeJS.
     UV_PYTHON_PREFERENCE: "only-managed",
     UV_NO_PROGRESS: "1",
   };
+  // Deliberately never overrides UV_INDEX_URL (the default/primary index stays
+  // PyPI) — a runtime entry that needs a CUDA-specific extra index (e.g. PyTorch's
+  // own cu117 index) must not lose access to ordinary packages like pandas/scipy
+  // by replacing the default index outright. `extraIndexUrls` (PEP-503-style
+  // indexes) and `findLinks` (flat wheel-listing pages, a distinct pip/uv
+  // mechanism) are kept as separate fields precisely because conflating them
+  // breaks resolution — a page meant for `--find-links` is not always a valid
+  // PEP-503 index.
+  if (options.extraIndexUrls && options.extraIndexUrls.length > 0) {
+    env["UV_EXTRA_INDEX_URL"] = options.extraIndexUrls.join(" ");
+    // uv's default first-index strategy would let a manifest-declared extra index
+    // (PyTorch's cu117 index also lists e.g. `torchmetrics`) shadow an exact PyPI
+    // pin it lacks. The extra indexes are schema-validated manifest entries and
+    // every requirement is an exact `==` pin, so best-match across them is safe.
+    env["UV_INDEX_STRATEGY"] = "unsafe-best-match";
+  }
+  if (options.findLinks && options.findLinks.length > 0) {
+    env["UV_FIND_LINKS"] = options.findLinks.join(" ");
+  }
+  // Schema-validated closed enum (e.g. "cu126"); uv routes torch-ecosystem
+  // packages to the matching official PyTorch index.
+  if (options.torchBackend) env["UV_TORCH_BACKEND"] = options.torchBackend;
   for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]) {
     if (process.env[name]) env[name] = process.env[name];
   }
@@ -170,7 +208,9 @@ export async function ensureManagedUv(options: {
     if (listing.stdout.split(/\r?\n/).filter(Boolean).some((entry) => entry.startsWith("/") || entry.split("/").includes(".."))) {
       throw installError("UNSAFE_ARCHIVE_ENTRY", "Managed uv archive contains an unsafe path.", "Report the release artifact as unsafe.");
     }
-    await checked(runner, "tar", ["-xzf", object, "-C", staging]);
+    // Managed volumes may forbid chown even for root; archive owners are not
+    // part of the tool's provenance and should never replace the local owner.
+    await checked(runner, "tar", ["-xzf", object, "--no-same-owner", "-C", staging]);
     const extracted = path.join(staging, `uv-${release.triple}`, "uv");
     if (!fs.existsSync(extracted)) {
       throw installError("UV_ARCHIVE_INVALID", `Managed uv archive did not contain ${extracted}.`, "Retry download or report the pinned artifact.");
@@ -197,21 +237,102 @@ export async function ensureManagedUv(options: {
   }
 }
 
-function requirementArgs(runtime: PythonRuntimeSpec): string[] {
-  return runtime.requirements.map((requirement) => {
-    if (requirement.source) {
-      const revision = requirement.revision ? `@${requirement.revision}` : "";
-      return `${requirement.name} @ git+${requirement.source}${revision}`;
-    }
-    return requirement.version ? `${requirement.name}==${requirement.version}` : requirement.name;
-  });
+function requirementSpecifier(requirement: PythonRuntimeSpec["requirements"][number]): string {
+  const nameWithExtras =
+    requirement.extras && requirement.extras.length > 0
+      ? `${requirement.name}[${requirement.extras.join(",")}]`
+      : requirement.name;
+  if (requirement.source) {
+    const revision = requirement.revision ? `@${requirement.revision}` : "";
+    return `${nameWithExtras} @ git+${requirement.source}${revision}`;
+  }
+  return requirement.version ? `${nameWithExtras}==${requirement.version}` : nameWithExtras;
+}
+
+/**
+ * One requirements-file line per requirement, with `--hash=sha256:<digest>` tokens
+ * appended when the requirement declares hashes. Hash-checking mode (uv/pip's
+ * `--require-hashes`) is only reliable via a requirements file — not as bare CLI
+ * args mixed across multiple packages — so hashed installs always go through
+ * `preparePythonEnvironment`'s `-r <file>` path, never the positional-args path.
+ */
+function requirementFileLine(requirement: PythonRuntimeSpec["requirements"][number]): string {
+  const specifier = requirementSpecifier(requirement);
+  if (!requirement.hashes || requirement.hashes.length === 0) return specifier;
+  return `${specifier} ${requirement.hashes.map((h) => `--hash=sha256:${h}`).join(" ")}`;
+}
+
+/**
+ * Fixed dispatch table for `postInstall` hook names: named, non-shell fixups. Each
+ * handler receives the venv's bin directory and runs a literal, reviewed executable
+ * name from it via the injected runner — never a shell, never an interpolated
+ * manifest string, so `postInstall` can never become a generic command escape hatch.
+ */
+const POST_INSTALL_HOOKS: Record<string, (venvBinDir: string, runner: InstallCommandRunner) => Promise<RunResult>> = {
+  "boltz-fix-macos-libomp": (venvBinDir, runner) =>
+    checked(runner, path.join(venvBinDir, "boltz-fix-macos-libomp"), []),
+};
+
+/**
+ * Runs the existing two-pass install (verify hash-declared requirements by
+ * artifact digest with `--no-deps`, then a normal resolving pass over every
+ * requirement in the set) for one *stage* of requirements — a stage being
+ * either the main `requirements[]` set or a `buildAfter`-deferred subset,
+ * installed via its own separate invocation so a git-built package that
+ * imports an earlier dependency at build time (e.g. openfold importing torch)
+ * only ever builds after that dependency is already fully installed.
+ * `--only-binary <name>` is appended for every requirement in `binaryOnlyNames`
+ * so an ABI-sensitive CUDA extension package can never silently fall back to
+ * building from source — install fails closed instead.
+ * `noBuildIsolation` builds in the venv itself (not uv's throwaway build env), so
+ * a build that imports an already-installed dependency (torch) can find it.
+ */
+async function installRequirementSet(
+  runner: InstallCommandRunner,
+  uv: string,
+  python: string,
+  targetDir: string,
+  requirements: PythonRuntimeSpec["requirements"],
+  binaryOnlyNames: Set<string>,
+  env: NodeJS.ProcessEnv,
+  lockFileSuffix: string,
+  noBuildIsolation = false,
+): Promise<void> {
+  if (requirements.length === 0) return;
+  const isolationArgs = noBuildIsolation ? ["--no-build-isolation"] : [];
+  const binaryOnlyArgs = requirements
+    .filter((r) => binaryOnlyNames.has(r.name))
+    .flatMap((r) => ["--only-binary", r.name]);
+
+  const hashedRequirements = requirements.filter((r) => r.hashes && r.hashes.length > 0);
+  if (hashedRequirements.length > 0) {
+    const requirementsFile = path.join(targetDir, `.requirements-lock${lockFileSuffix}.txt`);
+    const content = `${hashedRequirements.map((r) => requirementFileLine(r)).join("\n")}\n`;
+    fs.writeFileSync(requirementsFile, content, { mode: 0o600 });
+    await checked(
+      runner,
+      uv,
+      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", ...isolationArgs, ...binaryOnlyArgs, "-r", requirementsFile],
+      { env },
+    );
+  }
+  await checked(
+    runner,
+    uv,
+    ["pip", "install", "--python", python, ...isolationArgs, ...binaryOnlyArgs, ...requirements.map((r) => requirementSpecifier(r))],
+    { env },
+  );
 }
 
 export async function preparePythonEnvironment(request: PythonInstallRequest): Promise<PreparedPythonEnvironment> {
   const runner = request.runner ?? runCommand;
   const paths = request.paths ?? getMoldeskPaths();
   const uv = request.uvExecutable ?? await ensureManagedUv({ paths, fetch: request.fetch, runner, onProgress: request.onProgress });
-  const env = managedEnvironment(paths, request.runtime.python);
+  const env = managedEnvironment(paths, request.runtime.python, {
+    extraIndexUrls: request.runtime.extraIndexUrls,
+    findLinks: request.runtime.findLinks,
+    torchBackend: request.runtime.torchBackend,
+  });
   const sourceDir = path.join(request.targetDir, "source");
   const venvDir = path.join(request.targetDir, ".venv");
   const python = process.platform === "win32"
@@ -235,15 +356,85 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
 
   request.onProgress?.({ step: "python", message: `Preparing managed Python ${request.runtime.python}` });
   await checked(runner, uv, ["python", "install", request.runtime.python], { env });
-  await checked(runner, uv, ["venv", "--python", request.runtime.python, venvDir], { env });
+  // --relocatable: installs happen in a `.partial-<pid>-<uuid>` staging directory
+  // that is atomically renamed to its final target on success (see
+  // packages/core/src/installation.ts). Without this flag, console scripts uv
+  // generates (e.g. `boltz`) bake the staging path into their shebang line and
+  // break after the rename — confirmed by a real install+run on this machine
+  // (`exec: .../.partial-.../.venv/bin/python: No such file or directory`).
+  await checked(runner, uv, ["venv", "--relocatable", "--python", request.runtime.python, venvDir], { env });
   request.onProgress?.({ step: "dependencies", message: "Installing pinned dependencies" });
-  await checked(runner, uv, ["pip", "install", "--python", python, ...requirementArgs(request.runtime)], { env });
+
+  // Stage 0: preInstall requirements, each its own separate invocation, strictly
+  // before anything else — for a package (e.g. a pinned older `setuptools`) whose
+  // own version a later requirement's source build depends on already being fully
+  // resolved, not merely present somewhere in the same combined resolver graph.
+  // preInstall resolves against PyPI only: uv's default first-index strategy would
+  // otherwise let an extra index that merely lists the package name (e.g. PyTorch's
+  // cu117 index carries a stale `setuptools`) shadow the pinned PyPI version.
+  const preInstallEnv = managedEnvironment(paths, request.runtime.python);
+  for (const req of request.runtime.preInstall ?? []) {
+    request.onProgress?.({ step: "dependencies", message: `Installing ${req.name} (preInstall)` });
+    await checked(runner, uv, ["pip", "install", "--python", python, requirementSpecifier(req)], { env: preInstallEnv });
+  }
+
+  // uv/pip's --require-hashes mode demands every requirement resolved by a given
+  // install invocation be hashed, including the full transitive closure — not
+  // just the manifest-declared top-level packages (confirmed directly: `uv pip
+  // install --require-hashes` refuses over an unhashed transitive dependency like
+  // `filelock`). Hand-pinning an entire transitive closure per model isn't
+  // practical or what this manifest schema is for. Instead, verify each
+  // hash-declared requirement's own artifact by digest with `--no-deps` (so only
+  // that one wheel/sdist is checked, no transitive resolution), then do a second,
+  // ordinary install pass over every requirement (hashed ones included, by their
+  // plain specifier) so normal dependency resolution installs the rest of the
+  // closure. A requirement pinned by git source+revision has no fixed artifact
+  // hash to check at all (it's built from source) — that's a distinct, equally
+  // valid provenance mechanism, not a gap. `binaryOnly` names get `--only-binary`
+  // on both passes so an ABI-sensitive package can never silently fall back to a
+  // from-source build.
+  const binaryOnlyNames = new Set(request.runtime.binaryOnly ?? []);
+  const deferredNames = new Set(request.runtime.buildAfter ?? []);
+  const immediateRequirements = request.runtime.requirements.filter((r) => !deferredNames.has(r.name));
+  const deferredRequirements = request.runtime.requirements.filter((r) => deferredNames.has(r.name));
+
+  await installRequirementSet(runner, uv, python, request.targetDir, immediateRequirements, binaryOnlyNames, env, "");
+
+  // Stage 2: buildAfter requirements, in their own separate final invocation,
+  // strictly after every other requirement (including preInstall) has finished —
+  // for a package whose own build process imports an earlier dependency (e.g. an
+  // unpackaged git build that imports torch at setup time to select CUDA
+  // architecture flags), which a single combined resolver invocation cannot
+  // reliably sequence.
+  if (deferredRequirements.length > 0) {
+    request.onProgress?.({ step: "dependencies", message: "Installing buildAfter dependencies" });
+    await installRequirementSet(runner, uv, python, request.targetDir, deferredRequirements, binaryOnlyNames, env, "-deferred", true);
+  }
+
+  const postInstall: PostInstallHookResult[] = [];
+  for (const hook of request.runtime.postInstall ?? []) {
+    const handler = POST_INSTALL_HOOKS[hook];
+    if (!handler) {
+      throw installError(
+        "POST_INSTALL_HOOK_UNKNOWN",
+        `Unknown postInstall hook "${hook}".`,
+        "This is a MoleculeDesk bug — report it; the schema should have rejected this value.",
+        { hook },
+      );
+    }
+    request.onProgress?.({ step: "post-install", message: `Running postInstall hook ${hook}` });
+    const venvBinDir = path.dirname(python);
+    const result = await handler(venvBinDir, runner);
+    postInstall.push({ hook, stdout: result.stdout, stderr: result.stderr });
+  }
+
   const freeze = await checked(runner, uv, ["pip", "freeze", "--python", python], { env });
   const version = await checked(runner, python, ["--version"], { env });
   return {
     executable: python,
     lock: freeze.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).sort(),
     pythonVersion: `${version.stdout}\n${version.stderr}`.trim(),
+    postInstall,
   };
 }
 
@@ -404,9 +595,9 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     return target;
   }
   fs.mkdirSync(target, { recursive: true });
-  const listing = asset.archive === "tar.gz"
-    ? await checked(runCommand, "tar", ["-tzf", objectPath])
-    : await checked(runCommand, "unzip", ["-Z1", objectPath]);
+  const listing = asset.archive === "zip"
+    ? await checked(runCommand, "unzip", ["-Z1", objectPath])
+    : await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-tzf" : "-tf", objectPath]);
   const unsafeEntry = listing.stdout.split(/\r?\n/).filter(Boolean).find((entry) => {
     const normalized = entry.replaceAll("\\", "/");
     return normalized.startsWith("/") || normalized.split("/").some((part) => part === "..");
@@ -415,8 +606,8 @@ export async function materializeAsset(asset: AssetSpec, objectPath: string, ass
     fs.rmSync(target, { recursive: true, force: true });
     throw installError("UNSAFE_ARCHIVE_ENTRY", `Archive ${asset.id} contains unsafe path ${unsafeEntry}.`, "Report the registry asset as unsafe.");
   }
-  if (asset.archive === "tar.gz") await checked(runCommand, "tar", ["-xzf", objectPath, "-C", target]);
-  else await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
+  if (asset.archive === "zip") await checked(runCommand, "unzip", ["-q", objectPath, "-d", target]);
+  else await checked(runCommand, "tar", [asset.archive === "tar.gz" ? "-xzf" : "-xf", objectPath, "--no-same-owner", "-C", target]);
   return target;
 }
 

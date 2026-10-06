@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getMoldeskPaths, type InstallCommandRunner } from "@moldesk/runtime";
-import { listAvailableModels } from "@moldesk/registry";
+import { listAvailableModels, type ModelManifestV1, type RuntimeSpec } from "@moldesk/registry";
 import { listInstalledModels } from "./install-state.js";
 import {
   createInstallationPlan,
@@ -127,6 +127,146 @@ describe("model installation lifecycle", () => {
     expect(fs.existsSync(planned.targetDir)).toBe(false);
     expect(listInstalledModels(paths)).toEqual([]);
     expect(fs.existsSync(path.dirname(planned.targetDir)) ? fs.readdirSync(path.dirname(planned.targetDir)).some((name) => name.includes(".partial-")) : false).toBe(false);
+  });
+});
+
+/** A synthetic two-platform manifest built on the registered "proteinmpnn" adapter
+ * (so `installPlan`/`verifyInstallation` resolve) but with two platform-scoped
+ * python runtime entries and distinct per-entry `source` overrides, exactly the
+ * shape a future dual-runtime manifest (e.g. Boltz) will use. */
+function dualPlatformManifest(): ModelManifestV1 {
+  const base = listAvailableModels().find((item) => item.name === "proteinmpnn")!;
+  const darwinSource = { repository: "https://github.com/example/darwin-fork", revision: "a".repeat(40) };
+  const linuxSource = { repository: "https://github.com/example/linux-official", revision: "b".repeat(40) };
+  const runtimes: RuntimeSpec[] = [
+    {
+      kind: "python",
+      python: "3.11",
+      installer: "uv",
+      platforms: ["darwin-arm64"],
+      source: darwinSource,
+      postInstall: ["boltz-fix-macos-libomp"],
+      requirements: [{ name: "torch", version: "2.6.0" }],
+    },
+    {
+      kind: "python",
+      python: "3.11",
+      installer: "uv",
+      platforms: ["linux-x64"],
+      source: linuxSource,
+      requirements: [{ name: "torch", version: "2.2.1" }],
+    },
+  ];
+  return { ...base, source: undefined, assets: [], runtimes };
+}
+
+function dualPlatformRunner(): InstallCommandRunner {
+  // Tracks the revision most recently fetched, so `rev-parse HEAD` can echo it back
+  // correctly regardless of which of the two entries' distinct revisions is being
+  // installed in a given call.
+  let lastFetchedRevision = "";
+  return async (command, args) => {
+    if (command === "git" && args[0] === "init") {
+      const source = args[1]!;
+      fs.mkdirSync(path.join(source, "vanilla_model_weights"), { recursive: true });
+      fs.mkdirSync(path.join(path.dirname(source), "assets", "vanilla_model_weights"), { recursive: true });
+      fs.writeFileSync(path.join(source, "protein_mpnn_run.py"), "# pinned source\n");
+      fs.writeFileSync(path.join(source, "vanilla_model_weights", "v_48_020.pt"), "weights");
+      fs.writeFileSync(path.join(path.dirname(source), "assets", "vanilla_model_weights", "v_48_020.pt"), "weights");
+    }
+    if (command === "git" && args.includes("fetch")) {
+      lastFetchedRevision = args.at(-1)!;
+    }
+    if (command === "git" && args.includes("rev-parse")) return { code: 0, stdout: `${lastFetchedRevision}\n`, stderr: "" };
+    if (command === "uv" && args[0] === "venv") fs.mkdirSync(path.join(args.at(-1)!, "bin"), { recursive: true });
+    if (command === "uv" && args.includes("freeze")) return { code: 0, stdout: "torch==2.2.1\n", stderr: "" };
+    if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+    if (command.endsWith("boltz-fix-macos-libomp")) return { code: 0, stdout: "fixed libomp\n", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+}
+
+describe("platform-aware runtime selection", () => {
+  it("resolves the darwin-arm64 entry's source/fingerprint/postInstall, and the linux-x64 entry's separately, for the same manifest", async () => {
+    const paths = tempPaths();
+    const manifest = dualPlatformManifest();
+
+    const darwinPlanned = await createInstallationPlan(manifest, manifest.runtimes[0]!, paths, { platform: "darwin-arm64" });
+    expect(darwinPlanned.effectiveSource).toEqual({ repository: "https://github.com/example/darwin-fork", revision: "a".repeat(40) });
+    expect(darwinPlanned.resolvedPlatform).toBe("darwin-arm64");
+    expect((darwinPlanned.runtime as { platforms?: string[] }).platforms).toEqual(["darwin-arm64"]);
+
+    const linuxPlanned = await createInstallationPlan(manifest, manifest.runtimes[1]!, paths, { platform: "linux-x64" });
+    expect(linuxPlanned.effectiveSource).toEqual({ repository: "https://github.com/example/linux-official", revision: "b".repeat(40) });
+    expect(linuxPlanned.resolvedPlatform).toBe("linux-x64");
+
+    expect(darwinPlanned.targetDir).not.toBe(linuxPlanned.targetDir);
+    expect(darwinPlanned.runtimeFingerprint).not.toBe(linuxPlanned.runtimeFingerprint);
+  });
+
+  it("resolves the correct entry regardless of which same-kind candidate the caller passed in (core re-derives from the manifest, not caller identity)", async () => {
+    const paths = tempPaths();
+    const manifest = dualPlatformManifest();
+    // Pass the LINUX entry as `runtime` while requesting the DARWIN platform — core
+    // must still resolve the darwin entry, proving selection is platform-driven.
+    const planned = await createInstallationPlan(manifest, manifest.runtimes[1]!, paths, { platform: "darwin-arm64" });
+    expect(planned.effectiveSource.repository).toBe("https://github.com/example/darwin-fork");
+  });
+
+  it("fails closed with RUNTIME_PLATFORM_UNSUPPORTED before creating any staging directory on an unsupported OS/arch", async () => {
+    const paths = tempPaths();
+    const manifest = dualPlatformManifest();
+    manifest.runtimes = [manifest.runtimes[1]!]; // only the linux-x64 entry remains
+    await expect(createInstallationPlan(manifest, manifest.runtimes[0]!, paths, { platform: "darwin-arm64" }))
+      .rejects.toMatchObject({ code: "RUNTIME_PLATFORM_UNSUPPORTED" });
+    expect(fs.existsSync(paths.models) ? fs.readdirSync(paths.models) : []).toEqual([]);
+  });
+
+
+  it("fails closed with RUNTIME_SELECTION_AMBIGUOUS when two entries both match the same platform", async () => {
+    const paths = tempPaths();
+    const manifest = dualPlatformManifest();
+    manifest.runtimes = [
+      manifest.runtimes[0]!,
+      { ...(manifest.runtimes[0] as RuntimeSpec & { kind: "python" }), python: "3.12" },
+    ];
+    await expect(createInstallationPlan(manifest, manifest.runtimes[0]!, paths, { platform: "darwin-arm64" }))
+      .rejects.toMatchObject({ code: "RUNTIME_SELECTION_AMBIGUOUS" });
+  });
+
+  it("runs postInstall only for the platform entry that declares it, and records platform/postInstall/source provenance", async () => {
+    const paths = tempPaths();
+    const manifest = dualPlatformManifest();
+    const runner = dualPlatformRunner();
+
+    const darwinPlanned = await createInstallationPlan(manifest, manifest.runtimes[0]!, paths, { platform: "darwin-arm64" });
+    const darwinInstalled = await installModel(darwinPlanned, { paths, runner, uvExecutable: "uv" });
+    expect(darwinInstalled.installation.runtime.python?.platform).toBe("darwin-arm64");
+    expect(darwinInstalled.installation.runtime.python?.platformSelected).toBe(true);
+    expect(darwinInstalled.installation.runtime.python?.postInstall).toEqual([
+      { hook: "boltz-fix-macos-libomp", stdout: "fixed libomp\n", stderr: "" },
+    ]);
+    expect(darwinInstalled.installation.source).toEqual({ repository: "https://github.com/example/darwin-fork", revision: "a".repeat(40) });
+
+    const linuxPlanned = await createInstallationPlan(manifest, manifest.runtimes[1]!, paths, { platform: "linux-x64" });
+    const linuxInstalled = await installModel(linuxPlanned, { paths, runner, uvExecutable: "uv" });
+    expect(linuxInstalled.installation.runtime.python?.platform).toBe("linux-x64");
+    expect(linuxInstalled.installation.runtime.python?.postInstall).toEqual([]);
+    expect(linuxInstalled.installation.source).toEqual({ repository: "https://github.com/example/linux-official", revision: "b".repeat(40) });
+  });
+
+  it("keeps legacy single-entry, no-platforms manifests fully unaffected: the passed-in runtime is trusted as-is, no selection is performed", async () => {
+    const paths = tempPaths();
+    const manifest = { ...listAvailableModels().find((item) => item.name === "proteinmpnn")!, assets: [] };
+    // A synthetic runtime variant not literally present in manifest.runtimes (mirrors
+    // the pre-existing "two fingerprints coexist" test) — since this manifest has
+    // exactly one python entry with no `platforms` field, it must be trusted as-is,
+    // not re-derived from manifest.runtimes.
+    const runtime = { ...manifest.runtimes.find((item) => item.kind === "python")!, python: "3.12" };
+    const planned = await createInstallationPlan(manifest, runtime, paths, { platform: "linux-x64" });
+    expect(planned.runtime).toBe(runtime);
+    expect(planned.effectiveSource).toEqual(manifest.source);
+    expect(planned.resolvedPlatform).toBe("linux-x64");
   });
 });
 

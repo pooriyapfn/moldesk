@@ -5,13 +5,13 @@
 ## Start here
 
 - [Documentation](https://moleculedesk.com/docs): installation, CLI workflow, model status, and architecture.
-- [Installation](https://moleculedesk.com/docs/installation): install the CLI and check your system.
+- [Installation](https://moleculedesk.com/docs/installation): one-command install for macOS and Linux (no Node.js or npm needed), then check your system.
 - [Model compatibility](https://moleculedesk.com/docs/model-compatibility): supported platforms and status definitions.
 
 ## Practical guides
 
-- [Boltz-2 local status](https://moleculedesk.com/docs/guides/run-boltz-locally): what is planned and which CLI workflows work today.
-- [Molecular AI on Apple Silicon](https://moleculedesk.com/docs/guides/apple-silicon): current beta model support and platform limits.
+- [Run Boltz-2 locally](https://moleculedesk.com/docs/guides/run-boltz-locally): requirements, commands, input, and output.
+- [Molecular AI on Apple Silicon](https://moleculedesk.com/docs/guides/apple-silicon): verified and unverified paths.
 - [Boltz-2 model page](https://moleculedesk.com/docs/models/boltz): model details and platform support.
 
 ## Source

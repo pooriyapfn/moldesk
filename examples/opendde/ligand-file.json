@@ -1,0 +1,20 @@
+[
+  {
+    "name": "trpcage_ligand",
+    "modelSeeds": [101],
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "NLYIQWLKDGGPSSGRPPPS",
+          "count": 1
+        }
+      },
+      {
+        "ligand": {
+          "ligand": "FILE_ligand.sdf",
+          "count": 1
+        }
+      }
+    ]
+  }
+]

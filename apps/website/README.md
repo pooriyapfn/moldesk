@@ -33,4 +33,4 @@ For local development, put the same values in `apps/website/.env.local` (gitigno
 - Keep model status, platform support, commands, and output descriptions aligned with the implementation and root README. Link to upstream methods and source fixtures where useful.
 - `src/app/robots.ts` allows crawlers and points to `src/app/sitemap.ts`; `public/llms.txt` is an optional navigation index. None guarantees AI citations.
 - Each doc route has a title, description, and canonical URL. Keep visible content and structured data consistent.
-- After deployment, check that `/robots.txt`, `/sitemap.xml`, and guide URLs return successfully. Verify any CDN bot rules separately; app files cannot override edge blocks.
+- After deployment, check that `/robots.txt`, `/sitemap.xml`, and guide URLs return successfully. Verify any CDN or Cloudflare bot rules separately; app files cannot override edge blocks.

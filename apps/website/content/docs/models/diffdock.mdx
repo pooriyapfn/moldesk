@@ -1,0 +1,75 @@
+export const metadata = {
+  title: "DiffDock-L: blind small-molecule docking",
+  description:
+    "Run DiffDock-L for blind protein-ligand docking with MoleculeDesk. Requirements, input/output formats, and platform support.",
+};
+
+# Run DiffDock-L for blind small-molecule docking
+
+[DiffDock-L](https://github.com/gcorso/DiffDock) is an open-source diffusion model for blind small-molecule docking — predicting how a ligand binds a protein without a known binding pocket — released under the MIT license. It returns ranked 3D poses with a confidence score per pose, not a binding-affinity estimate. MoleculeDesk manages DiffDock-L's pinned CUDA-specific Python environment and model/language-model checkpoints so you don't have to hand-configure PyTorch Geometric's CUDA extension wheels yourself.
+
+<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
+  <strong className="text-foreground">Status: coming soon.</strong> The adapter, manifest, and pinned provenance are implemented and unit-tested. An install on a real NVIDIA RTX 3090 now gets through dependencies, model weights and the CUDA check, but DiffDock-L's one-time setup (about 30 minutes of precomputed lookup tables) has not yet been verified end to end, and there is no run benchmark yet. See [Verification status](#verification-status) below.
+</div>
+
+## What DiffDock-L is used for
+
+DiffDock-L is designed for:
+
+- **Blind protein-ligand docking** — predicting where and how a small molecule binds a protein, without requiring a known binding site.
+- **Pose ranking** — generating multiple candidate 3D poses per complex, ranked by a learned confidence score.
+
+DiffDock-L does **not** predict binding affinity — for that, see [Boltz-2](/docs/models/boltz).
+
+## Requirements
+
+| | |
+| --- | --- |
+| Model version | v1.1 |
+| License | MIT |
+| Python | 3.10, via `uv` |
+| Platforms | `linux-x64` + NVIDIA CUDA only (required, no CPU path implemented for this model) |
+| Input format | `.json` job file referencing a protein `.pdb` and a ligand `.sdf`/`.mol2` file, or a ligand SMILES string |
+| Output | top pose (`.sdf`), all ranked poses (`.sdf`), a structured `poses_summary.json` with rank/confidence/atom-count |
+
+DiffDock-L's pinned dependency stack (`torch==1.13.1+cu117` plus matching CUDA-built PyTorch Geometric extension wheels) is CUDA/Linux-specific with no Apple Silicon build available, and upstream exposes no CPU/device-selection flag at all — device selection is DiffDock-L's own automatic CUDA-or-CPU logic. MoleculeDesk requires a working CUDA install (checked at install-verification time) so a run is never silently downgraded to CPU.
+
+## Job format
+
+```json
+{
+  "jobName": "example-complex",
+  "proteinPath": "protein.pdb",
+  "ligand": { "path": "ligand.sdf" }
+}
+```
+
+`ligand` accepts exactly one of `path` (an `.sdf`/`.mol2` file, resolved relative to the job file) or `smiles` (a SMILES string). `jobName` is optional and, if present, must be a safe identifier (letters, digits, `.`/`_`/`-`; no path separators or `..`) — it becomes a directory name under DiffDock-L's own output path.
+
+## Source
+
+MoleculeDesk pins DiffDock-L to a specific upstream commit on `main` — which already ships the current DiffDock-L architecture by default (upstream's own legacy v1 model is reachable only via an old git tag) — plus the exact model-weights release asset and the ESM2 language-model checkpoint DiffDock-L's own pipeline always downloads to compute protein embeddings. See the [upstream DiffDock repository](https://github.com/gcorso/DiffDock) for full details on the model itself.
+
+<BenchmarkTable model="diffdock" />
+
+## Verification status
+
+`pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm pack:verify` all pass with DiffDock-L registered. `moldesk install diffdock` correctly fails closed on machines without a matching platform (for example Darwin/arm64 with no NVIDIA GPU). On a real Linux x64 RTX 3090 the install now passes the dependency, model-weight and CUDA stages. DiffDock-L also runs a long one-time precomputation (its diffusion lookup tables, about 30 minutes on one CPU core) that MoleculeDesk caches at install time, and that step has not yet completed in a verified install. The real live gate — a clean install plus a docking run against the checked-in [example](https://github.com/gcorso/DiffDock) job — is still outstanding:
+
+```bash
+moldesk install diffdock
+moldesk run diffdock examples/diffdock/job.json
+```
+
+Until that run completes and its results are recorded, DiffDock-L stays `status: planned` in the registry — MoleculeDesk never marks a model `beta`/`available` from unit tests alone.
+
+## FAQ
+
+**Does `moldesk install diffdock` work today?**
+Not yet — it requires Linux with an NVIDIA GPU, which was unavailable when this integration was built. The adapter, manifest, and tests are complete; only the real hardware run remains.
+
+**What license is DiffDock-L under?**
+MIT, including the model weights. MoleculeDesk doesn't redistribute DiffDock-L's weights or the third-party ESM2 checkpoint it depends on; installing pins and downloads them from their original sources.
+
+**Does DiffDock-L predict binding affinity?**
+No — it predicts ranked docking poses with a confidence score. For binding-affinity prediction, see [Boltz-2](/docs/models/boltz).

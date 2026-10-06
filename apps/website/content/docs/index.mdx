@@ -9,19 +9,19 @@ export const metadata = {
 MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally. The CLI provides a consistent interface for supported models, while model pages distinguish working beta adapters from planned integrations.
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
 
 moldesk doctor
 moldesk install proteinmpnn
 moldesk list --installed
 ```
 
-MoleculeDesk is currently in **early development**. System detection, model discovery, and installing/running ProteinMPNN and LigandMPNN already work end-to-end; more model adapters (Boltz, AlphaFold, ColabFold, Chai) are in progress. Every page below states a model's current status plainly.
+MoleculeDesk is currently in **early development**. System detection, model discovery, and installing/running Boltz-2, ProteinMPNN, and LigandMPNN already work end-to-end; DiffDock-L is coming soon (its adapter is implemented but not yet live-verified), and more model adapters (AlphaFold, ColabFold, Chai) are in progress. Every page below states a model's current status plainly.
 
 ## Where to start
 
-- [Boltz-2 local status](/docs/guides/run-boltz-locally) — what works now and what is still planned.
-- [Molecular AI on Apple Silicon](/docs/guides/apple-silicon) — current platform support and limits.
+- [Run Boltz-2 locally](/docs/guides/run-boltz-locally) — install and run a real example.
+- [Molecular AI on Apple Silicon](/docs/guides/apple-silicon) — verified platform support and current limits.
 
 - **[Installation](/docs/installation)** — install the CLI and confirm your machine is ready.
 - **[CLI usage](/docs/cli-usage)** — the day-to-day `doctor` / `install` / `run` / `uninstall` workflow.
@@ -32,7 +32,10 @@ MoleculeDesk is currently in **early development**. System detection, model disc
 
 Each supported (or planned) model has its own page with setup details, requirements, and use cases:
 
-- [Boltz-2](/docs/models/boltz) — joint structure & binding-affinity prediction (planned)
+- [Boltz-2](/docs/models/boltz) — joint structure & binding-affinity prediction (beta)
+- [DiffDock-L](/docs/models/diffdock) — blind small-molecule docking (coming soon)
+- [BindCraft2](/docs/models/bindcraft2) — bounded local protein-binder campaigns (planned; Linux/NVIDIA)
+- [OpenDDE Preview](/docs/models/opendde) — all-atom biomolecular co-folding (beta, upstream preview)
 - [ProteinMPNN](/docs/models/proteinmpnn) — structure-conditioned sequence design (beta)
 - [LigandMPNN](/docs/models/ligandmpnn) — ligand- and multimer-aware sequence design (beta)
 - [AlphaFold](/docs/models/alphafold) — structure prediction (coming soon)

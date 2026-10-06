@@ -6,15 +6,17 @@ It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecula
 
 Think of it as a simpler interface for scientific models:
 
-Read the [documentation](https://moleculedesk.com/docs), [Boltz-2 status guide](https://moleculedesk.com/docs/guides/run-boltz-locally), and [Apple Silicon support guide](https://moleculedesk.com/docs/guides/apple-silicon) for current commands and platform limits.
+Read the [documentation](https://moleculedesk.com/docs), [Boltz-2 local guide](https://moleculedesk.com/docs/guides/run-boltz-locally), and [Apple Silicon support guide](https://moleculedesk.com/docs/guides/apple-silicon) for current commands and platform limits.
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
 
 moldesk doctor
 moldesk install proteinmpnn
 moldesk list --installed
 ```
+
+The installer works on macOS and Linux with nothing installed beforehand: no Node.js, no npm, no admin rights. It sets up everything inside `~/.moldesk`. See the [installation guide](https://moleculedesk.com/docs/installation) for updating, removing, and GPU servers.
 
 Instead of manually setting up Python environments, CUDA dependencies, containers, model weights, and model-specific commands, MoleculeDesk provides a consistent interface across supported models.
 
@@ -28,14 +30,15 @@ Available:
 * `moldesk list` for model discovery
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
+* beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
+* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; the Linux x64/CUDA path ran successfully on an NVIDIA RTX 3090 in testing but is not yet advertised in the registry
 * `moldesk list --installed`, reinstall, and uninstall state management
 * `moldesk --version`
 * initial CLI and runtime architecture
 
 In progress:
 
-* `moldesk install boltz`
-* `moldesk run boltz input.yaml`
+* BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on an NVIDIA RTX 3090; promotion to beta pending (source-available, hosting-restricted license)
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
@@ -124,9 +127,12 @@ Model support is being added incrementally.
 
 | Model | Status |
 | --- | --- |
-| Boltz-2 | Planned |
+| Boltz-2 | Beta; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
+| DiffDock-L | Coming soon |
+| BindCraft2 | Planned; bounded campaign verified on an RTX 3090, promotion to beta pending |
+| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |
 | AlphaFold | Planned |
 | Chai | Planned |

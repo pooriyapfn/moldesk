@@ -2,35 +2,154 @@ schemaVersion: 1
 name: boltz
 displayName: Boltz-2
 modelVersion: 2.2.1
-adapterVersion: 0.1.0
+adapterVersion: 0.2.0
 description: Joint biomolecular structure and binding-affinity prediction (Boltz team, MIT).
 category: structure-prediction
-status: planned
+status: beta
 license: MIT
 homepage: https://github.com/jwohlwend/boltz
 source:
   repository: https://github.com/jwohlwend/boltz
   revision: cb04aeccdd480fd4db707f0bbafde538397fa2ac
+# Darwin/MPS was verified end-to-end with a real install + prediction on
+# 2026-09-23 (see models/boltz/README.md for full evidence: process device
+# banner, checksummed outputs, negative-path test). Linux/CUDA is
+# structurally implemented and unit-tested but not live-verified — no NVIDIA
+# hardware was available to run it; do not treat it as verified per rule 13.
+adapterVerification:
+  lastVerifiedAt: "2026-09-23T11:22:33.984Z"
+  platforms:
+    - darwin-arm64
+  notes: >-
+    Real moldesk install + moldesk run on Apple M3 (macOS, Darwin 25.6.0),
+    re-verified after fixing two P1 review findings (checkpoints now
+    populated/checksum-verified at install time via manifest `assets:`, not
+    lazily on first run; CUDA raised from recommended to required to match
+    the mandatory CUDA probe) and three P2 findings (verifyInstallation now
+    asserts the exact pinned boltz-community version, absence of official
+    boltz, and CLI mps-accelerator support; YAML input validation uses a
+    real parser, not a regex; distribution version is explicitly asserted
+    since git-sourced installs don't get PyPI hash enforcement). Installed
+    boltz-community==2.10.12 + torch==2.14.0 (not official boltz), ran
+    boltz-fix-macos-libomp, verifyInstallation's MPS probe passed with a
+    real tensor round-trip plus the strengthened assertions above. A live
+    prediction against examples/boltz/protein.yaml completed in ~88s (all
+    checkpoints already cache-verified, zero network downloads during the
+    run — confirmed via log inspection) with PyTorch Lightning reporting
+    "GPU available: True (mps), used: True". Outputs: a parseable mmCIF and
+    confidence JSON, both checksummed in run.json. Negative tests: (1)
+    --param accelerator=gpu on this CUDA-less install failed closed
+    instantly with an actionable error; (2) a malformed YAML job
+    ("sequences: [") was rejected with a real parser error before any run
+    started. Linux/CUDA path not covered by this verification — no NVIDIA
+    hardware available.
 runtimes:
+  # Linux/CUDA: official `jwohlwend/boltz`. `--accelerator` on this pinned CLI only
+  # accepts gpu|cpu|tpu (no "mps" choice) — verified against src/boltz/main.py at
+  # this revision. `nvidiaGpu`/`cuda` are `required`, not `recommended`: the
+  # adapter's verifyInstallation runs a mandatory CUDA probe on every non-Darwin
+  # install (torch.cuda.is_available(), device count, CUDA build) with no CPU
+  # verification path implemented — declaring CUDA merely "recommended" would
+  # contradict what install actually enforces and let a CPU-only Linux host pass
+  # compatibility checks only to fail install. A genuine CPU-only Linux path is
+  # not implemented in this pass; `--param accelerator=cpu` is exposed by the
+  # pinned CLI but running it still requires this install to pass its CUDA probe.
   - kind: python
     python: "3.11"
     installer: uv
+    platforms:
+      - linux-x64
+    source:
+      repository: https://github.com/jwohlwend/boltz
+      revision: cb04aeccdd480fd4db707f0bbafde538397fa2ac
     requirements:
       - name: boltz
         version: 2.2.1
+        source: https://github.com/jwohlwend/boltz
+        revision: cb04aeccdd480fd4db707f0bbafde538397fa2ac
+        extras:
+          - cuda
+    nvidiaGpu: required
+    cuda:
+      level: required
+  # Darwin/MPS: `Novel-Therapeutics/boltz-community` fork, which adds an "mps"
+  # `--accelerator` choice (verified against src/boltz/main.py at this revision) and
+  # ships the `boltz-fix-macos-libomp` console script this runtime entry's
+  # `postInstall` runs after dependency install. No `nvidiaGpu`/`cuda` here: this
+  # platform-runtime entry genuinely has no CUDA requirement.
+  - kind: python
+    python: "3.11"
+    installer: uv
+    platforms:
+      - darwin-arm64
+    source:
+      repository: https://github.com/Novel-Therapeutics/boltz-community
+      revision: 401f18150cc7184b7e1bb37239a25035ef6b3a57
+    requirements:
+      - name: boltz-community
+        version: 2.10.12
+        source: https://github.com/Novel-Therapeutics/boltz-community
+        revision: 401f18150cc7184b7e1bb37239a25035ef6b3a57
+      # Newest stable PyPI torch as of 2026-09-23, satisfies boltz-community's own
+      # `torch>=2.2` pyproject constraint and its README's documented "PyTorch 2.6+"
+      # compatibility statement. cp311 wheel to match this entry's `python: "3.11"`.
+      # No credible MPS-blocking regression found for 2.14.0 on shipping macOS
+      # versions (see models/boltz/README.md for research notes).
+      - name: torch
+        version: "2.14.0"
+        hashes:
+          - ae530ddd3f3b94248b77f1fd3313c4f3405bd0d17283d505b81574816767133a
+    postInstall:
+      - boltz-fix-macos-libomp
+# Boltz-2's own CLI (both distributions, identical logic) lazily downloads these
+# from HuggingFace's *mutable* `resolve/main/...` URLs on first prediction — that
+# both defers download past install time and has no fixed content to verify
+# against. Since upstream provides no immutable/checksum-pinned download itself,
+# these assets are instead pinned here to an exact HuggingFace repo commit
+# (boltz-community/boltz-2 @ 6fdef46d763fee7fbb83ca5501ccceff43b85607) with sha256
+# digests read from that commit's `X-Linked-ETag` (HF's convention for an LFS
+# file's sha256) and independently confirmed by hashing a real download of each
+# file byte-for-byte. Materialized by the existing checksum-verified asset
+# pipeline into `assets/boltz-cache/`, which is what the adapter passes as
+# `--cache` — so by the time a prediction runs, Boltz's own downloader finds
+# every file already present and verified, and performs no network access.
+assets:
+  - id: boltz2-ccd
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/mols.tar
+    source: https://huggingface.co/boltz-community/boltz-2
+    sha256: 39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7
+    sizeBytes: 1855662080
+    archive: tar
+    target: boltz-cache
+  - id: boltz2-conf-checkpoint
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/boltz2_conf.ckpt
+    source: https://huggingface.co/boltz-community/boltz-2
+    sha256: 090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1
+    sizeBytes: 2286561469
+    target: boltz-cache/boltz2_conf.ckpt
+  - id: boltz2-affinity-checkpoint
+    url: https://huggingface.co/boltz-community/boltz-2/resolve/6fdef46d763fee7fbb83ca5501ccceff43b85607/boltz2_aff.ckpt
+    source: https://huggingface.co/boltz-community/boltz-2
+    sha256: dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e
+    sizeBytes: 2062139170
+    target: boltz-cache/boltz2_aff.ckpt
 hardware:
   platforms:
     - darwin-arm64
     - linux-x64
-  nvidiaGpu: recommended
-  cuda:
-    level: recommended
 input:
   formats:
     - .yaml
+    - .yml
     - .fasta
   required: true
 outputs:
   - id: structures
-    glob: "**/*.cif"
+    glob: "boltz_results_*/predictions/*/*.cif"
     required: true
+  - id: confidence
+    glob: "boltz_results_*/predictions/*/confidence_*.json"
+    required: true
+  - id: affinity
+    glob: "boltz_results_*/predictions/*/affinity_*.json"
+    required: false

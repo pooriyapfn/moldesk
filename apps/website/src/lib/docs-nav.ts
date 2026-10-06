@@ -25,12 +25,16 @@ export const docsNav: DocNavSection[] = [
     items: [
       { title: "Architecture", slug: "architecture" },
       { title: "Model compatibility & registry", slug: "model-compatibility" },
+      { title: "Benchmarks: speed & cost", slug: "benchmarks" },
     ],
   },
   {
     title: "Models",
     items: [
-      { title: "Boltz-2", slug: "models/boltz", status: "planned" },
+      { title: "Boltz-2", slug: "models/boltz", status: "beta" },
+      { title: "DiffDock-L", slug: "models/diffdock", status: "soon" },
+      { title: "BindCraft2", slug: "models/bindcraft2", status: "planned" },
+      { title: "OpenDDE Preview", slug: "models/opendde", status: "beta" },
       { title: "ProteinMPNN", slug: "models/proteinmpnn", status: "beta" },
       { title: "LigandMPNN", slug: "models/ligandmpnn", status: "beta" },
       { title: "AlphaFold", slug: "models/alphafold", status: "soon" },
@@ -41,7 +45,7 @@ export const docsNav: DocNavSection[] = [
   {
     title: "Guides",
     items: [
-      { title: "Boltz-2 local status", slug: "guides/run-boltz-locally" },
+      { title: "Run Boltz-2 locally", slug: "guides/run-boltz-locally" },
       { title: "Molecular AI on Apple Silicon", slug: "guides/apple-silicon" },
     ],
   },
