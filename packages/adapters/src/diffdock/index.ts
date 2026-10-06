@@ -374,19 +374,23 @@ print(f"cuda ops ok: torch={torch.__version__} cuda_build={torch.version.cuda} d
 `.trim();
 
 /**
- * `utils/so3.py` (imported by `inference.py`) runs a heavy single-core
- * precomputation the first time it is imported and caches the result as
- * `.so3_*.npy` files in the *current working directory* (upstream: "the
+ * `utils/so3.py` and `utils/torus.py` (both imported by `inference.py`) run heavy
+ * single-core precomputations the first time they are imported (the SO(3) and
+ * torus diffusion lookup tables) and cache the results as `.so3_*.npy`,
+ * `.p.npy` and `.score.npy` in the *current working directory* (upstream: "the
  * precomputation is only run the first time the repository is run on a
  * machine"). MoleculeDesk runs every job with a fresh per-run working
- * directory, so without help each run would redo it. It is computed once at
- * install time into `assets/so3-cache/` and symlinked into each run directory.
+ * directory, so without help each run would redo ~30 minutes of work. They are
+ * computed once at install time into `assets/so3-cache/` and symlinked into
+ * each run directory.
  */
 const SO3_CACHE_FILES = [
   ".so3_omegas_array4.npy",
   ".so3_cdf_vals4.npy",
   ".so3_score_norms4.npy",
   ".so3_exp_score_norms4.npy",
+  ".p.npy",
+  ".score.npy",
 ];
 const SO3_CACHE_TIMEOUT_MS = 90 * 60_000;
 
@@ -544,10 +548,12 @@ export const diffdockAdapter: ModelAdapterDefinition = {
     fs.mkdirSync(cacheDir, { recursive: true });
     const warm = await runner(
       python,
-      ["-c", "import sys; sys.path.insert(0, sys.argv[1]); import utils.so3", sourceDir],
+      ["-c", "import sys; sys.path.insert(0, sys.argv[1]); import utils.so3, utils.torus", sourceDir],
       { cwd: cacheDir, timeoutMs: SO3_CACHE_TIMEOUT_MS },
     );
-    if (warm.code !== 0) return { passed: false, output: `Failed to build DiffDock-L's SO(3) cache: ${(warm.stderr || warm.stdout).trim()}` };
+    if (warm.code !== 0) return { passed: false, output: `Failed to build DiffDock-L's SO(3)/torus cache: ${(warm.stderr || warm.stdout).trim().slice(-2000)}` };
+    const uncached = SO3_CACHE_FILES.filter((name) => !fs.existsSync(path.join(cacheDir, name)));
+    if (uncached.length > 0) return { passed: false, output: `DiffDock-L's SO(3)/torus cache is incomplete, missing ${uncached.join(", ")}` };
 
     const help = await runner(python, [script, "--help"], { cwd: cacheDir, timeoutMs: 120_000 });
     if (help.code !== 0 || !help.stdout.includes("--protein_path")) {

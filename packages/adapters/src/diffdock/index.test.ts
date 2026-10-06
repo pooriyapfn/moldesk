@@ -561,8 +561,13 @@ describe("diffdockAdapter.verifyInstallation", () => {
       manifestName: "diffdock",
       modelDir,
       assetsDir,
-      runner: async (_cmd, args) => {
+      runner: async (_cmd, args, options) => {
         if (args.includes("--help")) return { code: 0, stdout: "usage: inference.py [-h] ... --protein_path PROTEIN_PATH ...", stderr: "" };
+        if ((args[1] ?? "").includes("import utils.so3") && options?.cwd) {
+          for (const name of [".so3_omegas_array4.npy", ".so3_cdf_vals4.npy", ".so3_score_norms4.npy", ".so3_exp_score_norms4.npy", ".p.npy", ".score.npy"]) {
+            fs.writeFileSync(path.join(options.cwd, name), "x");
+          }
+        }
         if ((args[1] ?? "").includes("torch.cuda")) capturedScript = args[1] ?? "";
         return { code: 0, stdout: "cuda ok", stderr: "" };
       },
@@ -589,6 +594,11 @@ describe("diffdockAdapter.verifyInstallation", () => {
       runner: async (_cmd, args, options) => {
         calls.push({ args, cwd: options?.cwd });
         if (args.includes("--help")) return { code: 0, stdout: "--protein_path", stderr: "" };
+        if ((args[1] ?? "").includes("import utils.so3") && options?.cwd) {
+          for (const name of [".so3_omegas_array4.npy", ".so3_cdf_vals4.npy", ".so3_score_norms4.npy", ".so3_exp_score_norms4.npy", ".p.npy", ".score.npy"]) {
+            fs.writeFileSync(path.join(options.cwd, name), "x");
+          }
+        }
         return { code: 0, stdout: "ok", stderr: "" };
       },
     });
@@ -615,7 +625,7 @@ describe("diffdockAdapter.verifyInstallation", () => {
         (args[1] ?? "").includes("import utils.so3") ? { code: 1, stdout: "", stderr: "memory error" } : { code: 0, stdout: "ok", stderr: "" },
     });
     expect(result.passed).toBe(false);
-    expect(result.output).toContain("SO(3) cache");
+    expect(result.output).toContain("SO(3)/torus cache");
   });
 
   it("fails when the installed CLI does not respond as expected to --help", async () => {
@@ -628,12 +638,33 @@ describe("diffdockAdapter.verifyInstallation", () => {
       manifestName: "diffdock",
       modelDir,
       assetsDir,
-      runner: async (_cmd, args) => {
+      runner: async (_cmd, args, options) => {
         if (args.includes("--help")) return { code: 1, stdout: "", stderr: "boom" };
+        if ((args[1] ?? "").includes("import utils.so3") && options?.cwd) {
+          for (const name of [".so3_omegas_array4.npy", ".so3_cdf_vals4.npy", ".so3_score_norms4.npy", ".so3_exp_score_norms4.npy", ".p.npy", ".score.npy"]) {
+            fs.writeFileSync(path.join(options.cwd, name), "x");
+          }
+        }
         return { code: 0, stdout: "cuda ok", stderr: "" };
       },
     });
     expect(result.passed).toBe(false);
     expect(result.output).toContain("--help");
+  });
+
+  it("fails when the cache build exits cleanly but leaves cache files missing", async () => {
+    const dir = tempDir();
+    const modelDir = path.join(dir, "model");
+    const assetsDir = path.join(modelDir, "assets");
+    createInstalledFixture(modelDir, assetsDir);
+
+    const result = await diffdockAdapter.verifyInstallation({
+      manifestName: "diffdock",
+      modelDir,
+      assetsDir,
+      runner: async () => ({ code: 0, stdout: "ok", stderr: "" }),
+    });
+    expect(result.passed).toBe(false);
+    expect(result.output).toContain("incomplete");
   });
 });
