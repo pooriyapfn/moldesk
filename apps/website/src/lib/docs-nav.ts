@@ -25,6 +25,7 @@ export const docsNav: DocNavSection[] = [
     items: [
       { title: "Architecture", slug: "architecture" },
       { title: "Model compatibility & registry", slug: "model-compatibility" },
+      { title: "Benchmarks: speed & cost", slug: "benchmarks" },
     ],
   },
   {
