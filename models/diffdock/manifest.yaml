@@ -140,8 +140,16 @@ runtimes:
         version: 2.8.4
       - name: pandas
         version: 1.5.1
+      # Upstream pins prody 2.2.0, which has no wheel for CPython 3.10 and whose C
+      # extension (rtbtools.c) fails to compile on current toolchains. 2.4.1 builds
+      # and imports on 3.10 (verified on Linux x64) and DiffDock only uses it for
+      # PDB parsing/chi angles in datasets/parse_chi.py.
       - name: prody
-        version: "2.2.0"
+        version: "2.4.1"
+      # Upstream leaves numpy unpinned; unpinned resolves to numpy 2.x, which breaks
+      # the pinned pandas 1.5.1 and torch 1.13.1 builds. 1.23.5 matches that era.
+      - name: numpy
+        version: "1.23.5"
       - name: pybind11
         version: 2.11.1
       - name: torchmetrics
