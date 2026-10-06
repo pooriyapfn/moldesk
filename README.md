@@ -36,6 +36,7 @@ Available:
 
 In progress:
 
+* BindCraft2 adapter implemented for bounded local Linux/NVIDIA binder campaigns; live CUDA verification pending (source-available, hosting-restricted license)
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
@@ -128,6 +129,7 @@ Model support is being added incrementally.
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
 | DiffDock-L | Planned; adapter not yet live-verified |
+| BindCraft2 | Planned; bounded campaign adapter, Linux/NVIDIA verification pending |
 | OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |
 | AlphaFold | Planned |

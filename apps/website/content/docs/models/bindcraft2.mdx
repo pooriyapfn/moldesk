@@ -1,0 +1,70 @@
+export const metadata = {
+  title: "BindCraft2: bounded local protein-binder campaigns",
+  description: "BindCraft2 integration for Linux/NVIDIA: finite campaign budgets, managed weights, source-available licensing and CUDA verification status.",
+};
+
+# BindCraft2 protein-binder campaigns
+
+[BindCraft2](https://github.com/PacesaLab/BindCraft2) designs protein binders using
+AlphaFold and ProteinMPNN/HyperMPNN. **Status: planned.** The integration awaits
+clean installation and bounded campaign verification on real Linux/NVIDIA hardware.
+Normal installation stays blocked until that gate passes.
+
+## Requirements and license
+
+| | |
+| --- | --- |
+| Package | `bindcraft` 1.0.3 from pinned source |
+| Python | Managed 3.12 |
+| Platform | Linux x64 + NVIDIA; CUDA 12 / JAX 0.11.2 |
+| Disk / RAM | At least 25 GB disk and 24 GB host RAM; VRAM depends on complex size |
+| Input | JSON campaign referencing PDB/mmCIF/FASTA targets and optional custom scaffold |
+| Results | Trajectory/refolded/ranked CSVs, mmCIF structures, campaign metadata and explicit accepted-design count |
+
+**BindCraft2 Source-Available License (Hosting-Restricted):** local/internal
+commercial use is permitted. Exposing substantial functionality as a hosted
+service requires a separate commercial license. BindCraft2 is not OSI open source.
+MoleculeDesk runs it on your own workstation or rented GPU server.
+
+## Bounded campaigns
+
+```json
+{
+  "targets": [{ "name": "my_target", "target_path": "target.pdb", "chains": "A" }],
+  "modality": "binder",
+  "binder_lengths": [50, 60],
+  "number_of_final_designs": 1,
+  "max_trajectories": 1,
+  "resume": false
+}
+```
+
+Both design count and trajectory budget must be positive integers. Target and
+scaffold files stay within the campaign directory tree and are copied into the
+run's immutable input area. Each invocation creates a fresh independent run.
+
+```bash
+moldesk run bindcraft2 campaign.json --param max_trajectories=2
+```
+
+Supported modalities: `binder`, `peptide`, `cyclic_peptide`, `VHH`, `ARP`.
+Use `--param number_of_final_designs=1` or paired `min_length`/`max_length`
+overrides. VHH/ARP use shipped scaffolds. Resume, automatic workers, arbitrary
+preset files and modality combinations are not supported yet. CUDA is required;
+CPU fallback is refused.
+
+## Results
+
+A campaign can exhaust its budget with **zero accepted designs**. That is a
+successful bounded computation, recorded explicitly in `moldesk-summary.json`,
+with trajectory/refolded records retained. Accepted structures appear only when
+designs pass upstream filters. All collected outputs are checksummed in `run.json`.
+Predicted candidates still require experimental validation.
+
+## Verification status
+
+Linux dependency resolution is verified; real installation, CUDA execution,
+cancellation and zero-design behavior still need GPU testing. The repository's
+`models/bindcraft2/README.md` contains exact private test-registry commands,
+source/asset provenance and the live verification checklist. No macOS, MPS,
+CPU, AMD or multi-GPU support is advertised for this integration.

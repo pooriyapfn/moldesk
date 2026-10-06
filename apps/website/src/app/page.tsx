@@ -76,7 +76,7 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Coming soon
             </span>
-            {["DiffDock-L", "AlphaFold", "ColabFold", "Chai"].map((name) => (
+            {["DiffDock-L", "BindCraft2", "AlphaFold", "ColabFold", "Chai"].map((name) => (
               <span
                 key={name}
                 className="rounded-full border border-border px-4 py-[7px] font-mono text-[13px] text-muted"
