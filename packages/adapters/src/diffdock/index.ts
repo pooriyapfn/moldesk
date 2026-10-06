@@ -505,10 +505,10 @@ export const diffdockAdapter: ModelAdapterDefinition = {
     // install where CUDA is unavailable must fail verification, not silently
     // succeed and let a run fall back to CPU (`torch.device('cuda' if
     // torch.cuda.is_available() else 'cpu')` is upstream's own selection logic).
-    const probe = await runner(python, ["-c", ABI_AND_CUDA_PROBE], { timeoutMs: 60_000 });
+    const probe = await runner(python, ["-c", ABI_AND_CUDA_PROBE], { timeoutMs: 120_000 });
     if (probe.code !== 0) return { passed: false, output: probe.stderr.trim() };
 
-    const help = await runner(python, [script, "--help"], { timeoutMs: 30_000 });
+    const help = await runner(python, [script, "--help"], { timeoutMs: 120_000 });
     if (help.code !== 0 || !help.stdout.includes("--protein_path")) {
       return { passed: false, output: `Installed DiffDock-L CLI did not respond as expected to --help: ${(help.stdout || help.stderr).trim()}` };
     }

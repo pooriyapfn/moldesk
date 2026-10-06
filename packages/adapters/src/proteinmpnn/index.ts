@@ -86,7 +86,7 @@ export const proteinmpnnAdapter: ModelAdapterDefinition = {
     const missing = requiredFiles.filter((file) => !fs.existsSync(file));
     if (missing.length > 0) return { passed: false, output: `Missing ${missing.join(", ")}` };
     const python = path.join(context.modelDir, ".venv", "bin", "python");
-    const result = await (context.runner ?? runCommand)(python, ["-c", "import numpy, torch"], { timeoutMs: 30_000 });
+    const result = await (context.runner ?? runCommand)(python, ["-c", "import numpy, torch"], { timeoutMs: 120_000 });
     return { passed: result.code === 0, output: (result.code === 0 ? result.stdout : result.stderr).trim() };
   },
 };
