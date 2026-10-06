@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useRef, useState } from "react";
+import posthog from "posthog-js";
 
 export function highlightMoldesk(command: string) {
   return command.split(/(moldesk)/g).map((part, i) =>
@@ -18,13 +19,19 @@ export function CopyCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const copy = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(command).catch(() => {});
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      posthog.capture("cli_command_copied", {
+        source: "documentation",
+        path: window.location.pathname,
+      });
+      setCopied(true);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard access can be unavailable or denied.
     }
-    setCopied(true);
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setCopied(false), 1600);
   };
 
   return (

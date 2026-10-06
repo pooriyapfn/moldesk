@@ -1,0 +1,19 @@
+# MoleculeDesk
+
+> MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally. It is in early development; check each model page for current support.
+
+## Start here
+
+- [Documentation](https://moleculedesk.com/docs): installation, CLI workflow, model status, and architecture.
+- [Installation](https://moleculedesk.com/docs/installation): install the CLI and check your system.
+- [Model compatibility](https://moleculedesk.com/docs/model-compatibility): supported platforms and status definitions.
+
+## Practical guides
+
+- [Boltz-2 local status](https://moleculedesk.com/docs/guides/run-boltz-locally): what is planned and which CLI workflows work today.
+- [Molecular AI on Apple Silicon](https://moleculedesk.com/docs/guides/apple-silicon): current beta model support and platform limits.
+- [Boltz-2 model page](https://moleculedesk.com/docs/models/boltz): model details and platform support.
+
+## Source
+
+- [GitHub repository](https://github.com/pooriyapfn/moldesk): source code, examples, and issue tracker.
