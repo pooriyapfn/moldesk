@@ -88,6 +88,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       MOLDESK_NO_MODIFY_PATH: "1"
+      # npm caches registry metadata for ~5 minutes; without this, retries keep reading
+      # the stale "version does not exist" answer.
+      NPM_CONFIG_PREFER_ONLINE: "true"
       MOLDESK_CLI_SPEC: "@moldesk/cli@${{ needs.verify.outputs.version }}"
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
@@ -97,10 +100,12 @@ jobs:
         run: echo "MOLDESK_HOME=$RUNNER_TEMP/moldesk" >> "$GITHUB_ENV"
 
       # Run the public installer the way a new user would, with a minimal PATH so it
-      # sets up its own Node. npm can take a minute to serve a new version, so retry.
+      # sets up its own Node. npm can take several minutes to serve a new version
+      # (a brand-new package such as the first @moldesk/adapters is slowest), so retry
+      # for about 10 minutes.
       - name: Install the published CLI with the installer
         run: |
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in $(seq 1 20); do
             if env PATH=/usr/bin:/bin:/usr/sbin:/sbin sh scripts/install.sh; then exit 0; fi
             echo "Install attempt $attempt failed; npm may still be propagating. Retrying in 30s."
             sleep 30
