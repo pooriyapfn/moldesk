@@ -373,6 +373,27 @@ assert coalesced_index.shape[0] == 2, f"torch_sparse.coalesce produced unexpecte
 print(f"cuda ops ok: torch={torch.__version__} cuda_build={torch.version.cuda} devices={torch.cuda.device_count()} pyg={torch_geometric.__version__}")
 `.trim();
 
+/**
+ * `utils/so3.py` (imported by `inference.py`) runs a heavy single-core
+ * precomputation the first time it is imported and caches the result as
+ * `.so3_*.npy` files in the *current working directory* (upstream: "the
+ * precomputation is only run the first time the repository is run on a
+ * machine"). MoleculeDesk runs every job with a fresh per-run working
+ * directory, so without help each run would redo it. It is computed once at
+ * install time into `assets/so3-cache/` and symlinked into each run directory.
+ */
+const SO3_CACHE_FILES = [
+  ".so3_omegas_array4.npy",
+  ".so3_cdf_vals4.npy",
+  ".so3_score_norms4.npy",
+  ".so3_exp_score_norms4.npy",
+];
+const SO3_CACHE_TIMEOUT_MS = 90 * 60_000;
+
+function so3CacheDir(assetsDir: string): string {
+  return path.join(assetsDir, "so3-cache");
+}
+
 export const diffdockAdapter: ModelAdapterDefinition = {
   modelName: "diffdock",
   params: PARAMS,
@@ -456,6 +477,16 @@ export const diffdockAdapter: ModelAdapterDefinition = {
     // and checksum-verified at install time — see manifest `assets:`) so no
     // network access occurs during a run and nothing lands in an uncontrolled
     // $HOME cache.
+    // Link the install-time SO(3) cache into this run's working directory (the
+    // run directory, parent of outputDir) so upstream finds it instead of
+    // recomputing — see SO3_CACHE_FILES.
+    const runDir = path.dirname(context.outputDir);
+    const cacheDir = so3CacheDir(context.assetsDir);
+    for (const name of SO3_CACHE_FILES) {
+      const cached = path.join(cacheDir, name);
+      const link = path.join(runDir, name);
+      if (fs.existsSync(cached) && !fs.existsSync(link)) fs.symlinkSync(cached, link);
+    }
     return { executable: context.runtimeExecutable, args, env: { TORCH_HOME: torchHome } };
   },
 
@@ -508,7 +539,17 @@ export const diffdockAdapter: ModelAdapterDefinition = {
     const probe = await runner(python, ["-c", ABI_AND_CUDA_PROBE], { timeoutMs: 120_000 });
     if (probe.code !== 0) return { passed: false, output: probe.stderr.trim() };
 
-    const help = await runner(python, [script, "--help"], { timeoutMs: 120_000 });
+    // Build the one-time SO(3) cache here, in a stable directory (see SO3_CACHE_FILES).
+    const cacheDir = so3CacheDir(context.assetsDir);
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const warm = await runner(
+      python,
+      ["-c", "import sys; sys.path.insert(0, sys.argv[1]); import utils.so3", sourceDir],
+      { cwd: cacheDir, timeoutMs: SO3_CACHE_TIMEOUT_MS },
+    );
+    if (warm.code !== 0) return { passed: false, output: `Failed to build DiffDock-L's SO(3) cache: ${(warm.stderr || warm.stdout).trim()}` };
+
+    const help = await runner(python, [script, "--help"], { cwd: cacheDir, timeoutMs: 120_000 });
     if (help.code !== 0 || !help.stdout.includes("--protein_path")) {
       return { passed: false, output: `Installed DiffDock-L CLI did not respond as expected to --help: ${(help.stdout || help.stderr).trim()}` };
     }

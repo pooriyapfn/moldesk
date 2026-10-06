@@ -563,7 +563,7 @@ describe("diffdockAdapter.verifyInstallation", () => {
       assetsDir,
       runner: async (_cmd, args) => {
         if (args.includes("--help")) return { code: 0, stdout: "usage: inference.py [-h] ... --protein_path PROTEIN_PATH ...", stderr: "" };
-        capturedScript = args[1] ?? "";
+        if ((args[1] ?? "").includes("torch.cuda")) capturedScript = args[1] ?? "";
         return { code: 0, stdout: "cuda ok", stderr: "" };
       },
     });
@@ -573,6 +573,49 @@ describe("diffdockAdapter.verifyInstallation", () => {
     expect(capturedScript).toContain("torch_scatter.scatter_add");
     expect(capturedScript).toContain("torch_cluster.radius_graph");
     expect(capturedScript).toContain("torch_sparse.coalesce");
+  });
+
+  it("builds the SO(3) cache once, in a stable directory, before running --help", async () => {
+    const dir = tempDir();
+    const modelDir = path.join(dir, "model");
+    const assetsDir = path.join(modelDir, "assets");
+    createInstalledFixture(modelDir, assetsDir);
+
+    const calls: Array<{ args: string[]; cwd?: string }> = [];
+    const result = await diffdockAdapter.verifyInstallation({
+      manifestName: "diffdock",
+      modelDir,
+      assetsDir,
+      runner: async (_cmd, args, options) => {
+        calls.push({ args, cwd: options?.cwd });
+        if (args.includes("--help")) return { code: 0, stdout: "--protein_path", stderr: "" };
+        return { code: 0, stdout: "ok", stderr: "" };
+      },
+    });
+    expect(result.passed).toBe(true);
+    const warmIdx = calls.findIndex((c) => (c.args[1] ?? "").includes("import utils.so3"));
+    const helpIdx = calls.findIndex((c) => c.args.includes("--help"));
+    expect(warmIdx).toBeGreaterThan(-1);
+    expect(warmIdx).toBeLessThan(helpIdx);
+    expect(calls[warmIdx]?.cwd).toBe(path.join(assetsDir, "so3-cache"));
+    expect(calls[helpIdx]?.cwd).toBe(path.join(assetsDir, "so3-cache"));
+  });
+
+  it("fails when the SO(3) cache build fails", async () => {
+    const dir = tempDir();
+    const modelDir = path.join(dir, "model");
+    const assetsDir = path.join(modelDir, "assets");
+    createInstalledFixture(modelDir, assetsDir);
+
+    const result = await diffdockAdapter.verifyInstallation({
+      manifestName: "diffdock",
+      modelDir,
+      assetsDir,
+      runner: async (_cmd, args) =>
+        (args[1] ?? "").includes("import utils.so3") ? { code: 1, stdout: "", stderr: "memory error" } : { code: 0, stdout: "ok", stderr: "" },
+    });
+    expect(result.passed).toBe(false);
+    expect(result.output).toContain("SO(3) cache");
   });
 
   it("fails when the installed CLI does not respond as expected to --help", async () => {
