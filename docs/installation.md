@@ -2,6 +2,9 @@
 
 ## npm (recommended)
 
+Requires Node.js >=20 and npm. This command installs the published CLI; it does
+not install Node/npm or test an unmerged source branch.
+
 ```bash
 npm install -g @moldesk/cli
 moldesk --version
@@ -19,9 +22,31 @@ docker run --rm moldesk/moldesk:latest doctor
 ```bash
 git clone https://github.com/pooriyapfn/moldesk.git
 cd moldesk
-pnpm install
-pnpm --filter @moldesk/cli dev -- doctor
+bash scripts/bootstrap.sh
+source "${MOLDESK_BOOTSTRAP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/moleculedesk/bootstrap}/env.sh"
+moldesk doctor
 ```
+
+The bootstrap installs Node 22.23.2 (including npm) when Node >=20/npm are
+missing, verifies the official archive checksum, installs the repository-pinned
+pnpm, installs frozen workspace dependencies, and builds CLI/shared packages.
+It reuses a compatible existing Node installation and does not build the website
+or install molecular model weights. Tools stay in a user-owned directory; shell
+profiles and system packages are not changed. The source checkout must remain
+in place for its `moldesk` launcher to work.
+
+For a GPU Pod, keep tools, source and model state on persistent storage:
+
+```bash
+export MOLDESK_BOOTSTRAP_HOME=/workspace/.moldesk-tools
+export MOLDESK_HOME=/workspace/.moldesk
+bash scripts/bootstrap.sh
+source /workspace/.moldesk-tools/env.sh
+moldesk doctor
+```
+
+`bash scripts/bootstrap.sh --tools-only` installs only Node/npm/pnpm. The existing
+`scripts/install.sh` installs the published CLI and checks its prerequisites.
 
 ## Installing models
 
