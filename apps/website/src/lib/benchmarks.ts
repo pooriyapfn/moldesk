@@ -49,7 +49,8 @@ export const hardware: Record<string, BenchmarkHardware> = {
     driver: "580.126.20",
     cpu: "AMD EPYC 7H12 (32 vCPU allocated)",
     host: "RunPod GPU pod, Linux x64, 125 GiB RAM",
-    pricePerHour: null,
+    pricePerHour: 0.5,
+    priceSource: "RunPod Secure Cloud, EU-CZ-1, compute only; storage adds about $0.02/hr",
   },
 };
 
