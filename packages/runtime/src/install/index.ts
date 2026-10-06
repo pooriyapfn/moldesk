@@ -91,9 +91,12 @@ async function checked(
 ): Promise<RunResult> {
   const result = await runner(command, args, { ...options, timeoutMs: options.timeoutMs ?? 30 * 60_000 });
   if (result.code !== 0 || result.timedOut) {
+    // Surface the tail of the tool's own output so a failed install is diagnosable
+    // from the CLI message alone, without digging through structured details.
+    const tail = (result.stderr || result.stdout || "").trim().split("\n").slice(-15).join("\n");
     throw installError(
       "INSTALL_COMMAND_FAILED",
-      `${command} ${args.join(" ")} failed${result.timedOut ? " (timed out)" : ` with exit code ${result.code}`}.`,
+      `${command} ${args.join(" ")} failed${result.timedOut ? " (timed out)" : ` with exit code ${result.code}`}.${tail ? `\n${tail}` : ""}`,
       "Review command output, network access, and disk space, then run install --reinstall.",
       { command, args, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut },
     );
