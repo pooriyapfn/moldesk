@@ -81,6 +81,10 @@ runtimes:
     preInstall:
       - name: setuptools
         version: 69.5.1
+      # openfold is built with --no-build-isolation (it imports the venv's torch),
+      # and a legacy setup.py build then needs `wheel` present in the venv itself.
+      - name: wheel
+        version: 0.43.0
     # Upstream's own environment.yml installs torch and everything else in one
     # pip block, with the explicit comment "Need to install torch in order to
     # build openfold, so install it first" — THEN installs `openfold` alone in

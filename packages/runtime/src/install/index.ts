@@ -284,6 +284,8 @@ const POST_INSTALL_HOOKS: Record<string, (venvBinDir: string, runner: InstallCom
  * `--only-binary <name>` is appended for every requirement in `binaryOnlyNames`
  * so an ABI-sensitive CUDA extension package can never silently fall back to
  * building from source — install fails closed instead.
+ * `noBuildIsolation` builds in the venv itself (not uv's throwaway build env), so
+ * a build that imports an already-installed dependency (torch) can find it.
  */
 async function installRequirementSet(
   runner: InstallCommandRunner,
@@ -294,8 +296,10 @@ async function installRequirementSet(
   binaryOnlyNames: Set<string>,
   env: NodeJS.ProcessEnv,
   lockFileSuffix: string,
+  noBuildIsolation = false,
 ): Promise<void> {
   if (requirements.length === 0) return;
+  const isolationArgs = noBuildIsolation ? ["--no-build-isolation"] : [];
   const binaryOnlyArgs = requirements
     .filter((r) => binaryOnlyNames.has(r.name))
     .flatMap((r) => ["--only-binary", r.name]);
@@ -308,14 +312,14 @@ async function installRequirementSet(
     await checked(
       runner,
       uv,
-      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", ...binaryOnlyArgs, "-r", requirementsFile],
+      ["pip", "install", "--python", python, "--require-hashes", "--no-deps", ...isolationArgs, ...binaryOnlyArgs, "-r", requirementsFile],
       { env },
     );
   }
   await checked(
     runner,
     uv,
-    ["pip", "install", "--python", python, ...binaryOnlyArgs, ...requirements.map((r) => requirementSpecifier(r))],
+    ["pip", "install", "--python", python, ...isolationArgs, ...binaryOnlyArgs, ...requirements.map((r) => requirementSpecifier(r))],
     { env },
   );
 }
@@ -404,7 +408,7 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   // reliably sequence.
   if (deferredRequirements.length > 0) {
     request.onProgress?.({ step: "dependencies", message: "Installing buildAfter dependencies" });
-    await installRequirementSet(runner, uv, python, request.targetDir, deferredRequirements, binaryOnlyNames, env, "-deferred");
+    await installRequirementSet(runner, uv, python, request.targetDir, deferredRequirements, binaryOnlyNames, env, "-deferred", true);
   }
 
   const postInstall: PostInstallHookResult[] = [];

@@ -403,6 +403,9 @@ describe("installation runtime", () => {
     expect(installCalls[0]?.args.join(" ")).not.toContain("openfold");
     expect(installCalls[1]?.args.join(" ")).toContain("openfold @ git+https://github.com/aqlaboratory/openfold");
     expect(installCalls[1]?.args).not.toContain("torch==1.13.1+cu117");
+    // The deferred build must see the venv's torch, so it cannot use uv's isolated build env.
+    expect(installCalls[1]?.args).toContain("--no-build-isolation");
+    expect(installCalls[0]?.args).not.toContain("--no-build-isolation");
   });
 
   it("reuses an already-verified managed uv install without downloading", async () => {
