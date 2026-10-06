@@ -9,7 +9,7 @@ export const metadata = {
 [OpenDDE](https://github.com/aurekaresearch/OpenDDE) is an all-atom biomolecular co-folding model from Aureka AI Research, released under the Apache-2.0 license. It predicts 3D structures of complexes containing proteins, DNA, RNA, small-molecule ligands, and ions, along with per-sample confidence scores. MoleculeDesk installs a pinned OpenDDE release, its checkpoint, and its chemical-component data into a managed location, then runs predictions without touching your home-directory caches.
 
 <div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-  <strong className="text-foreground">Status: beta (upstream preview).</strong> OpenDDE's authors label this release a preview: CLI flags, JSON fields, and checkpoints may change between versions, and predictions are not guaranteed to be reproducible across releases. MoleculeDesk advertises Apple Silicon (MPS) only, because that is the platform where a real install and prediction were verified. The Linux/NVIDIA CUDA path is implemented but not yet verified on real hardware.
+  <strong className="text-foreground">Status: beta (upstream preview).</strong> OpenDDE's authors label this release a preview: CLI flags, JSON fields, and checkpoints may change between versions, and predictions are not guaranteed to be reproducible across releases. MoleculeDesk advertises Apple Silicon (MPS) only, because that is the platform where a real install and prediction were verified. The Linux/NVIDIA CUDA path also ran successfully on an NVIDIA RTX 3090 in testing (see the benchmarks below), but it is not advertised in the registry yet.
 </div>
 
 ## What OpenDDE is used for

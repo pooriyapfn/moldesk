@@ -30,15 +30,15 @@ Available:
 * `moldesk list` for model discovery
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
-* beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA is implemented but not yet verified on GPU hardware
-* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; Linux x64/CUDA is implemented but not advertised until verified on GPU hardware
+* beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
+* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; the Linux x64/CUDA path ran successfully on an NVIDIA RTX 3090 in testing but is not yet advertised in the registry
 * `moldesk list --installed`, reinstall, and uninstall state management
 * `moldesk --version`
 * initial CLI and runtime architecture
 
 In progress:
 
-* BindCraft2 adapter implemented for bounded local Linux/NVIDIA binder campaigns; live CUDA verification pending (source-available, hosting-restricted license)
+* BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on an NVIDIA RTX 3090; promotion to beta pending (source-available, hosting-restricted license)
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
@@ -127,11 +127,11 @@ Model support is being added incrementally.
 
 | Model | Status |
 | --- | --- |
-| Boltz-2 | Beta; Apple Silicon MPS verified |
+| Boltz-2 | Beta; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
-| DiffDock-L | Planned; adapter not yet live-verified |
-| BindCraft2 | Planned; bounded campaign adapter, Linux/NVIDIA verification pending |
+| DiffDock-L | Coming soon |
+| BindCraft2 | Planned; bounded campaign verified on an RTX 3090, promotion to beta pending |
 | OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |
 | AlphaFold | Planned |
