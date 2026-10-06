@@ -11,7 +11,7 @@ MoleculeDesk can install and run Boltz-2 on an Apple Silicon Mac using its MPS r
 ## What you need
 
 - An Apple Silicon Mac for the verified path, or a Linux x64 machine for the currently unverified CUDA path.
-- Node.js and npm to install the MoleculeDesk CLI.
+- A Mac or Linux computer. Nothing else needs to be installed first: the MoleculeDesk installer sets up what it needs.
 - Disk space and a network connection for the model environment and checkpoints during installation.
 
 Run `moldesk doctor` before installing. It reports your detected hardware and software compatibility. See [Boltz-2 model requirements](/docs/models/boltz#requirements) for the current Python, platform, accelerator, and file-format details.
@@ -19,7 +19,7 @@ Run `moldesk doctor` before installing. It reports your detected hardware and so
 ## Install and run a prediction
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
 moldesk doctor
 moldesk install boltz
 git clone https://github.com/pooriyapfn/moldesk.git

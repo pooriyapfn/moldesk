@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync:install": "node scripts/sync-install-script.mjs",
+    "predev": "node scripts/sync-install-script.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/sync-install-script.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

@@ -5,7 +5,7 @@
 ## Start here
 
 - [Documentation](https://moleculedesk.com/docs): installation, CLI workflow, model status, and architecture.
-- [Installation](https://moleculedesk.com/docs/installation): install the CLI and check your system.
+- [Installation](https://moleculedesk.com/docs/installation): one-command install for macOS and Linux (no Node.js or npm needed), then check your system.
 - [Model compatibility](https://moleculedesk.com/docs/model-compatibility): supported platforms and status definitions.
 
 ## Practical guides

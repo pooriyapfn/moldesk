@@ -1,15 +1,20 @@
 # Installation
 
-## npm (recommended)
-
-Requires Node.js >=20 and npm. This command installs the published CLI; it does
-not install Node/npm or test an unmerged source branch.
+## Quick install (macOS and Linux)
 
 ```bash
-npm install -g @moldesk/cli
+curl -fsSL https://moleculedesk.com/install.sh | sh
 moldesk --version
 moldesk doctor
 ```
+
+Needs nothing installed beforehand: no Node.js, no npm, no admin rights. The
+installer (`scripts/install.sh`, also served at `/install.sh` from
+`apps/website/public/install.sh`) uses an existing Node.js >=20 when present,
+otherwise downloads a checksum-verified private Node.js 22 into `~/.moldesk/node`,
+installs the CLI into `~/.moldesk/cli`, writes a launcher to `~/.moldesk/bin`, and
+adds one `# MoleculeDesk` PATH line to the shell profile. Re-run it to update.
+Options: `MOLDESK_HOME`, `MOLDESK_NO_MODIFY_PATH=1`, `MOLDESK_CLI_SPEC`.
 
 ## Docker
 
