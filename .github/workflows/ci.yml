@@ -23,3 +23,4 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: node --test scripts/release-lib.test.mjs
