@@ -357,9 +357,13 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   // before anything else — for a package (e.g. a pinned older `setuptools`) whose
   // own version a later requirement's source build depends on already being fully
   // resolved, not merely present somewhere in the same combined resolver graph.
+  // preInstall resolves against PyPI only: uv's default first-index strategy would
+  // otherwise let an extra index that merely lists the package name (e.g. PyTorch's
+  // cu117 index carries a stale `setuptools`) shadow the pinned PyPI version.
+  const preInstallEnv = managedEnvironment(paths, request.runtime.python);
   for (const req of request.runtime.preInstall ?? []) {
     request.onProgress?.({ step: "dependencies", message: `Installing ${req.name} (preInstall)` });
-    await checked(runner, uv, ["pip", "install", "--python", python, requirementSpecifier(req)], { env });
+    await checked(runner, uv, ["pip", "install", "--python", python, requirementSpecifier(req)], { env: preInstallEnv });
   }
 
   // uv/pip's --require-hashes mode demands every requirement resolved by a given

@@ -331,6 +331,41 @@ describe("installation runtime", () => {
     expect(installCalls[0]?.args.filter((a) => a === "setuptools==69.5.1")).toHaveLength(1);
   });
 
+  it("runs preInstall against PyPI only, without extra indexes or find-links", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-pre-install-index");
+    const envs: Array<{ args: string[]; env?: NodeJS.ProcessEnv }> = [];
+    const revision = "3".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/pre-install-index-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.10",
+        installer: "uv",
+        preInstall: [{ name: "setuptools", version: "69.5.1" }],
+        requirements: [{ name: "torch", version: "1.13.1+cu117" }],
+        extraIndexUrls: ["https://download.pytorch.org/whl/cu117"],
+        findLinks: ["https://data.pyg.org/whl/torch-1.13.1+cu117.html"],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (_command, args, options) => {
+        envs.push({ args, env: options?.env });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==1.13.1+cu117\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.10.13\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const installs = envs.filter((c) => c.args[0] === "pip" && c.args[1] === "install");
+    expect(installs[0]?.args).toContain("setuptools==69.5.1");
+    expect(installs[0]?.env?.["UV_EXTRA_INDEX_URL"]).toBeUndefined();
+    expect(installs[0]?.env?.["UV_FIND_LINKS"]).toBeUndefined();
+    expect(installs[1]?.env?.["UV_EXTRA_INDEX_URL"]).toBe("https://download.pytorch.org/whl/cu117");
+  });
+
   it("defers buildAfter requirements to their own final install call, strictly after every other requirement", async () => {
     const paths = tempPaths();
     const targetDir = path.join(paths.home, "model-build-after");
