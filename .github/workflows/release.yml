@@ -1,5 +1,8 @@
 name: Release
 
+# Push a tag like v0.0.2 to publish. Every package's version must already equal
+# the tag (bump them first and merge), and the tagged commit must be on main.
+# Tags with a suffix (v0.0.3-rc.1) publish under the "next" dist-tag.
 on:
   push:
     tags:
@@ -9,8 +12,47 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tagged commit must be on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Tag $GITHUB_REF_NAME is not on main. Merge to main first, then tag."; exit 1; }
+
+      - name: Tag must match every package version
+        id: check
+        run: node scripts/release-check.mjs "$GITHUB_REF_NAME"
+
+      - run: node --test scripts/release-lib.test.mjs
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
   publish-npm:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,21 +66,60 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @moldesk/registry --filter @moldesk/runtime --filter @moldesk/adapters --filter @moldesk/core --filter @moldesk/cli build
+      - run: pnpm build
 
-      # Published in dependency order: registry -> runtime/adapters -> core -> cli.
-      - run: pnpm --filter @moldesk/registry publish --no-git-checks
+      # Dependency order: registry -> runtime -> adapters -> core -> cli.
+      # A package whose version is already on npm is skipped, so a failed run can
+      # simply be re-run (re-run failed jobs, or delete and re-push the tag).
+      - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/runtime publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/adapters publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/core publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm --filter @moldesk/cli publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in packages/registry packages/runtime packages/adapters packages/core apps/cli; do
+            node scripts/publish-package.mjs "$dir"
+          done
+
+  smoke-test:
+    needs: [verify, publish-npm]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      MOLDESK_NO_MODIFY_PATH: "1"
+      MOLDESK_CLI_SPEC: "@moldesk/cli@${{ needs.verify.outputs.version }}"
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install into a temporary folder
+        run: echo "MOLDESK_HOME=$RUNNER_TEMP/moldesk" >> "$GITHUB_ENV"
+
+      # Run the public installer the way a new user would, with a minimal PATH so it
+      # sets up its own Node. npm can take a minute to serve a new version, so retry.
+      - name: Install the published CLI with the installer
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if env PATH=/usr/bin:/bin:/usr/sbin:/sbin sh scripts/install.sh; then exit 0; fi
+            echo "Install attempt $attempt failed; npm may still be propagating. Retrying in 30s."
+            sleep 30
+          done
+          echo "::error::The installer could not install $MOLDESK_CLI_SPEC."
+          exit 1
+
+      - name: Installed version must equal the tag
+        run: |
+          got=$("$MOLDESK_HOME/bin/moldesk" --version)
+          echo "moldesk --version -> $got"
+          test "$got" = "$VERSION" || { echo "::error::Expected $VERSION, got $got."; exit 1; }
+
+      # The registry package must ship the model manifests (0.0.1 shipped none, so
+      # `moldesk list` printed "No models found in the registry.").
+      - name: Model registry must be populated
+        run: |
+          list=$("$MOLDESK_HOME/bin/moldesk" list)
+          echo "$list"
+          for model in boltz proteinmpnn ligandmpnn opendde; do
+            echo "$list" | grep -qw "$model" || { echo "::error::moldesk list is missing $model."; exit 1; }
+          done
