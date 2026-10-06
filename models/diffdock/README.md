@@ -86,29 +86,28 @@ fails) rather than an incidental side effect of caching. `torch-geometric`
 is deliberately excluded from `binaryOnly` since forcing wheel-only there
 would make it uninstallable.
 
-## OpenFold install ordering (non-obvious, revised after review)
+## OpenFold is intentionally not installed
 
-Upstream's `requirements.txt` lists every dependency (including `openfold`)
-for a single combined `pip install` — but upstream's own `environment.yml`
-(the more carefully maintained, explicitly-sequenced recipe; verified live
-on 2026-09-24) does three separate, ordered install stages with explicit
-rationale comments: (1) conda-install a pinned older `setuptools==69.5.1`
-first — comment: *"Need older setuptools for openfold"* (`openfold`'s build
-is incompatible with modern setuptools, which removed distutils); (2) `pip
-install` torch plus every other pinned dependency — comment: *"Need to
-install torch in order to build openfold, so install it first"*; (3) `pip
-install openfold` alone, in its own separate later invocation. `openfold`'s
-own `setup.py` imports `torch` at build time to select CUDA architecture
-flags for its compiled extension, so a single combined resolver invocation
-cannot reliably guarantee that ordering.
+Upstream's `environment.yml` builds `openfold` (pinned commit
+`4b41059694619831a7db195b7e0988fc4ff3a307`) so ESMFold can predict a protein
+structure from a bare sequence (`inference.py --protein_sequence`). Verified on
+an RTX 3090 pod (CUDA 12.8 driver/toolkit) that this cannot be built there:
+`openfold`'s `setup.py` compiles a mandatory CUDA extension, and PyTorch's
+extension builder refuses a CUDA 12.8 toolkit against `torch==1.13.1+cu117`
+("The detected CUDA version (12.8) mismatches the version that was used to
+compile PyTorch (11.7)"). PyPI's `nvidia-cuda-nvcc-cu11` ships only `ptxas`,
+no `nvcc`, so a matching compiler cannot be installed into the managed
+environment either.
 
-Two new reusable manifest fields capture this (`packages/registry/src/schema.ts`,
-wired into a genuinely staged install in
-`packages/runtime/src/install/index.ts`'s `preparePythonEnvironment`):
-`preInstall` (requirements installed first, each in its own separate
-invocation — this manifest: `setuptools==69.5.1`) and `buildAfter` (requirement
-names deferred to their own final separate invocation, strictly after every
-other requirement including `preInstall` — this manifest: `openfold`).
+This adapter only accepts a protein structure file (`proteinPath`), which never
+reaches the ESMFold code path; docking from a PDB uses ESM2 embeddings
+(`esm.pretrained`) only. So `openfold` is omitted rather than requiring
+researchers to install a system CUDA 11.7 toolkit.
+
+The registry still supports `preInstall` (this manifest: `setuptools==69.5.1`)
+and `buildAfter` for models that genuinely need a staged install; installs of
+`buildAfter` requirements run with `--no-build-isolation` so a build that
+imports an installed dependency (torch) can find it.
 
 ## Every network-fetch path is pinned, not just the obvious one
 
@@ -149,8 +148,7 @@ exist via a real `git fetch` on 2026-09-23.
 disagree on `e3nn` (`0.5.0` vs `0.5.1`) and `environment.yml` additionally
 pins `pytorch-lightning==1.9.5`, entirely absent from `requirements.txt`.
 Verified live on 2026-09-24 that `environment.yml` is the more carefully
-maintained, explicitly-sequenced recipe (see the OpenFold ordering section
-below), so this manifest follows its pins (`e3nn==0.5.1`,
+maintained, explicitly-sequenced recipe, so this manifest follows its pins (`e3nn==0.5.1`,
 `pytorch-lightning==1.9.5` added) rather than `requirements.txt`'s.
 
 ## Job format and confirmed checkpoint filenames

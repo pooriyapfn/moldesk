@@ -74,27 +74,21 @@ runtimes:
     cuda:
       level: required
     # Upstream's own environment.yml (not requirements.txt, which omits this
-    # entirely) installs an older `setuptools` via conda BEFORE anything else,
-    # with the explicit comment "Need older setuptools for openfold" —
-    # verified live on 2026-09-24. openfold's own build process is
-    # incompatible with modern setuptools (which removed distutils).
+    # entirely) installs an older `setuptools` via conda BEFORE anything else
+    # (verified live on 2026-09-24). It also keeps `pkg_resources`, which several
+    # of the pinned packages expect, available in the bare uv venv.
     preInstall:
       - name: setuptools
         version: 69.5.1
-      # openfold is built with --no-build-isolation (it imports the venv's torch),
-      # and a legacy setup.py build then needs `wheel` present in the venv itself.
-      - name: wheel
-        version: 0.43.0
-    # Upstream's own environment.yml installs torch and everything else in one
-    # pip block, with the explicit comment "Need to install torch in order to
-    # build openfold, so install it first" — THEN installs `openfold` alone in
-    # a separate, later pip block. openfold's setup.py imports torch at build
-    # time to select CUDA architecture flags for its own compiled extension,
-    # so a single combined resolver invocation cannot reliably sequence this —
-    # openfold is deferred to its own final install call, after every other
-    # requirement (including preInstall) has finished.
-    buildAfter:
-      - openfold
+    # `openfold` is intentionally NOT installed. Upstream builds it so ESMFold can
+    # predict a structure from a bare sequence (`inference.py --protein_sequence`,
+    # `esm.pretrained.esmfold_v1()`), but compiling its CUDA extension needs a
+    # full CUDA 11.7 toolkit (nvcc) matching torch 1.13.1+cu117, which modern GPU
+    # hosts (CUDA 12.x) do not have and which PyPI does not ship (the cu11 nvcc
+    # wheel has no compiler driver). This adapter only accepts a protein
+    # structure file (`proteinPath`), so that code path is never reached; docking
+    # from a PDB uses only ESM2 embeddings (`esm.pretrained`), which do not need
+    # openfold.
     requirements:
       - name: torch
         version: 1.13.1+cu117
@@ -167,9 +161,6 @@ runtimes:
       - name: dllogger
         source: https://github.com/NVIDIA/dllogger
         revision: 0478734ff7be75adde8d160e04872664d1c62e5f
-      - name: openfold
-        source: https://github.com/aqlaboratory/openfold
-        revision: 4b41059694619831a7db195b7e0988fc4ff3a307
 # `inference.py` silently downloads `diffdock_models.zip` from a GitHub release
 # on first run when `--model_dir` doesn't already exist
 # (`utils/download.py:download_and_extract`), and separately, every run
