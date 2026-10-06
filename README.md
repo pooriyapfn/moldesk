@@ -29,6 +29,7 @@ Available:
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
 * beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA is implemented but not yet verified on GPU hardware
+* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; Linux x64/CUDA is implemented but not advertised until verified on GPU hardware
 * `moldesk list --installed`, reinstall, and uninstall state management
 * `moldesk --version`
 * initial CLI and runtime architecture
@@ -127,6 +128,7 @@ Model support is being added incrementally.
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
 | DiffDock-L | Planned; adapter not yet live-verified |
+| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |
 | AlphaFold | Planned |
 | Chai | Planned |

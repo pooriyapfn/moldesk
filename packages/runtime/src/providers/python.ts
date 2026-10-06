@@ -57,7 +57,10 @@ export class PythonRuntimeProvider implements RuntimeProvider {
     try {
       const result = await runCommand(request.executable, request.args, {
         cwd: request.cwd,
-        env: request.env,
+        // Adapter-declared env vars (e.g. OPENDDE_ROOT_DIR, TORCH_HOME) overlay the
+        // inherited environment rather than replacing it — a bare `request.env`
+        // would drop PATH/HOME and break the model process.
+        env: request.env ? { ...process.env, ...request.env } : undefined,
         timeoutMs: NO_TIMEOUT_MS,
         gracefulTimeoutMs: EXECUTE_GRACEFUL_TIMEOUT_MS,
         signal: request.signal,

@@ -155,6 +155,12 @@ const pythonRuntimeSchema = z
     // setup time to select CUDA architecture flags), which a single combined
     // resolver invocation cannot reliably sequence.
     buildAfter: z.array(z.string().min(1)).min(1).optional(),
+    // PyTorch build selection for uv's native `--torch-backend` (mapped to
+    // `UV_TORCH_BACKEND`), which routes torch-ecosystem packages to the matching
+    // official PyTorch index. A closed enum, never a free-form index URL or pip
+    // argument fragment — extend it only alongside a manifest that actually pins
+    // and verifies that backend's wheels.
+    torchBackend: z.enum(["cpu", "cu126"]).optional(),
   })
   .strict();
 

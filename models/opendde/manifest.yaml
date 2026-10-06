@@ -1,0 +1,169 @@
+schemaVersion: 1
+name: opendde
+displayName: OpenDDE Preview
+modelVersion: 1.1.1
+adapterVersion: 0.1.0
+description: All-atom biomolecular co-folding (proteins, nucleic acids, ligands, ions) from Aureka AI Research — upstream preview release.
+category: structure-prediction
+# Upstream itself labels this a preview ("CLI flags, input/output JSON fields,
+# and released checkpoints may change between versions ... not yet intended for
+# production pipelines"), so this stays `beta` regardless of verification.
+status: beta
+license: Apache-2.0
+homepage: https://github.com/aurekaresearch/OpenDDE
+source:
+  repository: https://github.com/aurekaresearch/OpenDDE
+  # Tag v1.1.1 (annotated tag object 1e986714b6a397d0d812d58ee78e1c7dc8c75cf2
+  # peels to this commit), verified via `git ls-remote --tags` on 2026-09-26.
+  # The PyPI `opendde==1.1.1` wheel pinned below was unpacked and compared
+  # file-by-file against this commit's `opendde/` and `runner/` trees: all 117
+  # files byte-identical, and `opendde/config/model_manifest.json` in both
+  # declares package version 1.1.1.
+  revision: ddfa1df8aff1babf1fddac4247b7d2351bd0ce9f
+adapterVerification:
+  lastVerifiedAt: "2026-09-26T12:31:00.000Z"
+  platforms:
+    - darwin-arm64
+  notes: >-
+    Clean `moldesk install opendde` on an Apple M3 (macOS 26.6.2, Python
+    3.11.16, torch 2.7.1, opendde 1.1.1). verifyInstallation passed: asset
+    sizes and SHA-256, a real MPS tensor op, pinned versions, and CLI flags.
+    `moldesk run opendde examples/opendde/tiny.json` succeeded in 39 s with
+    upstream logging "Selected inference device: mps". Outputs: a parseable
+    mmCIF and confidence JSON, checksummed in run.json. The ligand-file
+    example also passed, with companion staging verified after the source
+    files were deleted. Invalid device/template params were rejected before
+    launch. Linux/CUDA was not run (no NVIDIA hardware), so it is not
+    advertised. Full evidence is in models/opendde/README.md.
+runtimes:
+  # Apple Silicon: native PyPI torch (MPS-enabled macOS arm64 build), no
+  # CUDA/cuEquivariance extra, never the NVIDIA-only Docker image. Upstream
+  # documents `--device mps` on Apple Silicon; the live gate for this entry is
+  # recorded in models/opendde/README.md.
+  - kind: python
+    python: "3.11"
+    installer: uv
+    platforms:
+      - darwin-arm64
+    # Measured on the 2026-09-26 live install: the resulting .venv is 823 MB.
+    # Download is an estimate (compressed wheels, torch alone is 68.6 MB).
+    estimatedDownloadBytes: 300000000
+    estimatedDiskBytes: 865000000
+    requirements:
+      # Exact artifact digest of opendde-1.1.1-py3-none-any.whl from PyPI.
+      - name: opendde
+        version: 1.1.1
+        hashes:
+          - 94b193bd360e017c9cfab08d199ec9333cb2919a49fe1d9270c659c4b2efe544
+      # opendde 1.1.1 itself pins `torch==2.7.1`; this is PyPI's
+      # torch-2.7.1-cp311-none-macosx_11_0_arm64.whl.
+      - name: torch
+        version: 2.7.1
+        hashes:
+          - aea4fc1bf433d12843eb2c6b2204861f43d8364597697074c8d38ae2507f8730
+  # Linux x64 + NVIDIA: upstream's documented `--torch-backend cu126
+  # "opendde[gpu]"` install (cuEquivariance/Triton kernels), expressed through
+  # the closed-enum `torchBackend` field rather than a pip argument fragment.
+  # NOT advertised in `hardware.platforms` below: no NVIDIA hardware was
+  # available to run the CUDA live gate, so a Linux host is rejected by the
+  # compatibility check before this entry is ever selected. Add `linux-x64` to
+  # `hardware.platforms` only after that gate passes (see README).
+  - kind: python
+    python: "3.11"
+    installer: uv
+    platforms:
+      - linux-x64
+    torchBackend: cu126
+    nvidiaGpu: required
+    cuda:
+      level: required
+      minDriverCudaVersion: "12.6"
+    requirements:
+      - name: opendde
+        version: 1.1.1
+        extras:
+          - gpu
+        hashes:
+          - 94b193bd360e017c9cfab08d199ec9333cb2919a49fe1d9270c659c4b2efe544
+      # download.pytorch.org/whl/cu126: torch-2.7.1+cu126-cp311-cp311-manylinux_2_28_x86_64.whl
+      - name: torch
+        version: 2.7.1+cu126
+        hashes:
+          - e1a8465165708c2e2e90786ade8a3e1b1d01eca1f022792cd397caad9d8c21bc
+# `opendde pred` would otherwise download the checkpoint and CCD files into
+# `$OPENDDE_ROOT_DIR` (default `~/.cache/opendde`) on first use. They are pinned
+# here instead to the exact Hugging Face commit upstream's own
+# `opendde/config/model_manifest.json` / `dependency_url.py` name
+# (aurekaresearch/OpenDDE @ eddd563ce96571f784012edd8f045181c8f8627d), with the
+# sizes and SHA-256 digests upstream publishes there — independently confirmed
+# against Hugging Face's X-Linked-Size / X-Linked-ETag for each file on
+# 2026-09-26. The adapter points OPENDDE_ROOT_DIR at `assets/opendde-root`.
+#
+# Deliberately NOT installed:
+# - `opendde_abag.pt` (antibody–antigen checkpoint, 2625271509 bytes, sha256
+#   5cf37441ddef2a2f148b81dd4a218ad274f996fecaf17dec901ab6cf1351713d): the asset
+#   model has no opt-in/optional asset concept, so installing it would force an
+#   extra 2.6 GB on every user.
+# - Template/RNA-MSA search databases (pdb_seqres ~220 MB, Rfam ~220 MB,
+#   RNAcentral ~13 GB, NT-RNA ~75 GB, plus a PDB mmCIF mirror) and the
+#   template-only `obsolete_to_successor.json`/`release_date_cache.json`. The
+#   adapter rejects `use_template=true`, and `use_rna_msa=true` without
+#   precomputed per-chain RNA A3M files, so nothing ever reaches for them.
+assets:
+  - id: opendde-v1-checkpoint
+    url: https://huggingface.co/aurekaresearch/OpenDDE/resolve/eddd563ce96571f784012edd8f045181c8f8627d/opendde.pt
+    source: https://huggingface.co/aurekaresearch/OpenDDE
+    license: Apache-2.0
+    sha256: 7b826620390afad877ee2babc6a4d0df81b94d3a0be030959853d6a7da0807cc
+    sizeBytes: 2625249069
+    target: opendde-root/checkpoint/opendde.pt
+  - id: opendde-ccd-components
+    url: https://huggingface.co/aurekaresearch/OpenDDE/resolve/eddd563ce96571f784012edd8f045181c8f8627d/common/components.cif
+    source: https://huggingface.co/aurekaresearch/OpenDDE
+    sha256: bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5
+    sizeBytes: 490777362
+    target: opendde-root/common/components.cif
+  - id: opendde-ccd-rdkit-mols
+    url: https://huggingface.co/aurekaresearch/OpenDDE/resolve/eddd563ce96571f784012edd8f045181c8f8627d/common/components.cif.rdkit_mol.pkl
+    source: https://huggingface.co/aurekaresearch/OpenDDE
+    sha256: d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35
+    sizeBytes: 142498117
+    target: opendde-root/common/components.cif.rdkit_mol.pkl
+hardware:
+  platforms:
+    - darwin-arm64
+  # ~3.26 GB of assets plus ~1.5 GB for the managed Python environment.
+  minDiskGb: 6
+input:
+  formats:
+    - .json
+  required: true
+outputs:
+  # Upstream writes <out_dir>/<job_name>/seed_<seed>/predictions/… (verified
+  # against runner/dumper.py and docs/infer_json_format.md at the pinned
+  # revision). Segment-wise globs, so an unrelated .cif/.json elsewhere under
+  # output/ can never satisfy these.
+  - id: structures
+    glob: "*/seed_*/predictions/*_sample_*.cif"
+    required: true
+  - id: confidence
+    glob: "*/seed_*/predictions/*_summary_confidence_sample_*.json"
+    required: true
+  - id: atom_confidence
+    glob: "*/seed_*/predictions/*_full_data_sample_*.json"
+    required: false
+  # Adapter-written PDB copy of each mmCIF (per-atom pLDDT in the B-factor
+  # column, CONECT records for ligand bonds). The mmCIF stays the primary
+  # result; structures legacy PDB can't represent are listed in
+  # moldesk-pdb-export-errors.json instead of failing the run.
+  - id: structures_pdb
+    glob: "*/seed_*/predictions/*_sample_*.pdb"
+    required: false
+  - id: pdb_export_errors
+    glob: "moldesk-pdb-export-errors.json"
+    required: false
+  # Adapter-written copy of the job with companion references rewritten to
+  # their staged paths; only present when the job references files.
+  - id: resolved_job
+    glob: "moldesk-resolved-job.json"
+    required: false

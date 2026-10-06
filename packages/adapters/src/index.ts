@@ -31,6 +31,10 @@ export interface RunContext {
    * `id` the adapter declared. Populated only when `resolveCompanionInputs`
    * returned entries for this run's job file; absent for single-file models. */
   companionInputs?: Array<{ id: string; path: string }>;
+  /** Injected for testability when `collectOutputs` post-processes outputs with
+   * the installed runtime (e.g. OpenDDE's mmCIF → PDB export); defaults to
+   * `@moldesk/runtime`'s `runCommand`. */
+  runner?: import("@moldesk/runtime").InstallCommandRunner;
 }
 
 /**

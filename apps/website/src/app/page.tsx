@@ -63,7 +63,7 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Supported models
             </span>
-            {["Boltz", "ProteinMPNN", "LigandMPNN"].map((name) => (
+            {["Boltz", "OpenDDE", "ProteinMPNN", "LigandMPNN"].map((name) => (
               <span
                 key={name}
                 className="rounded-full border border-accent bg-accent-soft px-4 py-[7px] font-mono text-[13px] text-foreground"

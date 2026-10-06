@@ -264,6 +264,21 @@ describe("parseManifest", () => {
     expect(() => parseManifest(raw2, "m.yaml")).toThrowError(MoldeskError);
   });
 
+  it("accepts a known torchBackend and rejects anything outside the closed enum", () => {
+    const raw = baseManifest();
+    raw["runtimes"] = [
+      { kind: "python", python: "3.11", installer: "uv", torchBackend: "cu126", requirements: [{ name: "torch", version: "2.7.1+cu126" }] },
+    ];
+    expect(parseManifest(raw, "m.yaml").runtimes[0]).toMatchObject({ torchBackend: "cu126" });
+    for (const bad of ["auto", "cu999", "--index-url https://evil.example", "https://download.pytorch.org/whl/cu126", ""]) {
+      const rawBad = baseManifest();
+      rawBad["runtimes"] = [
+        { kind: "python", python: "3.11", installer: "uv", torchBackend: bad, requirements: [{ name: "torch" }] },
+      ];
+      expect(() => parseManifest(rawBad, "m.yaml")).toThrowError(MoldeskError);
+    }
+  });
+
   it("rejects an empty extraIndexUrls array", () => {
     const raw = baseManifest();
     raw["runtimes"] = [

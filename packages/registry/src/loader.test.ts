@@ -68,7 +68,7 @@ describe("listAvailableModels", () => {
       process.chdir(unrelatedCwd);
       const models = listAvailableModels();
       const names = models.map((m) => m.name).sort();
-      expect(names).toEqual(["boltz", "diffdock", "ligandmpnn", "proteinmpnn"]);
+      expect(names).toEqual(["boltz", "diffdock", "ligandmpnn", "opendde", "proteinmpnn"]);
     } finally {
       process.chdir(originalCwd);
     }

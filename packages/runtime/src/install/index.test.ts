@@ -198,6 +198,42 @@ describe("installation runtime", () => {
       expect(call.env?.["UV_INDEX_URL"]).toBeUndefined();
       expect(call.env?.["UV_EXTRA_INDEX_URL"]).toBeUndefined();
       expect(call.env?.["UV_FIND_LINKS"]).toBeUndefined();
+      expect(call.env?.["UV_TORCH_BACKEND"]).toBeUndefined();
+    }
+  });
+
+  it("wires torchBackend into UV_TORCH_BACKEND on every uv call, never as a raw CLI arg", async () => {
+    const paths = tempPaths();
+    const targetDir = path.join(paths.home, "model-torch-backend");
+    const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv }> = [];
+    const revision = "f".repeat(40);
+    await preparePythonEnvironment({
+      targetDir,
+      repository: "https://github.com/example/torch-model",
+      revision,
+      runtime: {
+        kind: "python",
+        python: "3.11",
+        installer: "uv",
+        torchBackend: "cu126",
+        requirements: [{ name: "torch", version: "2.7.1+cu126" }],
+      },
+      uvExecutable: "uv",
+      paths,
+      runner: async (command, args, options) => {
+        calls.push({ command, args, env: options?.env });
+        if (args.includes("rev-parse")) return { code: 0, stdout: `${revision}\n`, stderr: "" };
+        if (args.includes("freeze")) return { code: 0, stdout: "torch==2.7.1+cu126\n", stderr: "" };
+        if (args[0] === "--version") return { code: 0, stdout: "Python 3.11.9\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const uvCalls = calls.filter((call) => call.command === "uv");
+    expect(uvCalls.length).toBeGreaterThan(0);
+    for (const call of uvCalls) {
+      expect(call.env?.["UV_TORCH_BACKEND"]).toBe("cu126");
+      expect(call.env?.["UV_INDEX_URL"]).toBeUndefined();
+      expect(call.args).not.toContain("--torch-backend");
     }
   });
 

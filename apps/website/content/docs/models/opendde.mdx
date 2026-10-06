@@ -1,0 +1,117 @@
+export const metadata = {
+  title: "OpenDDE Preview: all-atom biomolecular co-folding",
+  description:
+    "Run OpenDDE Preview locally with MoleculeDesk on Apple Silicon (MPS). Pinned install, input/output formats, params, and limitations.",
+};
+
+# Run OpenDDE Preview for all-atom co-folding
+
+[OpenDDE](https://github.com/aurekaresearch/OpenDDE) is an all-atom biomolecular co-folding model from Aureka AI Research, released under the Apache-2.0 license. It predicts 3D structures of complexes containing proteins, DNA, RNA, small-molecule ligands, and ions, along with per-sample confidence scores. MoleculeDesk installs a pinned OpenDDE release, its checkpoint, and its chemical-component data into a managed location, then runs predictions without touching your home-directory caches.
+
+<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
+  <strong className="text-foreground">Status: beta (upstream preview).</strong> OpenDDE's authors label this release a preview: CLI flags, JSON fields, and checkpoints may change between versions, and predictions are not guaranteed to be reproducible across releases. MoleculeDesk advertises Apple Silicon (MPS) only, because that is the platform where a real install and prediction were verified. The Linux/NVIDIA CUDA path is implemented but not yet verified on real hardware.
+</div>
+
+## What OpenDDE is used for
+
+- **Complex structure prediction**: protein–protein, protein–ligand, protein–nucleic-acid, and mixed assemblies from sequences, SMILES, CCD codes, or ligand files.
+- **Confidence triage**: each sample comes with pLDDT, pTM/ipTM, a ranking score, and clash flags.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Model version | OpenDDE 1.1.1 (`opendde_v1`, ~656M parameters) |
+| License | Apache-2.0 |
+| Python | 3.11, via `uv` |
+| Platforms | `darwin-arm64` (Apple Silicon, MPS). Linux x64 + NVIDIA CUDA 12.6 is implemented but not advertised yet |
+| Disk | ~3.3 GB of model assets plus the Python environment |
+| Input format | OpenDDE `.json` job (a list of jobs) |
+| Output | mmCIF structure(s), a PDB copy of each (pLDDT in the B-factor column), plus confidence JSON per sample |
+
+## Install and run
+
+```bash
+moldesk install opendde
+moldesk run opendde examples/opendde/tiny.json
+```
+
+The install downloads the general-purpose `opendde.pt` checkpoint (2.6 GB) and the CCD component files from a pinned Hugging Face commit, verifies each one's size and SHA-256, and runs a real tensor operation on the Metal (MPS) backend before it finishes.
+
+## Job format
+
+OpenDDE's own JSON format: a list of jobs, each with a `name` and a list of `sequences` entities.
+
+```json
+[
+  {
+    "name": "tiny",
+    "modelSeeds": [101],
+    "sequences": [
+      { "proteinChain": { "sequence": "ACDEFGHIK", "count": 1 } }
+    ]
+  }
+]
+```
+
+Jobs can reference files: precomputed MSAs (`pairedMsaPath`/`unpairedMsaPath`, `.a3m`), template hits (`templatesPath`, `.a3m`/`.hhr`), or a ligand structure (`"ligand": "FILE_ligand.sdf"`, `.sdf`/`.mol`/`.mol2`/`.pdb`). Paths are resolved relative to the job file and must stay inside its directory. MoleculeDesk copies each referenced file into the run's input area and runs a rewritten copy of the job, so later runs don't depend on the original files. See `examples/opendde/ligand-file.json`.
+
+## Parameters
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `device` | `mps` on Apple Silicon | `auto`, `mps`, `cuda`, or `cpu`. `auto` resolves to your installed accelerator, never to CPU. `cpu` works but is slow |
+| `samples` | `1` | Number of diffusion samples |
+| `steps` | `200` | Diffusion steps |
+| `cycles` | `10` | Pairformer cycles |
+| `seed` | from `modelSeeds` | Override seed |
+| `use_msa` | `false` | Use protein MSAs: precomputed A3M files if given, otherwise the public ColabFold server (network) |
+| `use_template` | `false` | Not supported yet |
+| `use_rna_msa` | `false` | Requires a precomputed `unpairedMsaPath` on every RNA chain |
+| `deterministic` | `false` | Deterministic PyTorch algorithms |
+
+```bash
+moldesk run opendde job.json --param samples=5 --param seed=7
+```
+
+## How long does a run take?
+
+These are measured on an Apple M3 MacBook Air (24 GB), with the default settings (1 sample, 200 steps, 10 cycles, no MSA):
+
+| Input | Model time | Total `moldesk run` time |
+| --- | --- | --- |
+| 9-residue peptide | 13 s | 26 s |
+| 20-residue peptide + small-molecule ligand | 27 s | 37 s |
+| Ubiquitin (76 residues) | 56 s | 67 s |
+
+Each run spends roughly 10 s loading the model. Model time grows with complex size, and roughly linearly with `samples`. The first run after install is slower while files load into the OS cache.
+
+## Limitations
+
+- The default run uses **no MSA and no templates**. It is a quick smoke test, not an accuracy-oriented prediction.
+- Template search and RNA-MSA search need large sequence databases (RNAcentral ~13 GB, NT-RNA ~75 GB, and others) that MoleculeDesk does not install.
+- The antibody–antigen checkpoint (`opendde_abag.pt`) is not installed.
+- Multi-GPU (Fold-CP) inference is not exposed.
+
+## Verification status
+
+Verified end to end on 2026-09-26 on an Apple M3 MacBook Air (24 GB, macOS 26.6.2), with Python 3.11.16, PyTorch 2.7.1 (MPS built and available), and `opendde` 1.1.1:
+
+- **Clean install**: `moldesk install opendde --yes` passed installation verification, which includes asset SHA-256 checks and a real MPS tensor operation.
+- **Prediction**: `moldesk run opendde examples/opendde/tiny.json` completed in 39 s (model forward 28 s). OpenDDE logged `Selected inference device: mps`. The run produced a parseable mmCIF (9 residues, 71 atoms) and a confidence summary (pLDDT 93.1). All inputs and outputs are checksummed in `run.json`, no CPU-fallback warnings were logged, and no orphan processes were left.
+- **Ligand file**: `examples/opendde/ligand-file.json` (Trp-cage + an SDF ligand) ran from a temporary copy that was deleted afterwards. The staged SDF and its SHA-256 are recorded in `run.json`, and the output contains the protein chain plus the ligand chain.
+- **Reproducibility**: two runs with `seed=101 deterministic=true` differed by 6×10⁻⁵ Å coordinate RMSD. That is fp32 noise on MPS, not bit-identical output.
+- **Fails early**: `device=cuda` and `use_template=true` are rejected with an actionable error before OpenDDE starts.
+
+Linux/NVIDIA CUDA has **not** been run on real hardware, so it is not advertised.
+
+## FAQ
+
+**Does OpenDDE run on my Mac's GPU?**
+Yes, on Apple Silicon it runs on the Metal (MPS) backend by default. MoleculeDesk passes an explicit `--device mps`, so if MPS is unavailable the run fails instead of quietly falling back to CPU.
+
+**Can I use it on Linux with an NVIDIA GPU?**
+The CUDA install path (PyTorch 2.7.1 + CUDA 12.6 and cuEquivariance kernels) is implemented and unit-tested, but it will stay unadvertised until a real Linux/NVIDIA run is recorded.
+
+**What license is OpenDDE under?**
+Apache-2.0 for the code and released checkpoints.

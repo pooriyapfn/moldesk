@@ -104,7 +104,7 @@ async function checked(
 function managedEnvironment(
   paths: MoldeskPaths,
   pythonVersion: string,
-  options: { extraIndexUrls?: string[]; findLinks?: string[] } = {},
+  options: { extraIndexUrls?: string[]; findLinks?: string[]; torchBackend?: string } = {},
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env["PATH"],
@@ -130,6 +130,9 @@ function managedEnvironment(
   if (options.findLinks && options.findLinks.length > 0) {
     env["UV_FIND_LINKS"] = options.findLinks.join(" ");
   }
+  // Schema-validated closed enum (e.g. "cu126"); uv routes torch-ecosystem
+  // packages to the matching official PyTorch index.
+  if (options.torchBackend) env["UV_TORCH_BACKEND"] = options.torchBackend;
   for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]) {
     if (process.env[name]) env[name] = process.env[name];
   }
@@ -314,6 +317,7 @@ export async function preparePythonEnvironment(request: PythonInstallRequest): P
   const env = managedEnvironment(paths, request.runtime.python, {
     extraIndexUrls: request.runtime.extraIndexUrls,
     findLinks: request.runtime.findLinks,
+    torchBackend: request.runtime.torchBackend,
   });
   const sourceDir = path.join(request.targetDir, "source");
   const venvDir = path.join(request.targetDir, ".venv");
