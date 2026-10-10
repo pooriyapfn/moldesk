@@ -33,6 +33,7 @@ Available:
 * beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
 * beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; the Linux x64/CUDA path ran successfully on an NVIDIA RTX 3090 in testing but is not yet advertised in the registry
 * `moldesk list --installed`, reinstall, and uninstall state management
+* offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
 * `moldesk --version`
 * initial CLI and runtime architecture
 
@@ -95,6 +96,9 @@ Boltz / AlphaFold / ColabFold / Chai / ...
 
 * `packages/adapters`
   Thin model-specific installation, command, and output translations.
+
+* `packages/visualizer`
+  The offline molecular report: report contract, exporter, local viewer updater, and the Mol* viewer bundle built once at package build time.
 
 * `models/`
   Validated model manifests and provenance documentation.

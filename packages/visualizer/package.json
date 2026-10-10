@@ -34,7 +34,8 @@
     "build": "tsc -p tsconfig.json && node scripts/build-viewer.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json",
     "test": "vitest run",
-    "smoke": "node scripts/browser-smoke.mjs"
+    "smoke": "node scripts/browser-smoke.mjs",
+    "measure": "node scripts/measure.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.16.11",

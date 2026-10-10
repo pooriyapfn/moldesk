@@ -95,7 +95,6 @@ describe("report update", () => {
 
   it("maps failures to typed MoldeskErrors without touching the file", async () => {
     const file = await make();
-    const before = fs.readFileSync(file);
     await expect(prepareReportUpdate(file, { outputPath: file })).rejects.toMatchObject({ code: "OUTPUT_EXISTS" });
     await expect(prepareReportUpdate("https://x.test/r.html")).rejects.toMatchObject({ code: "INVALID_REPORT" });
     await expect(prepareReportUpdate(write("plain.html", "<html></html>"))).rejects.toMatchObject({ code: "INVALID_REPORT" });
@@ -103,6 +102,5 @@ describe("report update", () => {
     fs.appendFileSync(file, "<!-- changed -->");
     await expect(applyReportUpdate(plan)).rejects.toMatchObject({ code: "REPORT_CONFLICT" });
     expect(fs.readFileSync(file, "utf8").endsWith("<!-- changed -->")).toBe(true);
-    void before;
   });
 });

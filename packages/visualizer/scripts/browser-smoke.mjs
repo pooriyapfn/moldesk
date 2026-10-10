@@ -306,6 +306,124 @@ async function exerciseDocking(browser, file) {
   }
 }
 
+/** Scientific edge cases from real structures: each opens offline, loads one scene, stays network-silent. */
+function edgeReport(workDir, name, format) {
+  const out = exportReport(
+    {
+      title: name,
+      resources: [{ id: "s", label: name, format, bytes: bytes(name) }],
+      scenes: [{ id: "scene-1", title: name, structures: [{ id: "a", resourceId: "s" }] }],
+      panels: [],
+      provenance: {},
+    },
+    loadBundle(),
+  );
+  const file = path.join(workDir, `edge-${name}.html`);
+  writeFileSync(file, out.html);
+  return file;
+}
+
+/** 1-based position of the first CA whose residue carries an insertion code, and its label (e.g. "52A"). */
+function firstInsertionResidue(pdbName) {
+  let ordinal = 0;
+  const seen = new Set();
+  for (const line of readFileSync(path.join(fixtures, pdbName), "utf8").split("\n")) {
+    if (!line.startsWith("ATOM  ")) continue;
+    const key = line.slice(21, 27);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordinal++;
+    if (line[26] !== " ") return { ordinal, label: line.slice(22, 27).trim() };
+  }
+  return undefined;
+}
+
+const EDGE_CASES = [
+  {
+    name: "1AAY.pdb",
+    describe: "protein-DNA complex with missing residues",
+    async verify(page) {
+      const options = await page.locator(".msp-sequence-select select option").allTextContents();
+      check(options.some((o) => /DNA/i.test(o)), `protein–DNA: the sequence panel offers the DNA entity (${options.join(" | ").slice(0, 120)})`);
+      // Mol* lists the two DNA entities first; switch to the protein entity.
+      const entity = page.locator(".msp-sequence-select select").filter({ has: page.locator("option", { hasText: /DNA/ }) }).first();
+      const protein = (await entity.locator("option").allTextContents()).findIndex((t) => /^\d+:/.test(t) && !/DNA/.test(t));
+      await entity.selectOption({ index: protein });
+      await page.waitForFunction(() => document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present").length > 40);
+      // Every SEQRES position, observed or not, in order (not a join of ATOM records).
+      const all = await page.evaluate(() => [...document.querySelectorAll(".msp-sequence-wrapper span[data-seqid]")].map((s) => ({ letter: s.textContent.replace(/\u200b/g, ""), missing: s.className.includes("missing") })));
+      const full = all.map((r) => r.letter).join("");
+      check(full.startsWith("MERPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPF"), `protein–DNA: the zinc-finger protein sequence is complete (${full.slice(0, 30)}…)`);
+      const missing = all.filter((r) => r.missing).map((r) => r.letter).join("");
+      check(all.slice(0, 2).every((r) => r.missing) && !all[2].missing && missing.length === 5, `missing residues: MET-GLU at the start and 3 more stay in sequence position, marked missing (${all.filter((r) => r.missing).length} marked)`);
+    },
+  },
+  {
+    name: "1D3Z-3models.pdb",
+    describe: "multi-model NMR file",
+    async verify(page) {
+      const note = await page.getByText(/This file has 3 models; showing model 1\./).count();
+      check(note === 1, "NMR: multiple models are labeled, not silently treated as separate predictions");
+    },
+  },
+  {
+    name: "1IGT-VH.pdb",
+    describe: "antibody domain with insertion codes",
+    async verify(page) {
+      const target = firstInsertionResidue("1IGT-VH.pdb");
+      // data-seqid is the zero-based sequence index.
+      await page.locator(`.msp-sequence-wrapper span[data-seqid="${target.ordinal - 1}"]`).first().hover();
+      const info = await page.waitForSelector(".msp-highlight-info", { timeout: 5000 }).then((e) => e.textContent(), () => "");
+      const number = target.label.replace(/[A-Za-z]+$/, "");
+      const code = target.label.slice(number.length);
+      check(new RegExp(`\\[auth ${number}\\]${code}`).test(info), `insertion codes: hovering sequence index ${target.ordinal - 1} identifies residue ${target.label} (${info.trim().slice(0, 80)})`);
+    },
+  },
+  {
+    name: "3HZ7.pdb",
+    describe: "selenomethionine (modified residues)",
+    async verify(page) {
+      // 3HZ7 chain A: selenomethionine (MSE) at 1, 48, 52 and a modified cysteine (CSS) at 11.
+      // Preserved and identified as themselves, not dropped or shown as unknown.
+      const at = (n) => page.locator(`.msp-sequence-wrapper span[data-seqid="${n - 1}"]`).first().textContent().then((t) => t.replace(/\u200b/g, ""));
+      const shown = { 1: await at(1), 11: await at(11), 48: await at(48), 52: await at(52) };
+      check(
+        shown[1] === "MSE" && shown[48] === "MSE" && shown[52] === "MSE" && shown[11] === "CSS",
+        `modified residues: MSE and CSS are preserved and identified (1:${shown[1]} 11:${shown[11]} 48:${shown[48]} 52:${shown[52]})`,
+      );
+    },
+  },
+  {
+    name: "HEM-only.pdb",
+    describe: "ligand-only structure",
+    async verify(page) {
+      check((await page.getByText("No polymer sequence in this structure.").count()) === 1, "ligand-only: clear 'No polymer sequence' state");
+    },
+  },
+];
+
+async function exerciseEdgeCases(browser, workDir) {
+  for (const edge of EDGE_CASES) {
+    const file = edgeReport(workDir, edge.name, "pdb");
+    const url = pathToFileURL(file).href;
+    const probe = await openWithProbes(browser, url, { offline: true });
+    const { page } = probe;
+    const label = edge.describe;
+    try {
+      await page.waitForFunction(() => document.querySelector('[data-testid="viewport"]')?.getAttribute("data-loaded-scene") === "scene-1", null, { timeout: 45000 });
+      await page.waitForTimeout(800);
+      check((await page.getByRole("alert").count()) === 0, `${label}: opens without viewer errors`);
+      await edge.verify(page);
+      await assertNoNetwork(label, probe, url);
+    } catch (error) {
+      check(false, `${label}: ${error.message}`);
+      console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
+    } finally {
+      await probe.context.close();
+    }
+  }
+}
+
 async function exerciseEvil(browser, file) {
   const url = pathToFileURL(file).href;
   const probe = await openWithProbes(browser, url, { offline: false });
@@ -371,6 +489,7 @@ try {
   await exerciseGood(browser, good, { offline: false });
   await exerciseGood(browser, good, { offline: true });
   await exerciseDocking(browser, docking);
+  await exerciseEdgeCases(browser, workDir);
   await exerciseUpdated(browser, good);
   await exerciseEvil(browser, evil);
   await exerciseNoWebgl(good);
