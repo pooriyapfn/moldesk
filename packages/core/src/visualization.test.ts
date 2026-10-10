@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { extractEnvelope, decodeEnvelope } from "@moldesk/visualizer";
-import { createStandaloneReport } from "./visualization.js";
+import { extractEnvelope, decodeEnvelope, loadBundle, type ViewerBundle } from "@moldesk/visualizer";
+import { applyReportUpdate, createStandaloneReport, prepareReportUpdate } from "./visualization.js";
 
 const PDB = "ATOM      1  N   ALA A   1      11.104  13.207   2.100  1.00 20.00           N\nEND\n";
 const CIF = "data_x\nloop_\n_atom_site.group_PDB\n_atom_site.id\nATOM 1\n";
@@ -69,5 +69,40 @@ describe("createStandaloneReport", () => {
     controller.abort();
     await expect(createStandaloneReport(write("p.pdb", PDB), { env, signal: controller.signal })).rejects.toMatchObject({ code: "VIEW_CANCELLED" });
     expect(fs.existsSync(path.join(dir, "home"))).toBe(false);
+  });
+});
+
+describe("report update", () => {
+  const otherBundle = (): ViewerBundle => {
+    const real = loadBundle();
+    return { ...real, js: `${real.js}\n/* other build */`, metadata: { ...real.metadata, viewerVersion: "9.9.9", bundleSha256: "f".repeat(64) } };
+  };
+  const make = async () => (await createStandaloneReport(write("p.pdb", PDB), { env, outputPath: path.join(dir, "r.html") })).path;
+
+  it("is a no-op for a freshly generated report", async () => {
+    expect((await prepareReportUpdate(await make())).status).toBe("noop");
+  });
+
+  it("replaces in place with a backup when the installed bundle differs", async () => {
+    const file = await make();
+    const before = fs.readFileSync(file);
+    const plan = await prepareReportUpdate(file, { bundle: otherBundle() });
+    expect(plan.status).toBe("replace");
+    const result = await applyReportUpdate(plan);
+    expect(fs.readFileSync(result.backupPath!).equals(before)).toBe(true);
+    expect(extractEnvelope(fs.readFileSync(file, "utf8")).viewer.version).toBe("9.9.9");
+  });
+
+  it("maps failures to typed MoldeskErrors without touching the file", async () => {
+    const file = await make();
+    const before = fs.readFileSync(file);
+    await expect(prepareReportUpdate(file, { outputPath: file })).rejects.toMatchObject({ code: "OUTPUT_EXISTS" });
+    await expect(prepareReportUpdate("https://x.test/r.html")).rejects.toMatchObject({ code: "INVALID_REPORT" });
+    await expect(prepareReportUpdate(write("plain.html", "<html></html>"))).rejects.toMatchObject({ code: "INVALID_REPORT" });
+    const plan = await prepareReportUpdate(file, { bundle: otherBundle() });
+    fs.appendFileSync(file, "<!-- changed -->");
+    await expect(applyReportUpdate(plan)).rejects.toMatchObject({ code: "REPORT_CONFLICT" });
+    expect(fs.readFileSync(file, "utf8").endsWith("<!-- changed -->")).toBe(true);
+    void before;
   });
 });

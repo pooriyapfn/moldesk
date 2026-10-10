@@ -120,6 +120,27 @@ try {
     throw new Error("Generated report is not a self-contained MoleculeDesk report.");
   }
 
+  // Update lifecycle with the installed CLI: unchanged report is up to date; a stale one is
+  // replaced with a backup, and the embedded data is byte-identical afterwards.
+  const run = (args) =>
+    JSON.parse(execFileSync(cliBin, args, { cwd: unrelatedCwd, env, encoding: "utf-8" }));
+  const payloadOf = (html) => /"payload":"([^"]+)"/.exec(html)?.[1];
+  if (run(["visualizer", "update", reportPath, "--json"]).status !== "up-to-date") {
+    throw new Error("A freshly generated report should already be up to date.");
+  }
+  fs.writeFileSync(reportPath, reportHtml.replace("<body>", "<body><!-- stale viewer -->"));
+  const updated = run(["visualizer", "update", reportPath, "--yes", "--json"]);
+  const updatedHtml = fs.readFileSync(reportPath, "utf-8");
+  if (
+    updated.status !== "updated" ||
+    !updated.backupPath ||
+    !fs.readFileSync(updated.backupPath, "utf-8").includes("stale viewer") ||
+    updatedHtml.includes("stale viewer") ||
+    payloadOf(updatedHtml) !== payloadOf(reportHtml)
+  ) {
+    throw new Error(`moldesk visualizer update did not behave as specified: ${JSON.stringify(updated)}`);
+  }
+
   console.log(`Installed package manifests OK: ${manifests.join(", ")}`);
   console.log("Installed moldesk view generated a self-contained report from an unrelated cwd.");
   console.log("Installed moldesk CLI works from an unrelated cwd.");

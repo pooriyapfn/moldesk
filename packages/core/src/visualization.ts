@@ -4,10 +4,14 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { visualizationDir } from "@moldesk/runtime";
 import {
+  applyUpdate,
   exportReport,
+  planUpdate,
   REPORT_LIMITS,
   writeFileExclusive,
   type MolecularFormat,
+  type UpdatePlan,
+  type UpdateResult,
   type ViewerBundle,
 } from "@moldesk/visualizer";
 import { MoldeskError } from "./errors.js";
@@ -149,6 +153,47 @@ export async function createStandaloneReport(
     viewerVersion: exported.viewerVersion,
     bundleSha256: exported.bundleSha256,
   };
+}
+
+export type { UpdatePlan, UpdateResult };
+
+export interface ReportUpdateOptions {
+  /** Write the updated report here instead of replacing the original. Must not exist. */
+  outputPath?: string;
+  /** Test seam; defaults to the installed viewer bundle. */
+  bundle?: ViewerBundle;
+  now?: () => Date;
+}
+
+/**
+ * Inspects an existing report as data (never executing it) and decides whether the
+ * installed viewer would replace it. Nothing is written. The plan carries what is
+ * needed to detect a concurrent change between confirmation and commit.
+ */
+export async function prepareReportUpdate(reportPath: string, options: ReportUpdateOptions = {}): Promise<UpdatePlan> {
+  if (URL_LIKE.test(reportPath)) {
+    throw invalid("URLs are not supported.", "Pass the local path of a report file.", "INVALID_REPORT");
+  }
+  const target = path.resolve(reportPath);
+  const output = options.outputPath === undefined ? undefined : path.resolve(options.outputPath);
+  if (output !== undefined && output === target) {
+    throw invalid("--output must differ from the report being updated.", "Omit --output to update in place with a backup.", "OUTPUT_EXISTS");
+  }
+  try {
+    if (output !== undefined) fs.mkdirSync(path.dirname(output), { recursive: true });
+    return await planUpdate(target, { output, bundle: options.bundle, now: options.now });
+  } catch (error) {
+    throw asMoldeskError(error);
+  }
+}
+
+/** Commits a plan: backup + atomic replace in place, or an exclusive write to --output. */
+export async function applyReportUpdate(plan: UpdatePlan): Promise<UpdateResult> {
+  try {
+    return await applyUpdate(plan);
+  } catch (error) {
+    throw asMoldeskError(error);
+  }
 }
 
 const REMEDIATION: Record<string, string> = {

@@ -6,7 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFi
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { exportReport, loadBundle } from "../dist/index.js";
+import { applyUpdate, exportReport, loadBundle, planUpdate } from "../dist/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, "../test/fixtures");
@@ -148,13 +148,14 @@ async function openWithProbes(browser, url, { offline }) {
   page.on("pageerror", (e) => consoleLines.push(`pageerror: ${e.message}`));
   const cdp = await context.newCDPSession(page);
   const cdpEvents = [];
+  // Network only. Enabling the Log domain as well makes Chrome drop the PNG download that
+  // follows a sequence click (observed on Chrome 154); CSP problems are still caught by the
+  // securitypolicyviolation listener, console messages, and Network.loadingFailed below.
   await cdp.send("Network.enable");
-  await cdp.send("Log.enable");
   cdp.on("Network.requestWillBeSent", (e) => cdpEvents.push(`request ${e.request.url}`));
   cdp.on("Network.webSocketCreated", (e) => cdpEvents.push(`websocket ${e.url}`));
   cdp.on("Network.eventSourceMessageReceived", () => cdpEvents.push("eventsource"));
   cdp.on("Network.loadingFailed", (e) => e.blockedReason && cdpEvents.push(`blocked(${e.blockedReason})`));
-  cdp.on("Log.entryAdded", (e) => /Content Security Policy|Refused to/i.test(e.entry.text) && cdpEvents.push(`csp-log ${e.entry.text}`));
   await page.goto(url);
   return { context, page, requests, cdpEvents, consoleLines };
 }
@@ -173,8 +174,8 @@ async function assertNoNetwork(label, probe, reportUrl) {
   check(cspConsole.length === 0, `${label}: no CSP console errors ${JSON.stringify(cspConsole)}`);
 }
 
-async function exerciseGood(browser, file, { offline }) {
-  const tag = offline ? "offline" : "online";
+async function exerciseGood(browser, file, { offline, label }) {
+  const tag = label ?? (offline ? "offline" : "online");
   const url = pathToFileURL(file).href;
   const probe = await openWithProbes(browser, url, { offline });
   const { page } = probe;
@@ -194,8 +195,13 @@ async function exerciseGood(browser, file, { offline }) {
       .then(() => true, () => false);
     check(hovered, `${tag}: hovering a sequence residue highlights it in the viewer`);
     await residue.click();
+    // Clicking focuses the residue with a camera animation; let it settle before exporting.
+    await page.waitForTimeout(2000);
 
-    const [download] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), page.getByRole("button", { name: "Save image" }).click()]);
+    const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
+    downloadPromise.catch(() => {});
+    await page.getByRole("button", { name: "Save image" }).click({ timeout: 10000 });
+    const download = await downloadPromise;
     const png = path.join(os.tmpdir(), `moldesk-smoke-${process.pid}-${tag}.png`);
     await download.saveAs(png);
     const header = readFileSync(png).subarray(0, 8).toString("hex");
@@ -228,7 +234,9 @@ async function exerciseGood(browser, file, { offline }) {
     await assertNoNetwork(tag, probe, url);
   } catch (error) {
     check(false, `${tag}: ${error.message}`);
-    console.log(probe.consoleLines.slice(-15).join("\n"));
+    console.log("  attempts:", JSON.stringify(await page.evaluate(() => [...window.__netAttempts]).catch(() => "n/a")), "csp:", JSON.stringify(await page.evaluate(() => [...window.__cspViolations]).catch(() => "n/a")), "cdp:", JSON.stringify(probe.cdpEvents.slice(-5).map((e) => e.slice(0, 120))));
+    console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
+    console.log(probe.consoleLines.filter((l) => !/GL Driver/.test(l)).slice(-15).join("\n"));
   } finally {
     await probe.context.close();
   }
@@ -270,6 +278,16 @@ async function exerciseNoWebgl(file) {
   }
 }
 
+/** update -> reopen: a report replaced by the local updater must render offline under the same CSP. */
+async function exerciseUpdated(browser, file) {
+  const stale = path.join(path.dirname(file), "stale.html");
+  writeFileSync(stale, readFileSync(file, "utf8").replace("<body>", "<body><!-- older viewer -->"));
+  const plan = await planUpdate(stale);
+  check(plan.status === "replace", "update: a stale report is planned for replacement");
+  await applyUpdate(plan);
+  await exerciseGood(browser, stale, { offline: true, label: "updated" });
+}
+
 const workDir = mkdtempSync(path.join(os.tmpdir(), "moldesk-smoke-"));
 let browser;
 try {
@@ -288,6 +306,7 @@ try {
   const { good, evil } = buildReports(workDir);
   await exerciseGood(browser, good, { offline: false });
   await exerciseGood(browser, good, { offline: true });
+  await exerciseUpdated(browser, good);
   await exerciseEvil(browser, evil);
   await exerciseNoWebgl(good);
 } finally {
