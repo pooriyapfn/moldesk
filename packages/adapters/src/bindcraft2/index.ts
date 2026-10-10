@@ -4,6 +4,7 @@ import { MoldeskError, type OutputSpec } from "@moldesk/registry";
 import { runCommand, type CompanionInputRef } from "@moldesk/runtime";
 import type { ModelAdapterDefinition, RunContext, InstallContext } from "../index.js";
 import { collectGlobOutputs } from "../outputs.js";
+import { describeBindCraft2Visualization } from "./visualization.js";
 
 const MODALITIES = ["binder", "peptide", "cyclic_peptide", "VHH", "ARP"];
 const RESOLVED = "moldesk-campaign.json";
@@ -277,6 +278,7 @@ export const bindcraft2Adapter: ModelAdapterDefinition = {
     fs.writeFileSync(path.join(context.outputDir, SUMMARY), `${JSON.stringify(summary, null, 2)}\n`, { flag: "wx" });
     return collectGlobOutputs(context.outputDir, OUTPUTS);
   },
+  async describeVisualization(context, outputs) { return describeBindCraft2Visualization(context.inputPath, outputs); },
   async verifyInstallation(context: InstallContext) {
     if (context.platform !== "linux-x64") return { passed: false, output: "BindCraft2 supports Linux x64/NVIDIA only." };
     const source = path.join(context.modelDir, "source");

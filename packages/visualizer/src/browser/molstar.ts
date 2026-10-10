@@ -37,6 +37,8 @@ export interface SceneOptions {
 }
 
 export interface SceneSummary {
+  sceneId: string;
+  structureCount: number;
   hasPolymerSequence: boolean;
   modelCount: number;
 }
@@ -251,7 +253,7 @@ export class Viewer {
       }
     }
     PluginCommands.Camera.Reset(plugin, {});
-    return { hasPolymerSequence, modelCount };
+    return { sceneId: scene.id, structureCount: structures.size, hasPolymerSequence, modelCount };
   }
 
   private async addDefaults(structure: StateObjectSelector, options: SceneOptions) {
@@ -286,7 +288,7 @@ export class Viewer {
       type: REPRESENTATION_TYPE[kind] as "cartoon",
       ...(c.color
         ? { color: "uniform" as const, colorParams: { value: parseColor(c.color) } }
-        : { color: "chain-id" as const }),
+        : { color: (kind === "sticks" ? "element-symbol" : "chain-id") as "chain-id" }),
     });
   }
 

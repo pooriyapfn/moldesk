@@ -3,6 +3,8 @@
 
 import { REPORT_LIMITS as L } from "./limits.js";
 
+export { REPORT_LIMITS } from "./limits.js";
+
 export type MolecularFormat = "pdb" | "mmcif" | "sdf";
 export type DataFormat = "json" | "csv";
 export type ResourceFormat = MolecularFormat | DataFormat;

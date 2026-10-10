@@ -1,6 +1,5 @@
 // Node APIs. Never loads the browser bundle as code; it is only read as text.
 export * from "./contract.js";
-export { REPORT_LIMITS } from "./limits.js";
 export { BundleError, loadBundle, sha256Hex, type BundleMetadata, type ViewerBundle } from "./bundle.js";
 export {
   buildEnvelope,

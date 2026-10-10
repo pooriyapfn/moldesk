@@ -124,17 +124,45 @@ function buildReports(workDir) {
     },
     bundle,
   );
+  // Same shape the DiffDock adapter produces: shared receptor + one SDF pose per scene.
+  const dockingComponents = [
+    { id: "receptor", structureId: "receptor", selection: { kind: "all" }, role: "receptor", label: "Receptor", representation: "cartoon" },
+    { id: "pose", structureId: "pose", selection: { kind: "all" }, role: "ligand", label: "Ligand pose", representation: "sticks" },
+  ];
+  const docking = exportReport(
+    {
+      title: "Docking smoke",
+      resources: [
+        { id: "rec", label: "1CRN.pdb", format: "pdb", bytes: bytes("1CRN.pdb") },
+        { id: "p1", label: "rank1.sdf", format: "sdf", bytes: bytes("pose1.sdf") },
+        { id: "p2", label: "rank2.sdf", format: "sdf", bytes: bytes("pose2.sdf") },
+        { id: "sum", label: "poses_summary.json", format: "json", bytes: bytes("poses_summary.json") },
+      ],
+      scenes: [
+        { id: "scene-1", title: "Pose 1 (confidence 0.85)", rank: 1, structures: [{ id: "receptor", resourceId: "rec" }, { id: "pose", resourceId: "p1" }], components: dockingComponents },
+        { id: "scene-2", title: "Pose 2 (confidence -1.23)", rank: 2, structures: [{ id: "receptor", resourceId: "rec" }, { id: "pose", resourceId: "p2" }], components: dockingComponents },
+      ],
+      panels: [
+        { id: "structures", kind: "structure", sceneIds: ["scene-1", "scene-2"] },
+        { id: "poses", kind: "table", title: "Poses", dataset: { resourceId: "sum", rowsKey: "poses" }, columns: [{ field: "rank", label: "Rank" }, { field: "confidence", label: "Confidence" }] },
+      ],
+      provenance: {},
+    },
+    bundle,
+  );
   const sourceDir = path.join(workDir, "source dir with 'quote");
   mkdirSync(sourceDir, { recursive: true });
   writeFileSync(path.join(sourceDir, "report.html"), good.html);
   writeFileSync(path.join(sourceDir, "evil.html"), evil.html);
+  writeFileSync(path.join(sourceDir, "docking.html"), docking.html);
   // Move away from the "creator" location; nothing else may be needed to open it.
   const moved = path.join(workDir, "moved elsewhere 'it's");
   mkdirSync(moved, { recursive: true });
   cpSync(path.join(sourceDir, "report.html"), path.join(moved, "report.html"));
   cpSync(path.join(sourceDir, "evil.html"), path.join(moved, "evil.html"));
+  cpSync(path.join(sourceDir, "docking.html"), path.join(moved, "docking.html"));
   rmSync(sourceDir, { recursive: true, force: true });
-  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), moved };
+  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), docking: path.join(moved, "docking.html"), moved };
 }
 
 async function openWithProbes(browser, url, { offline }) {
@@ -242,6 +270,42 @@ async function exerciseGood(browser, file, { offline, label }) {
   }
 }
 
+async function exerciseDocking(browser, file) {
+  const url = pathToFileURL(file).href;
+  const probe = await openWithProbes(browser, url, { offline: true });
+  const { page } = probe;
+  const loaded = (scene) =>
+    page.waitForFunction(
+      (id) => {
+        const v = document.querySelector('[data-testid="viewport"]');
+        return v?.getAttribute("data-loaded-scene") === id && v.getAttribute("data-structure-count") === "2";
+      },
+      scene,
+      { timeout: 30000 },
+    );
+  try {
+    await loaded("scene-1");
+    check(true, "docking: receptor + pose loaded together as two structures");
+    const sequence = () =>
+      page.evaluate(() => [...document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present")].map((s) => s.textContent.replace(/\u200b/g, "")).join(""));
+    check((await sequence()).startsWith(CRAMBIN), "docking: receptor sequence is shown");
+    check((await page.getByRole("alert").count()) === 0, "docking: no viewer errors for the SDF pose");
+    await page.getByLabel("Scene").selectOption("scene-2");
+    await loaded("scene-2");
+    check((await sequence()).startsWith(CRAMBIN), "docking: switching to pose 2 keeps the receptor");
+    check((await page.getByRole("alert").count()) === 0, "docking: no viewer errors after scene switch");
+    check((await page.locator("table tbody tr").count()) === 2, "docking: poses table reads the rows array from the JSON summary");
+    const shot = await page.locator('[data-testid="viewport"] canvas').first().screenshot();
+    check(shot.length > 8000, `docking: viewport is not blank (${shot.length} bytes)`);
+    await assertNoNetwork("docking", probe, url);
+  } catch (error) {
+    check(false, `docking: ${error.message}`);
+    console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
+  } finally {
+    await probe.context.close();
+  }
+}
+
 async function exerciseEvil(browser, file) {
   const url = pathToFileURL(file).href;
   const probe = await openWithProbes(browser, url, { offline: false });
@@ -303,9 +367,10 @@ try {
 }
 try {
   console.log(`Browser: Chrome ${browser.version()} on ${process.platform}/${process.arch}`);
-  const { good, evil } = buildReports(workDir);
+  const { good, evil, docking } = buildReports(workDir);
   await exerciseGood(browser, good, { offline: false });
   await exerciseGood(browser, good, { offline: true });
+  await exerciseDocking(browser, docking);
   await exerciseUpdated(browser, good);
   await exerciseEvil(browser, evil);
   await exerciseNoWebgl(good);

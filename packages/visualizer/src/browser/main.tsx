@@ -284,7 +284,13 @@ function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) 
         <p className="md-muted">This file has {summary.modelCount} models; showing model 1.</p>
       )}
       {error && <p className="md-error" role="alert">{error}</p>}
-      <div ref={host} className="md-viewport" data-testid="viewport" />
+      <div
+        ref={host}
+        className="md-viewport"
+        data-testid="viewport"
+        data-loaded-scene={summary?.sceneId}
+        data-structure-count={summary?.structureCount}
+      />
     </section>
   );
 }

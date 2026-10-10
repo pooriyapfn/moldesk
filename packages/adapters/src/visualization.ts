@@ -33,8 +33,19 @@ export class ReportBuilder {
   }
 
   /** A table over one JSON/CSV resource; empty `columns` shows every field present in the data. */
-  table(title: string, resourceId: string, columns: Array<{ field: string; label: string }> = []): void {
-    this.panels.push({ id: `table-${this.panels.length + 1}`, kind: "table", title, dataset: { resourceId }, columns });
+  table(
+    title: string,
+    resourceId: string,
+    columns: Array<{ field: string; label: string }> = [],
+    rowsKey?: string,
+  ): void {
+    this.panels.push({
+      id: `table-${this.panels.length + 1}`,
+      kind: "table",
+      title,
+      dataset: { resourceId, ...(rowsKey === undefined ? {} : { rowsKey }) },
+      columns,
+    });
   }
 
   get sceneCount(): number {
