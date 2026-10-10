@@ -110,6 +110,15 @@ export function runDir(runId: string, env?: NodeJS.ProcessEnv): string {
   return path.join(getMoldeskPaths(env).runs, safeRunId(runId));
 }
 
+/** Owned location for standalone (non-run) visualizations: `<cache>/visualizations/<id>`. */
+export function visualizationDir(id: string, env?: NodeJS.ProcessEnv): string {
+  return path.join(
+    getMoldeskPaths(env).cache,
+    "visualizations",
+    safeSegment(id, "visualization id", /^[A-Za-z0-9][A-Za-z0-9-]{7,63}$/),
+  );
+}
+
 export function uvToolDir(version: string, env?: NodeJS.ProcessEnv): string {
   return path.join(getMoldeskPaths(env).tools, "uv", safeVersion(version, "uv version"));
 }

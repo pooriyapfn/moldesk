@@ -23,6 +23,7 @@ try {
   const packageDirs = [
     "packages/registry",
     "packages/runtime",
+    "packages/visualizer",
     "packages/adapters",
     "packages/core",
     "apps/cli",
@@ -83,7 +84,44 @@ try {
     }
   }
 
+  // The viewer bundle must ship inside the package and nothing browser-source-only may leak.
+  const installedVisualizer = path.join(installDir, "node_modules", "@moldesk", "visualizer");
+  for (const asset of ["viewer.js", "viewer.css", "bundle.json", "THIRD_PARTY_NOTICES.txt", "MOLSTAR_LICENSE.txt"]) {
+    if (!fs.existsSync(path.join(installedVisualizer, "dist", "assets", asset))) {
+      throw new Error(`Installed @moldesk/visualizer is missing dist/assets/${asset}.`);
+    }
+  }
+  for (const leaked of ["src", "scripts", "test", "tsconfig.browser.json"]) {
+    if (fs.existsSync(path.join(installedVisualizer, leaked))) {
+      throw new Error(`Installed @moldesk/visualizer unexpectedly ships ${leaked}.`);
+    }
+  }
+
+  // Generate a report with the installed CLI from an unrelated cwd (no repo/node_modules assumptions).
+  const env = { ...process.env, MOLDESK_HOME: path.join(tmp, "moldesk-home") };
+  const structure = path.join(unrelatedCwd, "tiny protein.pdb");
+  fs.writeFileSync(
+    structure,
+    "ATOM      1  N   ALA A   1      11.104  13.207   2.100  1.00 20.00           N\nEND\n",
+  );
+  const reportPath = path.join(unrelatedCwd, "report.html");
+  const viewJson = JSON.parse(
+    execFileSync(cliBin, ["view", structure, "--output", reportPath, "--json"], {
+      cwd: unrelatedCwd,
+      env,
+      encoding: "utf-8",
+    }),
+  );
+  if (viewJson.status !== "created" || viewJson.path !== reportPath || !fs.existsSync(reportPath)) {
+    throw new Error(`moldesk view did not create the report: ${JSON.stringify(viewJson)}`);
+  }
+  const reportHtml = fs.readFileSync(reportPath, "utf-8");
+  if (!reportHtml.includes('id="moldesk-report"') || /<(script|link)[^>]+(src|href)=["']https?:/i.test(reportHtml)) {
+    throw new Error("Generated report is not a self-contained MoleculeDesk report.");
+  }
+
   console.log(`Installed package manifests OK: ${manifests.join(", ")}`);
+  console.log("Installed moldesk view generated a self-contained report from an unrelated cwd.");
   console.log("Installed moldesk CLI works from an unrelated cwd.");
   console.log("pack:verify passed");
 } finally {

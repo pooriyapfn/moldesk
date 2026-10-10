@@ -75,7 +75,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for dir in packages/registry packages/runtime packages/adapters packages/core apps/cli; do
+          for dir in packages/registry packages/runtime packages/visualizer packages/adapters packages/core apps/cli; do
             node scripts/publish-package.mjs "$dir"
           done
 

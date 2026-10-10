@@ -65,4 +65,9 @@ export type {
 export { runModel } from "./run.js";
 export type { RunModelOptions, RunModelResult, RunRecord } from "./run.js";
 
+export { openInBrowser } from "@moldesk/runtime";
+export type { OpenResult } from "@moldesk/runtime";
+export { createStandaloneReport, asMoldeskError } from "./visualization.js";
+export type { StandaloneReportOptions, StandaloneReportResult } from "./visualization.js";
+
 export { VERSION } from "./version.js";

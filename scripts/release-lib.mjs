@@ -7,6 +7,7 @@ import path from "node:path";
 export const PUBLISH_ORDER = [
   "packages/registry",
   "packages/runtime",
+  "packages/visualizer",
   "packages/adapters",
   "packages/core",
   "apps/cli",

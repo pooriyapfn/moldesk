@@ -36,6 +36,8 @@ export {
   pythonToolDir,
   runDir,
   uvToolDir,
+  visualizationDir,
+  isWithinRoot,
   stageCompanionInputs,
 } from "./filesystem/index.js";
 export type { MoldeskPaths, CompanionInputRef, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
@@ -63,6 +65,8 @@ export {
 export { detectNvidia } from "./nvidia/index.js";
 export { collectSystemReport } from "./system.js";
 export { runCommand } from "./process/index.js";
+export { openInBrowser } from "./process/open.js";
+export type { OpenResult } from "./process/open.js";
 export type { RunOptions, RunResult } from "./process/index.js";
 export {
   cacheAsset,

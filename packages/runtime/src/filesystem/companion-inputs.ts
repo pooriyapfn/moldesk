@@ -46,7 +46,7 @@ function companionError(code: string, message: string, remediation: string, deta
  * across drives) path whenever `target` escapes `root`, regardless of any
  * shared string prefix.
  */
-function isWithinRoot(root: string, target: string): boolean {
+export function isWithinRoot(root: string, target: string): boolean {
   if (target === root) return true;
   const rel = path.relative(root, target);
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
