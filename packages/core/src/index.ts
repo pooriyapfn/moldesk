@@ -63,7 +63,7 @@ export type {
   UninstallModelOptions,
 } from "./installation.js";
 export { runModel } from "./run.js";
-export type { RunModelOptions, RunModelResult, RunRecord } from "./run.js";
+export type { RunArtifact, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
 
 export { openInBrowser } from "@moldesk/runtime";
 export type { OpenResult } from "@moldesk/runtime";

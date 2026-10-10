@@ -157,4 +157,38 @@ describe("run (CLI, faked runModel)", () => {
     expect(exitSpy).toHaveBeenCalledWith(2);
     expect(state.runModel).not.toHaveBeenCalled();
   });
+
+  it("defaults to visualizing and maps --no-visualize to visualize: false", async () => {
+    state.runModel.mockResolvedValue({ status: "succeeded", record: baseRecord });
+    await buildProgram().parseAsync(["run", "boltz", "job.yaml", "--json"], { from: "user" });
+    expect(state.runModel).toHaveBeenLastCalledWith("boltz", "job.yaml", expect.objectContaining({ visualize: true }));
+    await buildProgram().parseAsync(["run", "boltz", "job.yaml", "--no-visualize", "--json"], { from: "user" });
+    expect(state.runModel).toHaveBeenLastCalledWith("boltz", "job.yaml", expect.objectContaining({ visualize: false }));
+  });
+
+  it("prints the report path and an encoded file URL, and a warning keeps exit code 0", async () => {
+    state.runModel.mockResolvedValue({
+      status: "succeeded",
+      record: {
+        ...baseRecord,
+        artifacts: [{ id: "molecular-report", kind: "molecular-report", path: "/runs/my run/artifacts/viewer.html", sha256: "a", sizeBytes: 1, sourceSha256: [], viewerVersion: "1", bundleSha256: "b" }],
+        warnings: [{ code: "VISUALIZATION_FAILED", message: "Could not create the molecular report: boom" }],
+      },
+    });
+    await buildProgram().parseAsync(["run", "boltz", "job.yaml"], { from: "user" });
+    expect(logs).toContain("  report: /runs/my run/artifacts/viewer.html");
+    expect(logs).toContain("  Open in your browser: file:///runs/my%20run/artifacts/viewer.html");
+    expect(errors.join("\n")).toContain("Warning (VISUALIZATION_FAILED): Could not create the molecular report: boom");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("keeps --json parseable with artifacts and warnings present", async () => {
+    state.runModel.mockResolvedValue({
+      status: "succeeded",
+      record: { ...baseRecord, warnings: [{ code: "VISUALIZATION_FAILED", message: "x" }] },
+    });
+    await buildProgram().parseAsync(["run", "boltz", "job.yaml", "--json"], { from: "user" });
+    expect(JSON.parse(logs.join("\n")).record.warnings[0].code).toBe("VISUALIZATION_FAILED");
+    expect(errors).toEqual([]);
+  });
 });

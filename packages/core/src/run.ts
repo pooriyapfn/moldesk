@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { getAdapter, validateParams } from "@moldesk/adapters";
+import { getAdapter, validateParams, type RunContext } from "@moldesk/adapters";
 import { listAvailableModels, type RuntimeKind } from "@moldesk/registry";
 import {
   getMoldeskPaths,
@@ -17,6 +17,7 @@ import {
 import { MoldeskError } from "./errors.js";
 import { digest, sha256File } from "./hash.js";
 import { listInstalledModels } from "./install-state.js";
+import { generateRunReport, type RunArtifact, type RunWarning } from "./run-report.js";
 import { VERSION } from "./version.js";
 
 /**
@@ -40,6 +41,8 @@ export interface RunModelOptions {
   onLog?: (stream: "stdout" | "stderr", chunk: string) => void;
   /** Injected for testability; defaults to a real `PythonRuntimeProvider`. */
   runtimeProvider?: RuntimeProvider;
+  /** Create the offline molecular report for a successful run when the adapter describes one. Default true. */
+  visualize?: boolean;
 }
 
 export interface RunRecord {
@@ -68,7 +71,13 @@ export interface RunRecord {
   outputs: Array<{ id: string; path: string; sha256: string; sizeBytes: number }>;
   logs: { stdout: string; stderr: string };
   error?: { code: string; message: string };
+  /** Derived files (not scientific outputs). Updating one later does not rewrite this record. */
+  artifacts?: RunArtifact[];
+  /** Nonfatal problems, e.g. the report could not be created. They never change `status`. */
+  warnings?: RunWarning[];
 }
+
+export type { RunArtifact, RunWarning };
 
 export interface RunModelResult {
   status: "succeeded" | "failed" | "cancelled";
@@ -216,19 +225,21 @@ export async function runModel(
   // --- Step 6: write the initial record. From this point, every path below finalizes run.json. ---
   writeRunRecord(runDirPath, record);
 
+  const runContext: RunContext = {
+    manifestName: manifest.name,
+    inputPath: storedInputPath,
+    outputDir,
+    modelDir: installed.installDir,
+    assetsDir: path.join(installed.installDir, "assets"),
+    params: effectiveParams,
+    runtimeExecutable: installed.runtime.python.executable,
+    platform: installed.runtime.python.platform,
+    ...(companionInputs.length > 0 ? { companionInputs } : {}),
+  };
+
   try {
     // --- Step 7: build the structured command. ---
-    const commandSpec = await adapter.command({
-      manifestName: manifest.name,
-      inputPath: storedInputPath,
-      outputDir,
-      modelDir: installed.installDir,
-      assetsDir: path.join(installed.installDir, "assets"),
-      params: effectiveParams,
-      runtimeExecutable: installed.runtime.python.executable,
-      platform: installed.runtime.python.platform,
-      ...(companionInputs.length > 0 ? { companionInputs } : {}),
-    });
+    const commandSpec = await adapter.command(runContext);
     record.command = {
       executable: commandSpec.executable,
       args: commandSpec.args,
@@ -269,17 +280,7 @@ export async function runModel(
         message: `${modelName} exited with code ${execution.exitCode}.`,
       };
     } else {
-      const collected = await adapter.collectOutputs({
-        manifestName: manifest.name,
-        inputPath: storedInputPath,
-        outputDir,
-        modelDir: installed.installDir,
-        assetsDir: path.join(installed.installDir, "assets"),
-        params: effectiveParams,
-        runtimeExecutable: installed.runtime.python.executable,
-        platform: installed.runtime.python.platform,
-        ...(companionInputs.length > 0 ? { companionInputs } : {}),
-      });
+      const collected = await adapter.collectOutputs(runContext);
       // --- Step 12: checksum + size each output. ---
       record.outputs = await Promise.all(
         collected.map(async (output) => ({
@@ -294,6 +295,14 @@ export async function runModel(
   } catch (error) {
     record.status = options.signal?.aborted ? "cancelled" : "failed";
     record.error = toErrorInfo(error, "RUN_EXECUTION_FAILED");
+  }
+
+  // --- Derived report. Deliberately outside the try/catch above: describing or exporting a
+  // report can only ever add a warning, never change the model's outcome or error. ---
+  if (record.status === "succeeded" && options.visualize !== false) {
+    const report = await generateRunReport({ adapter, context: runContext, runDirPath, record, signal: options.signal });
+    if (report.artifact) record.artifacts = [report.artifact];
+    if (report.warning) record.warnings = [report.warning];
   }
 
   // --- Step 13: write the final record atomically. ---
@@ -311,6 +320,10 @@ export async function runModel(
       for (const output of record.outputs) {
         const target = path.join(options.outputDir, path.basename(output.path));
         fs.copyFileSync(output.path, target, fs.constants.COPYFILE_EXCL);
+      }
+      // The report is self-contained; copy it under a name that cannot collide with outputs.
+      for (const artifact of record.artifacts ?? []) {
+        fs.copyFileSync(artifact.path, path.join(options.outputDir, `moldesk-report-${record.id}.html`), fs.constants.COPYFILE_EXCL);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -121,6 +121,9 @@ importers:
       '@moldesk/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@moldesk/visualizer':
+        specifier: workspace:*
+        version: link:../visualizer
       yaml:
         specifier: ^2.5.1
         version: 2.9.0

@@ -15,6 +15,7 @@ import type {
   VerificationResult,
 } from "../index.js";
 import { collectGlobOutputs } from "../outputs.js";
+import { describeOpenDdeVisualization } from "./visualization.js";
 
 /**
  * Adapter-written copy of the job with every companion reference rewritten to its
@@ -573,6 +574,10 @@ export const openddeAdapter: ModelAdapterDefinition = {
     validateJobOutputs(context.outputDir, jobs, collected);
     await exportPdb(context, collected.filter((o) => o.id === "structures").map((o) => o.path));
     return collectGlobOutputs(context.outputDir, OUTPUTS);
+  },
+
+  async describeVisualization(context: RunContext, outputs: readonly CollectedOutput[]) {
+    return describeOpenDdeVisualization(context.inputPath, outputs);
   },
 
   async verifyInstallation(context: InstallContext): Promise<VerificationResult> {
