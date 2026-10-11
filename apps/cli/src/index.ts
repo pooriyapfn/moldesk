@@ -6,6 +6,8 @@ import { registerListCommand } from "./commands/list.js";
 import { registerInstallCommand } from "./commands/install.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
+import { registerViewCommand } from "./commands/view.js";
+import { registerVisualizerCommand } from "./commands/visualizer.js";
 
 const program = new Command();
 
@@ -19,5 +21,7 @@ registerListCommand(program);
 registerInstallCommand(program);
 registerUninstallCommand(program);
 registerRunCommand(program);
+registerViewCommand(program);
+registerVisualizerCommand(program);
 
 program.parse();

@@ -14,6 +14,7 @@ import type {
   VerificationResult,
 } from "../index.js";
 import { collectGlobOutputs } from "../outputs.js";
+import { describeDiffDockVisualization } from "./visualization.js";
 
 /**
  * DiffDock-L's `inference.py` (gcorso/DiffDock @ 85c49b60d3e0b0182a59ee43a34a6d7036981284)
@@ -506,6 +507,10 @@ export const diffdockAdapter: ModelAdapterDefinition = {
     writePosesSummary(context.outputDir, complexName);
     const summaryOutputs = collectGlobOutputs(context.outputDir, OUTPUTS.filter((o) => o.id === "poses_summary"));
     return [...poseOutputs, ...summaryOutputs];
+  },
+
+  async describeVisualization(context: RunContext, outputs: readonly CollectedOutput[]) {
+    return describeDiffDockVisualization(context, outputs);
   },
 
   async verifyInstallation(context: InstallContext): Promise<VerificationResult> {

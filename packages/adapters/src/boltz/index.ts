@@ -15,6 +15,7 @@ import type {
   VerificationResult,
 } from "../index.js";
 import { collectGlobOutputs } from "../outputs.js";
+import { describeBoltzVisualization } from "./visualization.js";
 
 /**
  * Boltz's CLI writes `<out_dir>/boltz_results_<input_stem>/predictions/<record_id>/…`
@@ -199,6 +200,10 @@ export const boltzAdapter: ModelAdapterDefinition = {
 
   async collectOutputs(context: RunContext): Promise<CollectedOutput[]> {
     return collectGlobOutputs(context.outputDir, OUTPUTS);
+  },
+
+  async describeVisualization(context: RunContext, outputs: readonly CollectedOutput[]) {
+    return describeBoltzVisualization(context.inputPath, outputs);
   },
 
   async verifyInstallation(context: InstallContext): Promise<VerificationResult> {

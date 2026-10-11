@@ -1,0 +1,18 @@
+{
+  "complexName": "cplx",
+  "topPoseFile": "rank1.sdf",
+  "poses": [
+    {
+      "rank": 1,
+      "confidence": 0.85,
+      "sdfFile": "rank1_confidence0.85.sdf",
+      "atomCount": 3
+    },
+    {
+      "rank": 2,
+      "confidence": -1.23,
+      "sdfFile": "rank2_confidence-1.23.sdf",
+      "atomCount": 3
+    }
+  ]
+}

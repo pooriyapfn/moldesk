@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import type { Command } from "commander";
 import { MoldeskError, runModel, type RuntimeKind } from "@moldesk/core";
 
@@ -44,12 +45,13 @@ export function registerRunCommand(program: Command): void {
     .option("--output <directory>", "copy declared outputs to this directory")
     .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
     .option("--param <key=value>", "set a model parameter (repeatable)", collectParam, {} as Record<string, string>)
+    .option("--no-visualize", "skip creating the offline molecular report")
     .option("--json", "print the run result as JSON")
     .action(
       async (
         model: string,
         input: string,
-        options: { output?: string; runtime?: string; param: Record<string, string>; json?: boolean },
+        options: { output?: string; runtime?: string; param: Record<string, string>; json?: boolean; visualize?: boolean },
       ) => {
         const runtime = options.runtime ? parseRuntime(options.runtime) : undefined;
         const controller = new AbortController();
@@ -61,6 +63,7 @@ export function registerRunCommand(program: Command): void {
             runtime,
             params: options.param,
             outputDir: options.output,
+            visualize: options.visualize,
             signal: controller.signal,
             onLog: options.json
               ? undefined
@@ -72,6 +75,11 @@ export function registerRunCommand(program: Command): void {
           } else {
             console.log(`${result.record.model}: ${result.status}.`);
             for (const output of result.record.outputs) console.log(`  ${output.id}: ${output.path}`);
+            for (const artifact of result.record.artifacts ?? []) {
+              console.log(`  report: ${artifact.path}`);
+              console.log(`  Open in your browser: ${pathToFileURL(artifact.path).href}`);
+            }
+            for (const warning of result.record.warnings ?? []) console.error(`  Warning (${warning.code}): ${warning.message}`);
             if (result.record.error) console.error(`  ${result.record.error.code}: ${result.record.error.message}`);
             if (result.exportError) console.error(`  --output copy failed: ${result.exportError.message}`);
             console.log(`  Run directory: ${result.record.command.cwd}`);

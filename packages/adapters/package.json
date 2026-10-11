@@ -24,6 +24,7 @@
   "dependencies": {
     "@moldesk/registry": "workspace:*",
     "@moldesk/runtime": "workspace:*",
+    "@moldesk/visualizer": "workspace:*",
     "yaml": "^2.5.1"
   },
   "devDependencies": {

@@ -81,6 +81,9 @@ export interface CollectedOutput {
   path: string;
 }
 
+/** Type-only: the adapter never loads the visualizer's Node or browser code. */
+export type ReportDescription = import("@moldesk/visualizer/contract").ReportDescription;
+
 export interface VerificationResult {
   passed: boolean;
   output?: string;
@@ -120,7 +123,22 @@ export interface ModelAdapterDefinition {
    * `runtime` only provide generic, validated staging.
    */
   resolveCompanionInputs?(inputPath: string): Promise<import("@moldesk/runtime").CompanionInputRef[]>;
+  /**
+   * Optional hook describing what a successful run produced, for the offline molecular
+   * report. Returns references to files (exact collected output paths, or staged input
+   * paths) plus scenes/panels — never bytes, HTML, or arbitrary paths; core resolves,
+   * verifies and embeds them. `undefined` means no report applies (not a failure);
+   * throwing a `MoldeskError` surfaces as a nonfatal warning on the run. Scientific
+   * associations (which confidence file belongs to which structure, what a rank means)
+   * belong here, matched against exact collected paths — never guessed by filename
+   * extension or global sort order.
+   */
+  describeVisualization?(
+    context: RunContext,
+    outputs: readonly CollectedOutput[],
+  ): Promise<ReportDescription | undefined>;
 }
 
 export { adapterCatalog, getAdapter, hasAdapter, validateAdapterCatalog } from "./catalog.js";
+export { ReportBuilder } from "./visualization.js";
 export { validateParams, type ParamValidationResult } from "./params.js";

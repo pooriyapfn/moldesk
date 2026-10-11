@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": [],
+    "noEmit": true,
+    "declaration": false
+  },
+  "include": ["src/browser", "src/contract.ts", "src/csv.ts", "src/limits.ts"]
+}

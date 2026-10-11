@@ -1,0 +1,52 @@
+{
+  "name": "@moldesk/visualizer",
+  "version": "0.0.3",
+  "description": "Offline, self-contained Mol* molecular reports for MoleculeDesk",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pooriyapfn/moldesk.git",
+    "directory": "packages/visualizer"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    },
+    "./csv": {
+      "types": "./dist/csv.d.ts",
+      "default": "./dist/csv.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-viewer.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json",
+    "test": "vitest run",
+    "smoke": "node scripts/browser-smoke.mjs",
+    "measure": "node scripts/measure.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "esbuild": "0.28.2",
+    "molstar": "5.12.0",
+    "playwright-core": "1.63.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}

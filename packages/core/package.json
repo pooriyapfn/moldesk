@@ -24,7 +24,8 @@
   "dependencies": {
     "@moldesk/adapters": "workspace:*",
     "@moldesk/runtime": "workspace:*",
-    "@moldesk/registry": "workspace:*"
+    "@moldesk/registry": "workspace:*",
+    "@moldesk/visualizer": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
