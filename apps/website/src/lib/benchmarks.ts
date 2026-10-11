@@ -61,8 +61,8 @@ export const hardware: Record<string, BenchmarkHardware> = {
     driver: "570.211.01",
     cpu: "Intel Xeon Gold 6342 (96 logical cores visible)",
     host: "RunPod GPU pod, Linux x64",
-    pricePerHour: null,
-    priceSource: "No verified hourly rate recorded yet",
+    pricePerHour: 0.59,
+    priceSource: "RunPod billing explorer, 2026-10-11, total per hour for one A40",
   },
 };
 
