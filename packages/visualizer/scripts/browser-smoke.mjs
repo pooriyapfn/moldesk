@@ -79,6 +79,24 @@ const INIT_SCRIPT = () => {
   document.addEventListener("securitypolicyviolation", (e) => csp.push(`${e.violatedDirective}: ${e.blockedURI}`));
 };
 
+const RES = ".md-res:not(.md-res-missing)";
+/** Letters of every modeled residue, row after row, as shown in MoleculeDesk's own sequence strip. */
+const sequenceText = (page) => page.evaluate((sel) => [...document.querySelectorAll(sel)].map((s) => s.textContent).join(""), RES);
+/** One entry per chain row: label, all letters, how many are marked missing, and the color of the first modeled letter. */
+const sequenceRows = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll(".md-seq-row")].map((row) => {
+      const res = [...row.querySelectorAll(".md-res")];
+      const first = res.find((r) => !r.classList.contains("md-res-missing"));
+      return {
+        label: row.querySelector(".md-seq-chain").textContent,
+        letters: res.map((r) => r.textContent).join(""),
+        missing: res.filter((r) => r.classList.contains("md-res-missing")).map((r) => r.textContent).join(""),
+        color: first ? getComputedStyle(first).color : "",
+      };
+    }),
+  );
+
 function buildReports(workDir) {
   const bundle = loadBundle();
   const csv = new TextEncoder().encode("model,score,note\nA,0.91,\"first, best\"\nB,0.42,second\n");
@@ -210,18 +228,46 @@ async function exerciseGood(browser, file, { offline, label }) {
   try {
     await page.waitForSelector("canvas", { timeout: 30000 });
     check(true, `${tag}: canvas rendered from file: after move`);
-    await page.waitForFunction(() => document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present").length >= 46, null, { timeout: 30000 });
-    const letters = await page.evaluate(() =>
-      [...document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present")].map((s) => s.textContent.replace(/\u200b/g, "")).join(""),
-    );
+    await page.waitForFunction((sel) => document.querySelectorAll(sel).length >= 46, RES, { timeout: 30000 });
+    const letters = await sequenceText(page);
     check(letters.startsWith(CRAMBIN), `${tag}: sequence letters match crambin (${letters.slice(0, 50)})`);
+    const rows = await sequenceRows(page);
+    check(rows.length === 1 && rows[0].color !== "" && rows[0].color !== "rgb(232, 234, 237)", `${tag}: sequence letters carry the structure color (${rows[0]?.color})`);
+    check(
+      (await page.locator(".md-seq-group").first().locator(".md-res").count()) === 10 && (await page.locator(".md-seq-group").first().getAttribute("data-count")) === "10",
+      `${tag}: sequence is grouped in blocks of ten with a position number`,
+    );
+    const box = await page.getByTestId("viewport").boundingBox();
+    check(box && box.x === 0 && box.y === 0 && box.width === 1280 && box.height === 900, `${tag}: the 3D view fills the whole window (${JSON.stringify(box)})`);
+    const dark = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(dark === "rgb(0, 0, 0)", `${tag}: black background (${dark})`);
+    const glass = await page.evaluate(() => {
+      const t = getComputedStyle(document.querySelector(".md-toolbox"));
+      return { blur: t.backdropFilter || t.webkitBackdropFilter, radius: t.borderRadius, bg: t.backgroundColor };
+    });
+    check(/blur/.test(glass.blur) && parseFloat(glass.radius) >= 12 && /rgba\(.*0\.\d+\)/.test(glass.bg), `${tag}: toolbox is a rounded, blurred, translucent overlay (${JSON.stringify(glass)})`);
+    const links = await page.locator(".md-footer a").evaluateAll((as) => as.map((a) => [a.textContent, a.href]));
+    check(
+      JSON.stringify(links) === JSON.stringify([["Website", "https://moleculedesk.com/"], ["Docs", "https://www.moleculedesk.com/docs"], ["GitHub", "https://github.com/pooriyapfn/moldesk"]]),
+      `${tag}: footer links to the MoleculeDesk website, docs and GitHub (${JSON.stringify(links)})`,
+    );
+    check((await page.locator(".md-footer").textContent()).startsWith("MoleculeDesk"), `${tag}: footer is MoleculeDesk-branded`);
+    await page.getByRole("button", { name: "About" }).click();
+    const about = await page.locator(".md-about").textContent();
+    check(/Mol\* \d+\.\d+\.\d+ \(MIT License/.test(about), `${tag}: About shows the Mol* credit and license (${about.slice(0, 80)})`);
+    await page.getByRole("button", { name: "About" }).click();
 
-    const residue = page.locator(".msp-sequence-wrapper span.msp-sequence-present").nth(10);
+    const residue = page.locator(RES).nth(10);
+    const canvas = page.locator('[data-testid="viewport"] canvas').first();
+    await page.mouse.move(640, 700);
+    await page.waitForTimeout(500);
+    const before = await canvas.screenshot();
     await residue.hover();
-    const hovered = await page
-      .waitForSelector(".msp-highlight-info", { timeout: 5000 })
-      .then(() => true, () => false);
-    check(hovered, `${tag}: hovering a sequence residue highlights it in the viewer`);
+    await page.waitForFunction(() => document.querySelector('[data-testid="residue-info"]')?.textContent.trim().length > 0, null, { timeout: 5000 });
+    check((await page.getByTestId("residue-info").textContent()).startsWith("SER 11"), `${tag}: hovering a sequence residue names it (${await page.getByTestId("residue-info").textContent()})`);
+    await page.waitForTimeout(500);
+    const after = await canvas.screenshot();
+    check(!before.equals(after), `${tag}: hovering a sequence residue highlights it in the 3D view`);
     await residue.click();
     // Clicking focuses the residue with a camera animation; let it settle before exporting.
     await page.waitForTimeout(2000);
@@ -238,12 +284,13 @@ async function exerciseGood(browser, file, { offline, label }) {
 
     await page.getByLabel("Scene").selectOption("s2");
     await page.waitForFunction(
-      () => [...document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present")].map((s) => s.textContent.replace(/\u200b/g, "")).join("").includes("CGCGAATTCGCG"),
-      null,
+      (sel) => [...document.querySelectorAll(sel)].map((s) => s.textContent).join("").includes("CGCGAATTCGCG"),
+      RES,
       { timeout: 30000 },
     );
     check(true, `${tag}: scene switch loads the DNA sequence`);
 
+    await page.getByRole("button", { name: "Results" }).click();
     const cells = await page.locator("table tbody tr").count();
     check(cells === 2, `${tag}: table panel renders 2 rows`);
     check((await page.locator("table tbody tr").first().textContent()).includes("first, best"), `${tag}: quoted CSV cell parsed`);
@@ -286,14 +333,14 @@ async function exerciseDocking(browser, file) {
   try {
     await loaded("scene-1");
     check(true, "docking: receptor + pose loaded together as two structures");
-    const sequence = () =>
-      page.evaluate(() => [...document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present")].map((s) => s.textContent.replace(/\u200b/g, "")).join(""));
+    const sequence = () => sequenceText(page);
     check((await sequence()).startsWith(CRAMBIN), "docking: receptor sequence is shown");
     check((await page.getByRole("alert").count()) === 0, "docking: no viewer errors for the SDF pose");
     await page.getByLabel("Scene").selectOption("scene-2");
     await loaded("scene-2");
     check((await sequence()).startsWith(CRAMBIN), "docking: switching to pose 2 keeps the receptor");
     check((await page.getByRole("alert").count()) === 0, "docking: no viewer errors after scene switch");
+    await page.getByRole("button", { name: "Results" }).click();
     check((await page.locator("table tbody tr").count()) === 2, "docking: poses table reads the rows array from the JSON summary");
     const shot = await page.locator('[data-testid="viewport"] canvas').first().screenshot();
     check(shot.length > 8000, `docking: viewport is not blank (${shot.length} bytes)`);
@@ -343,19 +390,15 @@ const EDGE_CASES = [
     name: "1AAY.pdb",
     describe: "protein-DNA complex with missing residues",
     async verify(page) {
-      const options = await page.locator(".msp-sequence-select select option").allTextContents();
-      check(options.some((o) => /DNA/i.test(o)), `protein–DNA: the sequence panel offers the DNA entity (${options.join(" | ").slice(0, 120)})`);
-      // Mol* lists the two DNA entities first; switch to the protein entity.
-      const entity = page.locator(".msp-sequence-select select").filter({ has: page.locator("option", { hasText: /DNA/ }) }).first();
-      const protein = (await entity.locator("option").allTextContents()).findIndex((t) => /^\d+:/.test(t) && !/DNA/.test(t));
-      await entity.selectOption({ index: protein });
-      await page.waitForFunction(() => document.querySelectorAll(".msp-sequence-wrapper span.msp-sequence-present").length > 40);
-      // Every SEQRES position, observed or not, in order (not a join of ATOM records).
-      const all = await page.evaluate(() => [...document.querySelectorAll(".msp-sequence-wrapper span[data-seqid]")].map((s) => ({ letter: s.textContent.replace(/\u200b/g, ""), missing: s.className.includes("missing") })));
-      const full = all.map((r) => r.letter).join("");
-      check(full.startsWith("MERPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPF"), `protein–DNA: the zinc-finger protein sequence is complete (${full.slice(0, 30)}…)`);
-      const missing = all.filter((r) => r.missing).map((r) => r.letter).join("");
-      check(all.slice(0, 2).every((r) => r.missing) && !all[2].missing && missing.length === 5, `missing residues: MET-GLU at the start and 3 more stay in sequence position, marked missing (${all.filter((r) => r.missing).length} marked)`);
+      const rows = await sequenceRows(page);
+      const dna = rows.filter((r) => /^[ACGT]{8,}$/.test(r.letters));
+      check(dna.length === 2, `protein–DNA: both DNA strands get a sequence row (${rows.map((r) => r.label + ":" + r.letters.length).join(" ")})`);
+      const protein = rows.find((r) => r.letters.startsWith("MERPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPF"));
+      check(!!protein, "protein–DNA: the complete zinc-finger protein sequence is shown, in SEQRES order");
+      check(protein && protein.missing.length === 5, `missing residues: not-modeled positions stay in sequence position, dimmed (${protein?.missing})`);
+      const first = await page.locator(".md-seq-row").nth(rows.indexOf(protein)).locator(".md-res").evaluateAll((rs) => rs.slice(0, 3).map((r) => r.classList.contains("md-res-missing")));
+      check(JSON.stringify(first) === "[true,true,false]", `missing residues: the first two are the unmodeled ones (${first})`);
+      check(new Set(rows.map((r) => r.color)).size >= 2, `protein–DNA: protein and DNA letters have different structure colors (${[...new Set(rows.map((r) => r.color))].join(" ")})`);
     },
   },
   {
@@ -371,9 +414,8 @@ const EDGE_CASES = [
     describe: "antibody domain with insertion codes",
     async verify(page) {
       const target = firstInsertionResidue("1IGT-VH.pdb");
-      // data-seqid is the zero-based sequence index.
-      await page.locator(`.msp-sequence-wrapper span[data-seqid="${target.ordinal - 1}"]`).first().hover();
-      const info = await page.waitForSelector(".msp-highlight-info", { timeout: 5000 }).then((e) => e.textContent(), () => "");
+      await page.locator(`.md-res[data-i="${target.ordinal - 1}"]`).first().hover();
+      const info = await page.getByTestId("residue-info").textContent();
       const number = target.label.replace(/[A-Za-z]+$/, "");
       const code = target.label.slice(number.length);
       check(new RegExp(`\\[auth ${number}\\]${code}`).test(info), `insertion codes: hovering sequence index ${target.ordinal - 1} identifies residue ${target.label} (${info.trim().slice(0, 80)})`);
@@ -385,12 +427,13 @@ const EDGE_CASES = [
     async verify(page) {
       // 3HZ7 chain A: selenomethionine (MSE) at 1, 48, 52 and a modified cysteine (CSS) at 11.
       // Preserved and identified as themselves, not dropped or shown as unknown.
-      const at = (n) => page.locator(`.msp-sequence-wrapper span[data-seqid="${n - 1}"]`).first().textContent().then((t) => t.replace(/\u200b/g, ""));
+      const at = (n) => page.locator(`.md-res[data-seqid="${n}"]`).first().getAttribute("data-comp");
       const shown = { 1: await at(1), 11: await at(11), 48: await at(48), 52: await at(52) };
       check(
         shown[1] === "MSE" && shown[48] === "MSE" && shown[52] === "MSE" && shown[11] === "CSS",
         `modified residues: MSE and CSS are preserved and identified (1:${shown[1]} 11:${shown[11]} 48:${shown[48]} 52:${shown[52]})`,
       );
+      check((await page.locator(".md-res-mod").count()) >= 4, "modified residues: marked as modified in the sequence strip");
     },
   },
   {
@@ -398,6 +441,7 @@ const EDGE_CASES = [
     describe: "ligand-only structure",
     async verify(page) {
       check((await page.getByText("No polymer sequence in this structure.").count()) === 1, "ligand-only: clear 'No polymer sequence' state");
+      check((await page.locator(".md-seq").count()) === 0, "ligand-only: no empty sequence strip");
     },
   },
 ];

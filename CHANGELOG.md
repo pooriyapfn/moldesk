@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with an
-  interactive Mol* 3D view and synchronized sequence, no network access.
+- Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a
+  fullscreen, always-dark Mol* 3D view, a floating toolbox, and a colored sequence
+  strip in blocks of ten, no network access.
   `moldesk view <file>` for PDB/mmCIF, an automatic report (`artifacts/viewer.html`)
   for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (`--no-visualize` to
   skip; `--output` also copies it), and `moldesk visualizer update <report>` to

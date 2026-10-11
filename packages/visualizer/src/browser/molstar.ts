@@ -21,6 +21,9 @@ import type { Expression } from "molstar/lib/mol-script/language/expression";
 import { Color } from "molstar/lib/mol-util/color";
 import { Mat4 } from "molstar/lib/mol-math/linear-algebra";
 import type { StateObjectSelector } from "molstar/lib/mol-state";
+import { Unit, StructureElement, type Structure, type ElementIndex } from "molstar/lib/mol-model/structure";
+import { SortedArray } from "molstar/lib/mol-data/int";
+import { PluginStateObject } from "molstar/lib/mol-plugin-state/objects";
 import type { Scene, SceneComponent, MolecularSelection, MolecularFormat } from "../contract";
 
 export interface LoadedResource {
@@ -36,12 +39,35 @@ export interface SceneOptions {
   showWater: boolean;
 }
 
+export interface SequenceResidue {
+  /** One-letter code, or the three-letter component name when there is no one-letter code. */
+  letter: string;
+  seqId: number;
+  /** Component actually present in the structure (e.g. MSE for a displayed M). */
+  comp: string;
+  title: string;
+  /** `#rrggbb` taken from the structure's own color theme; undefined when not modeled. */
+  color?: string;
+  modeled: boolean;
+  modified: boolean;
+}
+
+export interface SequenceRow {
+  key: string;
+  label: string;
+  residues: SequenceResidue[];
+}
+
 export interface SceneSummary {
   sceneId: string;
   structureCount: number;
   hasPolymerSequence: boolean;
   modelCount: number;
+  sequences: SequenceRow[];
+  sequenceRowsOmitted: number;
 }
+
+const MAX_SEQUENCE_ROWS = 24;
 
 const NETWORK_ACTIONS = new Set<unknown>([
   StateActions.Structure.DownloadStructure,
@@ -74,12 +100,9 @@ function offlineSpec(): PluginUISpec {
     layout: {
       initial: {
         isExpanded: false,
-        // Keep the sequence strip inside the container instead of outside its bounds.
-        controlsDisplay: "landscape",
-        // Must be true or Mol* hides every region, including the sequence strip.
-        showControls: true,
-        // Sequence strip on top; everything else is our own shell.
-        regionState: { left: "hidden", top: "full", right: "hidden", bottom: "hidden" },
+        // The sequence strip and all controls are MoleculeDesk's own overlay; Mol* only draws the canvas.
+        showControls: false,
+        regionState: { left: "hidden", top: "hidden", right: "hidden", bottom: "hidden" },
       },
     },
     config: [
@@ -188,7 +211,14 @@ function parseColor(hex: string): Color {
   return Color(parseInt(hex.slice(1), 16));
 }
 
+function hex(c: Color): string {
+  return `#${(c as number).toString(16).padStart(6, "0")}`;
+}
+
 export class Viewer {
+  private readonly loci = new Map<string, StructureElement.Loci>();
+  private selectedKey: string | undefined;
+
   private constructor(private readonly plugin: PluginUIContext) {}
 
   static async create(target: HTMLElement): Promise<Viewer> {
@@ -253,7 +283,147 @@ export class Viewer {
       }
     }
     PluginCommands.Camera.Reset(plugin, {});
-    return { sceneId: scene.id, structureCount: structures.size, hasPolymerSequence, modelCount };
+    const sequences = this.buildSequences(structures, structures.size > 1);
+    return {
+      sceneId: scene.id,
+      structureCount: structures.size,
+      hasPolymerSequence,
+      modelCount,
+      sequences: sequences.rows,
+      sequenceRowsOmitted: sequences.omitted,
+    };
+  }
+
+  /** Representations currently drawn, each with the (sub)structure it draws. */
+  private drawnRepresentations(): Array<{ source: Structure; color?: (l: StructureElement.Location) => number }> {
+    const out: Array<{ source: Structure; color?: (l: StructureElement.Location) => number }> = [];
+    this.plugin.state.data.cells.forEach((cell) => {
+      const obj = cell.obj;
+      if (!obj || !PluginStateObject.Molecule.Structure.Representation3D.is(obj)) return;
+      const { repr, sourceData } = obj.data;
+      const theme = repr.theme.color as { color?: (l: StructureElement.Location, s: boolean) => number };
+      out.push({ source: sourceData, color: theme.color ? (l) => theme.color!(l, false) : undefined });
+    });
+    return out;
+  }
+
+  /**
+   * One row per polymer chain, using the structure's full entity sequence so residues that were
+   * not modeled keep their position. Letter colors come from the same color theme Mol* draws with.
+   */
+  private buildSequences(structures: Map<string, StateObjectSelector>, multi: boolean) {
+    this.loci.clear();
+    this.selectedKey = undefined;
+    const reprs = this.drawnRepresentations();
+    type Modeled = { comp: string; auth: number; ins: string; element: number; loci?: StructureElement.Loci; color?: string };
+    const chains = new Map<string, { label: string; structure: Structure; entity: number; model: Unit.Atomic["model"]; residues: Map<number, Modeled> }>();
+
+    for (const [sid, selector] of structures) {
+      const structure = selector.data as Structure | undefined;
+      if (!structure) continue;
+      for (const unit of structure.units) {
+        if (!Unit.isAtomic(unit) || !unit.conformation.operator.isIdentity || unit.polymerElements.length === 0) continue;
+        const h = unit.model.atomicHierarchy;
+        const first = unit.polymerElements[0];
+        const chainIndex = h.chainAtomSegments.index[first];
+        const asym = h.chains.label_asym_id.value(chainIndex);
+        const key = `${sid}:${unit.model.id}:${asym}`;
+        let chain = chains.get(key);
+        if (!chain) {
+          const auth = h.chains.auth_asym_id.value(chainIndex);
+          chain = {
+            label: multi ? `${sid} ${auth}` : auth,
+            structure,
+            entity: h.index.getEntityFromChain(chainIndex),
+            model: unit.model,
+            residues: new Map(),
+          };
+          chains.set(key, chain);
+        }
+        for (let k = 0; k < unit.polymerElements.length; k++) {
+          const e = unit.polymerElements[k];
+          const rI = h.residueAtomSegments.index[e];
+          const seqId = h.residues.label_seq_id.value(rI);
+          const start = h.residueAtomSegments.offsets[rI];
+          const end = h.residueAtomSegments.offsets[rI + 1];
+          const range = SortedArray.findRange(unit.elements, start as ElementIndex, (end - 1) as ElementIndex);
+          let color: string | undefined;
+          for (const r of reprs) {
+            const sub = r.source.unitMap.get(unit.id);
+            if (!r.color || !sub || sub.model !== unit.model || !SortedArray.has(sub.elements, e)) continue;
+            try {
+              color = hex(r.color(StructureElement.Location.create(r.source, sub, e)) as unknown as Color);
+            } catch {
+              continue;
+            }
+            break;
+          }
+          chain.residues.set(seqId, {
+            comp: h.atoms.label_comp_id.value(e),
+            auth: h.residues.auth_seq_id.value(rI),
+            ins: h.residues.pdbx_PDB_ins_code.value(rI),
+            element: e,
+            loci: StructureElement.Loci(structure, [{ unit, indices: range as never }]),
+            color,
+          });
+        }
+      }
+    }
+
+    const rows: SequenceRow[] = [];
+    let omitted = 0;
+    for (const [key, chain] of chains) {
+      if (rows.length >= MAX_SEQUENCE_ROWS) {
+        omitted++;
+        continue;
+      }
+      const entitySeq = chain.model.sequence.byEntityKey[chain.entity]?.sequence;
+      const residues: SequenceResidue[] = [];
+      const push = (letter: string, seqId: number, comp: string, modeled: Modeled | undefined, modified: boolean) => {
+        const index = residues.length;
+        const authText = modeled && modeled.auth !== seqId ? ` [auth ${modeled.auth}]${modeled.ins}` : modeled?.ins ? modeled.ins : "";
+        const title = modeled ? `${modeled.comp} ${seqId}${authText}` : `${comp} ${seqId} (not modeled)`;
+        residues.push({ letter, seqId, comp: modeled?.comp ?? comp, title, color: modeled?.color, modeled: !!modeled, modified });
+        if (modeled?.loci) this.loci.set(`${key}:${index}`, modeled.loci);
+      };
+      if (entitySeq) {
+        for (let i = 0; i < entitySeq.length; i++) {
+          const seqId = entitySeq.seqId.value(i);
+          const modeled = chain.residues.get(seqId);
+          const code = entitySeq.code.value(i) as string;
+          const letter = code === "X" || code === "-" ? entitySeq.label.value(i) : code;
+          push(letter, seqId, entitySeq.compId.value(i), modeled, !!modeled && (letter.length > 1 || modeled.comp !== entitySeq.compId.value(i)));
+        }
+      } else {
+        for (const [seqId, m] of [...chain.residues].sort((a, b) => a[0] - b[0])) push("X", seqId, m.comp, m, false);
+      }
+      if (residues.length > 0) rows.push({ key, label: chain.label, residues });
+    }
+    return { rows, omitted };
+  }
+
+  /** Highlights a sequence residue in the 3D view (no argument clears). */
+  highlight(key?: string, index?: number): void {
+    const { lociHighlights } = this.plugin.managers.interactivity;
+    const loci = key === undefined ? undefined : this.loci.get(`${key}:${index}`);
+    if (loci) lociHighlights.highlightOnly({ loci }, false);
+    else lociHighlights.clearHighlights();
+  }
+
+  /** Selects and focuses a residue; clicking the selected residue again clears it. */
+  toggleSelect(key: string, index: number): void {
+    const id = `${key}:${index}`;
+    const loci = this.loci.get(id);
+    if (!loci) return;
+    const { selection } = this.plugin.managers.structure;
+    if (this.selectedKey === id) {
+      selection.clear();
+      this.selectedKey = undefined;
+      return;
+    }
+    this.selectedKey = id;
+    selection.fromLoci("set", loci);
+    this.plugin.managers.camera.focusLoci(loci);
   }
 
   private async addDefaults(structure: StateObjectSelector, options: SceneOptions) {

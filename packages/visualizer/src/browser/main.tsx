@@ -1,9 +1,9 @@
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isMolecularFormat, validateReport, type Column, type MolecularReportV1, type Panel, type Scene } from "../contract";
 import { csvRecords, parseCsv } from "../csv";
 import { REPORT_LIMITS } from "../limits";
-import { Viewer, type LoadedResource, type RepresentationKind, type SceneSummary } from "./molstar";
+import { Viewer, type LoadedResource, type RepresentationKind, type SceneSummary, type SequenceRow } from "./molstar";
 import { updateCommand } from "./shell";
 
 interface Envelope {
@@ -185,7 +185,117 @@ function webglAvailable(): boolean {
   }
 }
 
-function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) {
+const LINKS = [
+  { label: "Website", href: "https://moleculedesk.com/" },
+  { label: "Docs", href: "https://www.moleculedesk.com/docs" },
+  { label: "GitHub", href: "https://github.com/pooriyapfn/moldesk" },
+] as const;
+
+function Footer({ envelope }: { envelope?: Envelope }) {
+  const [about, setAbout] = useState(false);
+  return (
+    <footer className="md-footer">
+      {about && (
+        <div className="md-about md-glass" role="note">
+          Report viewer {envelope?.viewer.version} · works offline
+          <br />
+          3D rendering by Mol* {envelope?.viewer.molstarVersion} (MIT License, © Mol* contributors)
+        </div>
+      )}
+      <div className="md-footer-main md-glass">
+        <strong>MoleculeDesk</strong>
+        {LINKS.map((l) => (
+          <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer">{l.label}</a>
+        ))}
+        <button className="md-link" aria-expanded={about} onClick={() => setAbout(!about)}>About</button>
+      </div>
+    </footer>
+  );
+}
+
+const GROUP = 10;
+
+const SequenceRows = memo(function SequenceRows({ rows }: { rows: SequenceRow[] }) {
+  return (
+    <>
+      {rows.map((row) => {
+        const groups: SequenceRow["residues"][] = [];
+        for (let i = 0; i < row.residues.length; i += GROUP) groups.push(row.residues.slice(i, i + GROUP));
+        return (
+          <div className="md-seq-row" key={row.key} data-row={row.key}>
+            <span className="md-seq-chain">{row.label}</span>
+            {groups.map((g, gi) => (
+              <span className="md-seq-group" key={gi} data-count={g.length === GROUP ? (gi + 1) * GROUP : undefined}>
+                {g.map((r, ri) => {
+                  const i = gi * GROUP + ri;
+                  return (
+                    <span
+                      key={ri}
+                      className={`md-res${r.modeled ? "" : " md-res-missing"}${r.modified ? " md-res-mod" : ""}${r.letter.length > 1 ? " md-res-long" : ""}`}
+                      data-row={row.key}
+                      data-i={i}
+                      data-seqid={r.seqId}
+                      data-comp={r.comp}
+                      data-title={r.title}
+                      style={r.color ? { color: r.color } : undefined}
+                    >
+                      {r.letter}
+                    </span>
+                  );
+                })}
+              </span>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+});
+
+function SequencePanel({ summary, viewer }: { summary: SceneSummary; viewer: Viewer }) {
+  const [info, setInfo] = useState("");
+  const target = (e: { target: EventTarget }) => (e.target as HTMLElement).closest<HTMLElement>("[data-i]");
+  return (
+    <div
+      className="md-seq"
+      data-testid="sequence"
+      onMouseOver={(e) => {
+        const el = target(e);
+        if (!el) return;
+        viewer.highlight(el.dataset.row, Number(el.dataset.i));
+        setInfo(el.dataset.title ?? "");
+      }}
+      onMouseLeave={() => {
+        viewer.highlight();
+        setInfo("");
+      }}
+      onClick={(e) => {
+        const el = target(e);
+        if (el?.dataset.row) viewer.toggleSelect(el.dataset.row, Number(el.dataset.i));
+      }}
+    >
+      <div className="md-seq-scroll">
+        <SequenceRows rows={summary.sequences} />
+      </div>
+      <div className="md-seq-info" data-testid="residue-info" aria-live="polite">
+        {info}
+        {!info && summary.sequenceRowsOmitted > 0 ? `${summary.sequenceRowsOmitted} more chains not shown` : ""}
+      </div>
+    </div>
+  );
+}
+
+function StructureView({
+  scenes,
+  loaded,
+  title,
+  onUpdate,
+}: {
+  scenes: Scene[];
+  loaded: Loaded;
+  title: string;
+  onUpdate: () => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
   const [ready, setReady] = useState(false);
@@ -193,10 +303,12 @@ function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) 
   const [representation, setRepresentation] = useState<RepresentationKind>("cartoon");
   const [showLigands, setShowLigands] = useState(true);
   const [showWater, setShowWater] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [showData, setShowData] = useState(false);
   const [summary, setSummary] = useState<SceneSummary>();
   const [error, setError] = useState<string>();
   const [gl] = useState(webglAvailable);
+  const dataPanels = loaded.report.panels.filter((p): p is Extract<Panel, { kind: "table" | "chart" }> => p.kind === "table" || p.kind === "chart");
 
   useEffect(() => {
     if (!gl || !host.current) return;
@@ -205,6 +317,7 @@ function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) 
       .then((v) => {
         if (cancelled) return v.dispose();
         viewer.current = v;
+        v.setBackground("#000000");
         setReady(true);
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "The viewer could not start."));
@@ -229,10 +342,6 @@ function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) 
     };
   }, [ready, scene, loaded, representation, showLigands, showWater]);
 
-  useEffect(() => {
-    if (ready) viewer.current?.setBackground(dark ? "#1b1d21" : "#ffffff");
-  }, [ready, dark, scene]);
-
   const savePng = useCallback(async () => {
     try {
       const uri = await viewer.current!.exportPng();
@@ -245,53 +354,79 @@ function StructureView({ scenes, loaded }: { scenes: Scene[]; loaded: Loaded }) 
     }
   }, [scene]);
 
-  if (!gl) {
-    return (
-      <p className="md-error" role="alert">
-        3D graphics (WebGL) are not available in this browser. Try another browser or enable hardware acceleration in its settings.
-      </p>
-    );
-  }
   return (
-    <section className="md-structure">
-      <div className="md-toolbar">
-        {scenes.length > 1 && (
-          <label>
-            Prediction
-            <select value={sceneId} onChange={(e) => setSceneId(e.target.value)} aria-label="Scene">
-              {scenes.map((s) => (
-                <option key={s.id} value={s.id}>{s.rank ? `#${s.rank} · ` : ""}{s.title}</option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label>
-          Style
-          <select value={representation} onChange={(e) => setRepresentation(e.target.value as RepresentationKind)}>
-            <option value="cartoon">Cartoon</option>
-            <option value="sticks">Sticks</option>
-            <option value="surface">Surface</option>
-          </select>
-        </label>
-        <label><input type="checkbox" checked={showLigands} onChange={(e) => setShowLigands(e.target.checked)} /> Ligands</label>
-        <label><input type="checkbox" checked={showWater} onChange={(e) => setShowWater(e.target.checked)} /> Water</label>
-        <label><input type="checkbox" checked={dark} onChange={(e) => setDark(e.target.checked)} /> Dark background</label>
-        <button onClick={() => viewer.current?.resetCamera()}>Fit</button>
-        <button onClick={savePng}>Save image</button>
-      </div>
-      {summary && !summary.hasPolymerSequence && <p className="md-muted">No polymer sequence in this structure.</p>}
-      {summary && summary.modelCount > 1 && (
-        <p className="md-muted">This file has {summary.modelCount} models; showing model 1.</p>
+    <div className="md-stage">
+      {gl && (
+        <div
+          ref={host}
+          className="md-viewport"
+          data-testid="viewport"
+          data-loaded-scene={summary?.sceneId}
+          data-structure-count={summary?.structureCount}
+        />
       )}
-      {error && <p className="md-error" role="alert">{error}</p>}
-      <div
-        ref={host}
-        className="md-viewport"
-        data-testid="viewport"
-        data-loaded-scene={summary?.sceneId}
-        data-structure-count={summary?.structureCount}
-      />
-    </section>
+      <div className="md-overlay">
+        {summary && viewer.current && summary.sequences.length > 0 && <SequencePanel summary={summary} viewer={viewer.current} />}
+        <div className="md-mid">
+          <aside className={`md-toolbox md-glass${collapsed ? " md-collapsed" : ""}`} aria-label="Toolbox">
+            <div className="md-tool-head">
+              <h1 title={title}>{title}</h1>
+              <button className="md-icon" aria-label={collapsed ? "Expand toolbox" : "Collapse toolbox"} aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
+                {collapsed ? "›" : "‹"}
+              </button>
+            </div>
+            {!collapsed && (
+              <div className="md-tool-body">
+                {scenes.length > 1 && (
+                  <label className="md-field">
+                    <span>Prediction</span>
+                    <select value={sceneId} onChange={(e) => setSceneId(e.target.value)} aria-label="Scene">
+                      {scenes.map((s) => (
+                        <option key={s.id} value={s.id}>{s.rank ? `#${s.rank} · ` : ""}{s.title}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="md-field">
+                  <span>Style</span>
+                  <select value={representation} onChange={(e) => setRepresentation(e.target.value as RepresentationKind)}>
+                    <option value="cartoon">Cartoon</option>
+                    <option value="sticks">Sticks</option>
+                    <option value="surface">Surface</option>
+                  </select>
+                </label>
+                <label className="md-check"><input type="checkbox" checked={showLigands} onChange={(e) => setShowLigands(e.target.checked)} /> Ligands</label>
+                <label className="md-check"><input type="checkbox" checked={showWater} onChange={(e) => setShowWater(e.target.checked)} /> Water</label>
+                <div className="md-row">
+                  <button onClick={() => viewer.current?.resetCamera()}>Fit</button>
+                  <button onClick={savePng} disabled={!gl}>Save image</button>
+                </div>
+                {dataPanels.length > 0 && (
+                  <button aria-expanded={showData} onClick={() => setShowData(!showData)}>{showData ? "Hide results" : "Results"}</button>
+                )}
+                <button onClick={onUpdate}>Update viewer</button>
+                {summary && !summary.hasPolymerSequence && <p className="md-muted">No polymer sequence in this structure.</p>}
+                {summary && summary.modelCount > 1 && (
+                  <p className="md-muted">This file has {summary.modelCount} models; showing model 1.</p>
+                )}
+              </div>
+            )}
+          </aside>
+          {showData && (
+            <section className="md-data md-glass" aria-label="Results">
+              {dataPanels.map((p) => <DataPanel key={p.id} panel={p} loaded={loaded} />)}
+            </section>
+          )}
+        </div>
+        {!gl && (
+          <p className="md-error md-center md-glass" role="alert">
+            3D graphics (WebGL) are not available in this browser. Try another browser or enable hardware acceleration in its settings.
+          </p>
+        )}
+        {error && <p className="md-error md-center md-glass" role="alert">{error}</p>}
+        <Footer envelope={loaded.envelope} />
+      </div>
+    </div>
   );
 }
 
@@ -315,24 +450,24 @@ function App() {
     return ids.flatMap((id) => loaded.report.scenes.filter((s) => s.id === id));
   }, [loaded, structurePanel]);
 
+  const title = loaded?.report.title ?? "MoleculeDesk report";
   return (
     <div className="md-app">
-      <header className="md-header">
-        <h1>{loaded?.report.title ?? "MoleculeDesk report"}</h1>
-        <button onClick={() => setShowUpdate(true)}>Update viewer</button>
-      </header>
-      {error && <p className="md-error" role="alert">{error}</p>}
-      {loaded && (
-        <main>
-          {scenes.length > 0 && <StructureView scenes={scenes} loaded={loaded} />}
+      {error && <p className="md-error md-center md-glass" role="alert">{error}</p>}
+      {loaded && scenes.length > 0 && <StructureView scenes={scenes} loaded={loaded} title={title} onUpdate={() => setShowUpdate(true)} />}
+      {loaded && scenes.length === 0 && (
+        <main className="md-plain">
+          <header>
+            <h1>{title}</h1>
+            <button onClick={() => setShowUpdate(true)}>Update viewer</button>
+          </header>
           {loaded.report.panels.map((p) =>
             p.kind === "table" || p.kind === "chart" ? <DataPanel key={p.id} panel={p} loaded={loaded} /> : null,
           )}
+          <Footer envelope={loaded.envelope} />
         </main>
       )}
-      <footer className="md-footer">
-        Viewer {loaded?.envelope.viewer.version} · Structure viewer powered by Mol* {loaded?.envelope.viewer.molstarVersion} (MIT License, © Mol* contributors) · works offline
-      </footer>
+      {!loaded && !error && <Footer />}
       {showUpdate && <UpdateModal onClose={() => setShowUpdate(false)} />}
     </div>
   );
