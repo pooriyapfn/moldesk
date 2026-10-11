@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/cli",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "MoleculeDesk CLI — install and run computational biology models",
   "license": "MIT",
   "type": "module",
