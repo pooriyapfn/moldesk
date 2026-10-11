@@ -5,7 +5,7 @@ modelVersion: "1.1"
 adapterVersion: 0.2.0
 description: Blind small-molecule docking against a protein, returning ranked poses and confidence (not binding affinity).
 category: docking
-status: planned
+status: beta
 license: MIT
 homepage: https://github.com/gcorso/DiffDock
 source:
