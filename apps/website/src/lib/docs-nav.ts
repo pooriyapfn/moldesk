@@ -32,8 +32,8 @@ export const docsNav: DocNavSection[] = [
     title: "Models",
     items: [
       { title: "Boltz-2", slug: "models/boltz", status: "beta" },
-      { title: "DiffDock-L", slug: "models/diffdock", status: "soon" },
-      { title: "BindCraft2", slug: "models/bindcraft2", status: "planned" },
+      { title: "DiffDock-L", slug: "models/diffdock", status: "beta" },
+      { title: "BindCraft2", slug: "models/bindcraft2", status: "beta" },
       { title: "OpenDDE Preview", slug: "models/opendde", status: "beta" },
       { title: "ProteinMPNN", slug: "models/proteinmpnn", status: "beta" },
       { title: "LigandMPNN", slug: "models/ligandmpnn", status: "beta" },

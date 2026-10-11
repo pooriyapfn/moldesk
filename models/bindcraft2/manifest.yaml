@@ -5,7 +5,7 @@ modelVersion: 1.0.3
 adapterVersion: 0.1.0
 description: Bounded local protein-binder campaigns with AlphaFold and ProteinMPNN/HyperMPNN.
 category: sequence-design
-status: planned
+status: beta
 license: BindCraft2 Source-Available License (Hosting-Restricted)
 homepage: https://github.com/PacesaLab/BindCraft2
 source:
