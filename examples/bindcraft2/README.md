@@ -14,8 +14,8 @@ moldesk run bindcraft2 examples/bindcraft2/campaign.json
 ```
 
 Requires a Linux/NVIDIA installation and managed AlphaFold/MPNN weights.
-BindCraft2 remains `planned` until live verification; see
-`models/bindcraft2/README.md` for the private test-registry commands.
+BindCraft2 is `beta`; see `models/bindcraft2/README.md` for the verification
+status.
 
 CLI overrides: `--param max_trajectories=2`,
 `--param number_of_final_designs=1`, `--param min_length=50 --param max_length=60`.

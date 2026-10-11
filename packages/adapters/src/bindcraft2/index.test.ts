@@ -135,8 +135,8 @@ describe("BindCraft2 command", () => {
 
 describe("BindCraft2 manifest", () => {
   const manifest = modelManifestV1Schema.parse(parseYaml(fs.readFileSync(fileURLToPath(new URL("../../../../models/bindcraft2/manifest.yaml", import.meta.url)), "utf8")));
-  it("stays planned, restricts Linux/NVIDIA and preserves exact hosting-restricted license", () => {
-    expect(manifest.status).toBe("planned");
+  it("is beta, restricts Linux/NVIDIA and preserves exact hosting-restricted license", () => {
+    expect(manifest.status).toBe("beta");
     expect(manifest.hardware.platforms).toEqual(["linux-x64"]);
     expect(manifest.hardware.nvidiaGpu).toBe("required");
     expect(manifest.license).toBe("BindCraft2 Source-Available License (Hosting-Restricted)");

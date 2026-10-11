@@ -39,7 +39,7 @@ Available:
 
 In progress:
 
-* BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on an NVIDIA RTX 3090; promotion to beta pending (source-available, hosting-restricted license)
+* BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on NVIDIA RTX 3090 and A40 GPUs (beta) (source-available, hosting-restricted license)
 * reproducible run history
 
 Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
@@ -135,7 +135,7 @@ Model support is being added incrementally.
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
 | DiffDock-L | Beta; Linux/NVIDIA CUDA verified on an A40 |
-| BindCraft2 | Planned; bounded campaign verified on an RTX 3090, promotion to beta pending |
+| BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
 | OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |
 | AlphaFold | Planned |

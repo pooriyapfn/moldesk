@@ -6,9 +6,10 @@ export const metadata = {
 # BindCraft2 protein-binder campaigns
 
 [BindCraft2](https://github.com/PacesaLab/BindCraft2) designs protein binders using
-AlphaFold and ProteinMPNN/HyperMPNN. **Status: planned.** The integration awaits
-clean installation and bounded campaign verification on real Linux/NVIDIA hardware.
-Normal installation stays blocked until that gate passes.
+AlphaFold and ProteinMPNN/HyperMPNN. **Status: beta.** Install and bounded
+campaigns work on real Linux/NVIDIA hardware (verified on an RTX 3090 and an A40).
+Cancellation and repeat-run stability are not fully verified yet; see
+[Verification status](#verification-status).
 
 ## Requirements and license
 
@@ -25,6 +26,12 @@ Normal installation stays blocked until that gate passes.
 commercial use is permitted. Exposing substantial functionality as a hosted
 service requires a separate commercial license. BindCraft2 is not OSI open source.
 MoleculeDesk runs it on your own workstation or rented GPU server.
+
+MoleculeDesk does not bundle or redistribute BindCraft2: installing it downloads the
+pinned upstream source, with its license, onto your machine. Do not use MoleculeDesk
+to offer BindCraft2 to other people as a hosted service, API or web app without a
+separate license from its authors. "BindCraft2" is a University of Zurich
+trademark; MoleculeDesk is not affiliated with or endorsed by its authors.
 
 ## Bounded campaigns
 
@@ -66,8 +73,10 @@ Predicted candidates still require experimental validation.
 ## Verification status
 
 Linux dependency resolution, a real installation and bounded campaigns on CUDA
-are verified on an NVIDIA RTX 3090 (see the benchmarks above); cancellation and
-zero-design behavior still need GPU testing. The repository's
-`models/bindcraft2/README.md` contains exact private test-registry commands,
-source/asset provenance and the live verification checklist. No macOS, MPS,
+are verified on an NVIDIA RTX 3090 and an NVIDIA A40 (see the benchmarks above).
+On the A40, one GFP campaign aborted with a JAX `CUDA_ERROR_UNKNOWN` error and an
+identical retry completed; the cause is unknown. Cancellation and the
+forced no-GPU refusal path still need GPU testing. The repository's
+`models/bindcraft2/README.md` contains source/asset provenance, license notes and
+the live verification checklist. No macOS, MPS,
 CPU, AMD or multi-GPU support is advertised for this integration.

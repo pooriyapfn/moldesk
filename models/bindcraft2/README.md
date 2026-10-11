@@ -1,8 +1,10 @@
 # BindCraft2 adapter
 
 Local protein-binder campaigns using AlphaFold and ProteinMPNN/HyperMPNN.
-**Status: planned.** Implementation and automated checks do not constitute
-live CUDA verification. No GPU was available on the development Mac.
+**Status: beta.** Install and bounded campaigns were verified live on NVIDIA
+RTX 3090 (2026-10-06) and A40 (2026-10-11) GPUs. Cancellation, a forced CPU
+refusal check, and repeat-run stability are not yet verified; see
+[Live CUDA gate](#live-cuda-gate).
 
 ## Source, license and dependencies
 
@@ -129,35 +131,45 @@ A finite campaign can finish successfully with **zero accepted designs**.
 `budgetExhausted`, and `goalReached`; it never invents accepted structures.
 These are computational candidates, not experimentally verified binders.
 
-## Live CUDA gate — not run
+## Live CUDA gate
 
-`planned` models are intentionally blocked from normal installation. For a
-private GPU test, copy the registry and enable only this experimental model in
-that copy; do not publish a beta claim before the live gate succeeds:
+Verified on real hardware: clean install, `selfcheck`, a bounded campaign against
+a short peptide (RTX 3090 and A40) and a GFP binder campaign (A40, 225-residue
+target, 1 accepted design after 2 trajectories, about 30 minutes). A first GFP
+attempt on the A40 aborted in trajectory 2 with a JAX
+`CUDA_ERROR_UNKNOWN: Failed to launch CUDA graph` error; an identical retry
+completed. The cause was not established.
+
+Still not verified: Ctrl-C cancellation (`cancelled` state, no orphan worker),
+the `CUDA_VISIBLE_DEVICES=""` refusal path, and repeat-run stability of the
+CUDA-graph error. To re-run these on a GPU host, use the same install and run
+commands against `examples/bindcraft2/campaign.json`:
 
 ```bash
-pnpm build
-test_registry=$(mktemp -d)
-cp -R models/. "$test_registry/"
-python3 - "$test_registry/bindcraft2/manifest.yaml" <<'PY'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-p.write_text(p.read_text().replace('status: planned', 'status: beta', 1))
-PY
-export MOLDESK_MODELS_DIR="$test_registry"
-nvidia-smi
-node apps/cli/dist/index.js doctor
 node apps/cli/dist/index.js install bindcraft2 --yes
 node apps/cli/dist/index.js run bindcraft2 examples/bindcraft2/campaign.json
 CUDA_VISIBLE_DEVICES="" node apps/cli/dist/index.js run bindcraft2 examples/bindcraft2/campaign.json
 ```
 
-The last command must fail without CPU fallback. Record GPU/driver, JAX/CUDA,
-Python/package/source pins, elapsed time, stdout/stderr and checksummed results.
-Confirm a bounded zero-design outcome is finite and clearly represented.
-Cancel an active run with Ctrl-C, confirm `cancelled` state and no orphan worker.
-Only then update public status and `adapterVerification` with actual evidence.
-Use the same rental for Boltz, DiffDock-L and OpenDDE CUDA verification in their
-separate managed environments. Preserve original registry status for any gate
-that does not pass.
+The last command must fail without CPU fallback. Cancel an active run with
+Ctrl-C and confirm a `cancelled` state and no orphan worker.
+
+## License compliance notes
+
+Reviewed against the upstream license text on 2026-10-11 (this is not legal advice).
+
+- MoleculeDesk does not bundle, copy or redistribute BindCraft2. `moldesk install`
+  fetches the pinned upstream revision (which includes its own LICENSE) onto the
+  user's machine, so the license travels with the source.
+- Running it locally, on private infrastructure or on a GPU the user rents for
+  their own use is permitted, including commercial internal use and execution
+  directed by the user's own scripts or agents.
+- Not permitted without a separate written license from the copyright holders:
+  offering BindCraft2, or a service whose material functionality comes from it,
+  to third parties as a hosted service, API, web app or workflow step. Do not
+  build or document MoleculeDesk-hosted BindCraft2 execution.
+- "BindCraft2" is a University of Zurich trademark. Use the name only to refer
+  accurately to the upstream software; do not imply endorsement or an official
+  association, and do not use it for a modified version or hosted service.
+- AlphaFold parameters are CC BY 4.0 and ProteinMPNN/HyperMPNN weights are MIT;
+  keep their attribution when redistributing.
