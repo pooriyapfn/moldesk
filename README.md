@@ -134,7 +134,7 @@ Model support is being added incrementally.
 | Boltz-2 | Beta; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
 | ProteinMPNN | Beta |
 | LigandMPNN | Beta |
-| DiffDock-L | Coming soon |
+| DiffDock-L | Beta; Linux/NVIDIA CUDA verified on an A40 |
 | BindCraft2 | Planned; bounded campaign verified on an RTX 3090, promotion to beta pending |
 | OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
 | ColabFold | Planned |

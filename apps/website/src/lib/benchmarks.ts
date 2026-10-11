@@ -54,6 +54,16 @@ export const hardware: Record<string, BenchmarkHardware> = {
     pricePerHour: 0.5,
     priceSource: "RunPod Secure Cloud, EU-CZ-1, compute only; storage adds about $0.02/hr",
   },
+  "a40-runpod": {
+    id: "a40-runpod",
+    gpu: "NVIDIA A40",
+    vramGiB: 46,
+    driver: "570.211.01",
+    cpu: "Intel Xeon Gold 6342 (96 logical cores visible)",
+    host: "RunPod GPU pod, Linux x64",
+    pricePerHour: null,
+    priceSource: "No verified hourly rate recorded yet",
+  },
 };
 
 export const benchmarks: ModelBenchmark[] = [
@@ -123,7 +133,28 @@ export const benchmarks: ModelBenchmark[] = [
       },
     ],
   },
-  { model: "diffdock", displayName: "DiffDock-L", runUnit: "docking job", results: [], comingSoon: true },
+  {
+    model: "diffdock",
+    displayName: "DiffDock-L",
+    runUnit: "docking job",
+    results: [
+      {
+        hardwareId: "a40-runpod",
+        workload: "Adenosine A2A receptor (PDB 5MZP chain A, ligands and waters removed) + caffeine SMILES, default sampling, 10 ranked poses",
+        coldSeconds: 63,
+        warmSeconds: 69,
+        runs: 2,
+        peakVramGiB: 8.3,
+        peakGpuUtilPercent: null,
+        peakPowerWatts: null,
+        installSeconds: 600,
+        diskGiB: null,
+        measuredAt: "2026-10-11",
+        moldeskCommit: "a4ee635",
+        notes: "Only one run per job, so these are single measurements, not medians. The 63 s cold figure is the first run after install (examples/diffdock Trp-cage + aspirin); the 69 s figure is the A2A + caffeine job above. VRAM is whole-GPU memory used during the A2A run; average board power was about 113 W. Install is about 10 minutes, including the one-time diffusion lookup-table cache.",
+      },
+    ],
+  },
   {
     model: "opendde",
     displayName: "OpenDDE Preview",
