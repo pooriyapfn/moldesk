@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- DiffDock-L and BindCraft2 are now `beta`, so `moldesk install diffdock` and
+  `moldesk install bindcraft2` work on Linux/NVIDIA. Verified live on an A40
+  (DiffDock-L) and on RTX 3090 and A40 (BindCraft2). Cancellation behaviour and
+  BindCraft2's no-GPU refusal path are not yet verified. BindCraft2 is
+  source-available with a hosting restriction: local use and your own rented GPU
+  only. See `models/bindcraft2/README.md`.
+
 ### Added
 
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a
