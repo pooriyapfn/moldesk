@@ -234,3 +234,34 @@ Checked official sources during planning:
 Still unverified: chosen CPU deployment/volume request shape; provider termination deadlines; secure worker endpoint behavior; exact image digests, CUDA/Python compatibility and VRAM; extracted asset size; billed cleanup semantics; live first/warm-run timings. Resolve in spike and store evidence before turning cloud eligibility on. Spec timing examples are not benchmarks.
 
 Explicit spec adaptations: replace Normal/Efficient modes with `cachePolicy: "ephemeral" | "persistent"` and CLI `--cache-policy`; positional CLI input retained; SQLite added only for cloud journal; no desktop implementation until shell exists; structured manifest installer reused instead of new command DSL; timeout/cost/orphan safeguards moved into initial Ephemeral release, not deferred to hardening.
+
+
+## 13. Implementation status and deviations (updated 2026-10-13)
+
+Built and unit/integration tested without paid compute: manifest `cloud` block, credential store, Runpod
+provider client, SQLite cloud journal, quote/approval, orchestrator (`runCloudModel`), worker server/client,
+manifest pipeline, persistent cache (key, atomic publish, verification, lock), `RunpodExecutionBackend`
+(ephemeral and persistent), recovery, cache management, CLI flags and commands, worker bundle build script.
+See [cloud-execution.md](./cloud-execution.md).
+
+Deviations from the sections above:
+
+- The worker lives in `packages/core/src/cloud/worker/` (not `packages/runtime`): it must import adapters, and
+  adapters depend on runtime. Transfer client, provider and backend are in `packages/runtime/src/cloud/`.
+- `ExecutionBackend` gained `release` (terminate and confirm) and an optional `reconnect`; the journal
+  reaches backends through `ResourceLedger` and `CacheLedger` so they never touch SQLite.
+- One bundled worker pipeline replaces separate `prepare_assets`/`install_runtime`/`execute` endpoints; a
+  `prepare-assets` worker mode serves the CPU stage.
+- Runtime/transfer, journal, CLI and orchestration are complete; the items below are not.
+
+Still open (not claimed as done):
+
+1. **Lifetime guard (release blocker):** no independent scheduler exists or has been authorized; Pod-key
+   expiry and GPU Pod key injection are unverified. `resolveDeadlineGuard()` refuses by design.
+2. **Live validation:** no real Boltz Linux/CUDA run, no real image digests/sizes, no published worker
+   bundle, no measured asset extraction size or timings; the Boltz manifest has no `cloud` block.
+3. **Untested against the real provider:** the container bootstrap script, the proxy path for uploads and
+   large downloads, CPU Pod + volume then GPU remount in one datacenter, billing after terminate.
+4. **Cross-machine cache lock reclamation** relies on the client confirming the previous owner is gone;
+   multi-client contention is only covered by unit tests.
+5. SQLite driver (`better-sqlite3` ~12.11) and the keyring binding were verified on macOS/Node 22 only.

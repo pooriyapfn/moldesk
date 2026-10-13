@@ -319,6 +319,24 @@ export async function runCloudModel(modelName: string, inputPath: string, option
   const ownJournal = deps.journal === undefined;
   const journal = deps.journal ?? CloudJournal.open(paths);
   try {
+    // --- Before new paid work: reconcile the journal with the provider. Unresolved cost blocks it. ---
+    let listed: CloudPod[];
+    try {
+      listed = await deps.provider.listPods();
+    } catch (error) {
+      throw failure("CLOUD_UNAVAILABLE", `Could not verify existing cloud resources: ${toErrorInfo(error, "CLOUD_UNAVAILABLE").message}`, "Retry when the provider is reachable; new work is not started blind.");
+    }
+    const preflight = journal.reconcile(listed.filter((pod) => pod.status !== "TERMINATED").map(toView));
+    if (preflight.orphaned.length > 0 || preflight.cleanupOwed.length > 0) {
+      const names = [...preflight.orphaned.map((pod) => `orphaned ${pod.providerId}`), ...preflight.cleanupOwed.map((record) => `cleanup owed ${record.providerId ?? record.intentId}`)];
+      throw failure(
+        "CLOUD_UNRESOLVED_RESOURCES",
+        `Existing cloud resources need attention before new paid work starts: ${names.join(", ")}.`,
+        "Run `moldesk cloud resources`, then `moldesk cloud recover <run-id>` for owed cleanup. Orphans are never deleted automatically; remove them in the provider console if they are yours.",
+        { orphaned: preflight.orphaned.map((pod) => pod.providerId), cleanupOwed: preflight.cleanupOwed.map((record) => record.providerId ?? record.intentId) },
+      );
+    }
+
     // --- Allocate and snapshot. A failure here finalizes run.json; nothing paid exists yet. ---
     const dirs = allocateRunDirectory(paths);
     const snapshot = await createRunSnapshot({

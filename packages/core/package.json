@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:worker": "node scripts/build-worker.mjs"
   },
   "dependencies": {
     "@moldesk/adapters": "workspace:*",
@@ -29,6 +30,7 @@
     "better-sqlite3": "~12.11.1"
   },
   "devDependencies": {
+    "esbuild": "^0.25",
     "@types/better-sqlite3": "^9.6.0",
     "typescript": "^5.6.3",
     "vitest": "^3.0.0"

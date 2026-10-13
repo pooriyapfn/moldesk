@@ -403,6 +403,39 @@ describe("runCloudModel", () => {
   });
 });
 
+describe("preflight reconciliation", () => {
+  it("refuses new paid work while an orphaned or owed resource exists, before allocating anything", async () => {
+    const box = sandbox();
+    const options = await box.optionsFor();
+    const journal = CloudJournal.open(box.paths);
+    const prefix = journal.clientId.replace(/-/g, "").slice(0, 8);
+    journal.close();
+    box.provider.pods.set("podOrphan", { id: "podOrphan", name: `moldesk-${prefix}-deadbeef-gpu`, status: "RUNNING", dataCenterId: null, costUsdPerHour: 0.5, createdAt: null });
+    await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_UNRESOLVED_RESOURCES" });
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
+    expect(box.events).toEqual([]);
+  });
+
+  it("refuses when a previous run still owes cleanup", async () => {
+    const box = sandbox();
+    box.provider.failTerminate = true;
+    const first = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    expect(first.cleanupPending).toBeDefined();
+    await expect(runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps)).rejects.toMatchObject({ code: "CLOUD_UNRESOLVED_RESOURCES" });
+    expect(box.backend.starts).toBe(1);
+  });
+
+  it("does not start blind when the provider cannot be listed", async () => {
+    const box = sandbox();
+    const options = await box.optionsFor();
+    box.provider.listPods = async () => {
+      throw new Error("offline");
+    };
+    await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_UNAVAILABLE" });
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
+  });
+});
+
 describe("planCloudRun", () => {
   it("rejects models without a cloud block and jobs with companion inputs", async () => {
     const box = sandbox();
