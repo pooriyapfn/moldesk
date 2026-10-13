@@ -40,6 +40,8 @@ export interface ApprovedJob {
   inputs: JobInputFile[];
   /** After this instant every resource of the job must be gone. */
   deadlineAt: string;
+  /** Digest of model, source revision, asset list and layout revision; names the on-volume cache. */
+  cacheKey: string;
   /** Existing persistent volume to reuse, when one is known and compatible. */
   reuseVolumeId?: string;
 }
@@ -75,6 +77,8 @@ export interface RemoteRuntimeReport {
   /** The command the worker ran; `cwd` is a POSIX path on the worker. */
   command?: { executable: string; args: string[]; cwd: string };
   installationFingerprint?: string;
+  /** Persistent-cache details reported by `prepare-assets` jobs. */
+  cache?: { checksumManifestSha256: string; sizeBytes: number; fileCount: number; reused: boolean };
 }
 
 export interface JobSnapshot {
@@ -131,11 +135,28 @@ export interface ExecutionBackend {
   release(handle: JobHandle | { runId: string }, context: Pick<BackendContext, "ledger">): Promise<void>;
 }
 
-/** Job description sent to the worker: the approved job without client-local paths. */
-export type WireJob = Omit<ApprovedJob, "inputs"> & { inputs: Array<Omit<JobInputFile, "sourcePath">> };
+export type WorkerMode = "execute" | "prepare-assets";
 
-export function toWireJob(job: ApprovedJob): WireJob {
-  return { ...job, inputs: job.inputs.map(({ sourcePath: _sourcePath, ...rest }) => rest) };
+/** Job description sent to the worker: the approved job without client-local paths. */
+export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId"> & {
+  inputs: Array<Omit<JobInputFile, "sourcePath">>;
+  /** `prepare-assets` runs only asset preparation (CPU Pod); `execute` runs the model. */
+  mode: WorkerMode;
+  /** Where the persistent network volume is mounted in this Pod; absent for ephemeral runs. */
+  volumeMount?: string;
+  /** Lets a worker reclaim an expired on-volume cache lock; set only after the client confirmed the old owner is gone. */
+  reclaimStaleLock?: boolean;
+};
+
+export function toWireJob(job: ApprovedJob, extra: { mode?: WorkerMode; volumeMount?: string; reclaimStaleLock?: boolean } = {}): WireJob {
+  const { inputs, reuseVolumeId: _reuse, ...rest } = job;
+  return {
+    ...rest,
+    inputs: inputs.map(({ sourcePath: _sourcePath, ...file }) => file),
+    mode: extra.mode ?? "execute",
+    ...(extra.volumeMount ? { volumeMount: extra.volumeMount } : {}),
+    ...(extra.reclaimStaleLock ? { reclaimStaleLock: true } : {}),
+  };
 }
 
 /** Port the worker listens on inside the Pod; the provider proxy exposes it over HTTPS. */

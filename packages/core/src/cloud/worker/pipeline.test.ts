@@ -126,6 +126,8 @@ function setup(overrides: { verify?: boolean; exitCode?: number } = {}) {
     params: { seed: 1 },
     inputs: [{ role: "job", relativePath: "in.txt", sha256: "d".repeat(64), sizeBytes: 3 }],
     deadlineAt: "2099-01-01T00:00:00.000Z",
+    cacheKey: "k".repeat(64),
+    mode: "execute",
     ...patch,
   });
   const run = (patch: Partial<WireJob> = {}, signal = new AbortController().signal) =>
@@ -192,6 +194,66 @@ describe("manifest pipeline", () => {
     const box = setup();
     await expect(box.run({}, controller.signal)).rejects.toMatchObject({ code: "RUN_CANCELLED" });
     expect(box.calls).toEqual([]);
+  });
+});
+
+describe("persistent cache modes", () => {
+  const key = "k".repeat(64);
+  function volume() {
+    const mount = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk volume "));
+    dirs.push(mount);
+    return mount;
+  }
+  const persistent = (mount: string, mode: "execute" | "prepare-assets") => ({ cachePolicy: "persistent" as const, mode, volumeMount: mount, cacheKey: key });
+
+  it("prepare-assets prepares and publishes the cache without installing Python or probing CUDA", async () => {
+    const mount = volume();
+    const box = setup();
+    const result = await box.run(persistent(mount, "prepare-assets"));
+    expect(box.calls).toEqual(["cacheAsset", "materializeAsset"]);
+    expect(box.stages).toEqual(["preparing_assets"]);
+    expect(result.runtime?.cache).toMatchObject({ reused: false, fileCount: 0 });
+    expect(fs.existsSync(path.join(mount, "moldesk-cache", key, "ready.json"))).toBe(true);
+    expect(fs.readdirSync(path.join(mount, "moldesk-cache")).filter((n) => n.includes("staging") || n.endsWith(".lock"))).toEqual([]);
+  });
+
+  it("a second prepare-assets on a valid cache downloads nothing", async () => {
+    const mount = volume();
+    const first = setup();
+    await first.run(persistent(mount, "prepare-assets"));
+    const second = setup();
+    const result = await second.run(persistent(mount, "prepare-assets"));
+    expect(second.calls).toEqual([]);
+    expect(result.runtime?.cache?.reused).toBe(true);
+  });
+
+  it("an execute job on a warm volume skips asset preparation and uses the verified assets directory", async () => {
+    const mount = volume();
+    // Real materialize so the cache has content to hash.
+    const prepare = setup();
+    await prepare.run(persistent(mount, "prepare-assets"));
+    const box = setup();
+    await box.run(persistent(mount, "execute"));
+    expect(box.calls).toEqual(["prepareEnv", "verify", "command", "execute"]);
+    expect(box.context()!.assetsDir).toBe(path.join(mount, "moldesk-cache", key, "assets"));
+  });
+
+  it("an execute job fails fast, before installing anything, when the volume has no valid cache", async () => {
+    const mount = volume();
+    const missing = setup();
+    await expect(missing.run(persistent(mount, "execute"))).rejects.toMatchObject({ code: "CLOUD_CACHE_MISSING" });
+    expect(missing.calls).toEqual([]);
+
+    const prepared = setup();
+    await prepared.run(persistent(mount, "prepare-assets"));
+    fs.writeFileSync(path.join(mount, "moldesk-cache", key, "assets", "injected.bin"), "x");
+    const damaged = setup();
+    await expect(damaged.run(persistent(mount, "execute"))).rejects.toMatchObject({ code: "CLOUD_CACHE_INVALID" });
+    expect(damaged.calls).toEqual([]);
+  });
+
+  it("prepare-assets without a volume is a bad job", async () => {
+    await expect(setup().run({ mode: "prepare-assets" })).rejects.toMatchObject({ code: "WORKER_BAD_JOB" });
   });
 });
 

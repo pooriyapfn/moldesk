@@ -14,6 +14,7 @@ import {
 } from "@moldesk/runtime";
 import { MoldeskError } from "../../errors.js";
 import { digest } from "../../hash.js";
+import { acquireVolumeLock, cacheRoot, publishCache, verifyCache } from "./cache.js";
 import type { PipelineContext, PipelineResult, WorkerPipeline } from "./server.js";
 
 const REMOTE_PLATFORM = "linux-x64" as const;
@@ -69,20 +70,51 @@ export function createManifestPipeline(options: ManifestPipelineOptions = {}): W
     }
     if (manifest.cloud === undefined) throw fail("WORKER_MODEL_NOT_CLOUD", `${job.model} is not cloud-eligible.`, "Use a model with a cloud block.");
 
-    const home = path.join(jobDir, "home");
-    const paths = getMoldeskPaths({ MOLDESK_HOME: home });
-    const assetsDir = path.join(jobDir, "assets");
-    const modelDir = path.join(jobDir, "runtime");
-    fs.mkdirSync(assetsDir, { recursive: true });
+    const persistentRoot = job.volumeMount ? cacheRoot(job.volumeMount) : undefined;
+    // Raw download objects live on the volume for persistent runs so a rebuild never re-downloads.
+    const paths = getMoldeskPaths({ MOLDESK_HOME: persistentRoot ? path.join(persistentRoot, "home") : path.join(jobDir, "home") });
+    const prepareAssetsInto = async (assetsTarget: string): Promise<void> => {
+      fs.mkdirSync(assetsTarget, { recursive: true });
+      for (const asset of manifest.assets ?? []) {
+        if (signal.aborted) throw fail("RUN_CANCELLED", "Cancelled.", "None.");
+        const object = await steps.cacheAsset(asset, paths, {
+          onProgress: (progress) => context.log("stderr", `[assets] ${progress.message ?? progress.step}\n`),
+        });
+        await steps.materializeAsset(asset, object, assetsTarget);
+      }
+    };
 
-    // --- Assets: same cache/materialize functions as a local install. ---
+    // --- CPU stage of a persistent run: assets only. No Python, no CUDA, no verification probe. ---
+    if (job.mode === "prepare-assets") {
+      if (!persistentRoot) throw fail("WORKER_BAD_JOB", "prepare-assets needs a persistent volume.", "Retry with a persistent cache policy.");
+      context.setStage("preparing_assets");
+      const params = { root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision };
+      const existing = await verifyCache(params);
+      if (existing.ok) {
+        return { exitCode: 0, runtime: { dependencyFreeze: [], cache: { checksumManifestSha256: existing.metadata.checksumManifestSha256, sizeBytes: existing.metadata.sizeBytes, fileCount: existing.metadata.files.length, reused: true } } };
+      }
+      const lock = acquireVolumeLock({ root: persistentRoot, key: job.cacheKey, owner: job.runId, ttlSeconds: 3600, reclaimStale: job.reclaimStaleLock });
+      try {
+        const staging = path.join(persistentRoot, `${job.cacheKey}.staging-${job.runId}`);
+        fs.rmSync(staging, { recursive: true, force: true });
+        await prepareAssetsInto(path.join(staging, "assets"));
+        const metadata = await publishCache({ ...params, stagingDir: staging });
+        return { exitCode: 0, runtime: { dependencyFreeze: [], cache: { checksumManifestSha256: metadata.checksumManifestSha256, sizeBytes: metadata.sizeBytes, fileCount: metadata.files.length, reused: false } } };
+      } finally {
+        lock.release();
+      }
+    }
+
+    // --- Assets for an execute job: ephemeral prepares them here; persistent verifies the volume's cache. ---
+    let assetsDir = path.join(jobDir, "assets");
+    const modelDir = path.join(jobDir, "runtime");
     context.setStage("preparing_assets");
-    for (const asset of manifest.assets ?? []) {
-      if (signal.aborted) throw fail("RUN_CANCELLED", "Cancelled.", "None.");
-      const object = await steps.cacheAsset(asset, paths, {
-        onProgress: (progress) => context.log("stderr", `[assets] ${progress.message ?? progress.step}\n`),
-      });
-      await steps.materializeAsset(asset, object, assetsDir);
+    if (persistentRoot) {
+      const verified = await verifyCache({ root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision });
+      if (!verified.ok) throw Object.assign(fail(verified.code, verified.message, "The cache will be rebuilt on a CPU machine."), {});
+      assetsDir = verified.assetsDir;
+    } else {
+      await prepareAssetsInto(assetsDir);
     }
 
     // --- Linux runtime in an ephemeral environment. ---

@@ -16,6 +16,7 @@ import {
   type ResourceLedger,
 } from "@moldesk/runtime";
 import { MoldeskError } from "../errors.js";
+import { cloudCacheKey } from "./worker/cache.js";
 import { digest, sha256File } from "../hash.js";
 import {
   allocateRunDirectory,
@@ -361,6 +362,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       containerDiskGb: plan.cloud.ephemeralDiskGb,
       volumeGb: plan.cloud.volumeGb,
       assetLayoutRevision: plan.cloud.assetLayoutRevision,
+      cacheKey: cloudCacheKey(plan.manifest),
       cpuAssetPreparation: plan.cloud.cpuAssetPreparation,
       params: plan.effectiveParams,
       inputs: [{ role: "job", relativePath: plan.input.fileName, sha256: plan.input.sha256, sizeBytes: plan.input.sizeBytes, sourcePath: storedInputPath }],

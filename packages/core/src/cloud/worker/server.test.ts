@@ -61,6 +61,8 @@ function wire(input: JobInputFile, runId = RUN): WireJob {
     params: {},
     inputs: [rest],
     deadlineAt: "2099-01-01T00:00:00.000Z",
+    cacheKey: "k".repeat(64),
+    mode: "execute",
   };
 }
 
