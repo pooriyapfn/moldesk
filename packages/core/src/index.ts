@@ -62,6 +62,21 @@ export type {
   InstallModelResult,
   UninstallModelOptions,
 } from "./installation.js";
+export { CloudJournal, cloudResourceName } from "./cloud/state.js";
+export type {
+  CloudCacheRecord,
+  CloudCacheState,
+  CloudCachePolicy,
+  CloudJobRecord,
+  CloudJobStage,
+  CloudJobStatus,
+  CloudResourceRecord,
+  CloudResourceRole,
+  CloudResourceState,
+  NewCloudJob,
+  ProviderResourceView,
+  ReconciliationReport,
+} from "./cloud/state.js";
 export { runModel } from "./run.js";
 export type { RunArtifact, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
 
