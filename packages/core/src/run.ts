@@ -69,6 +69,29 @@ export interface RunRecord {
   artifacts?: RunArtifact[];
   /** Nonfatal problems, e.g. the report could not be created. They never change `status`. */
   warnings?: RunWarning[];
+  /** Present only for remote runs. `hardware` above stays the local client's; the machine that ran inference is here. */
+  compute?: RunCompute;
+}
+
+export interface RunCompute {
+  provider: string;
+  cachePolicy: "ephemeral" | "persistent";
+  quoteId: string;
+  /** Last pipeline stage reached, e.g. "running" or "collecting". */
+  stage: string;
+  datacenterId: string;
+  gpuId: string;
+  /** Provider resource IDs that were created for this run (pods and volumes). */
+  resources: Array<{ role: "cpu" | "gpu" | "volume"; providerId: string }>;
+  /** What actually ran inference, reported by the worker. */
+  hardware?: { name: string; memoryMb?: number; driverVersion?: string; cudaVersion?: string };
+  /** POSIX command and cwd on the worker; `record.command.cwd` stays the local run directory. */
+  remoteCommand?: { executable: string; args: string[]; cwd: string };
+  pythonVersion?: string;
+  dependencyFreeze?: string[];
+  sourceRevision?: string;
+  cleanup: "confirmed" | "pending";
+  workerLogCursor?: number;
 }
 
 export type { RunArtifact, RunWarning };
@@ -78,6 +101,8 @@ export interface RunModelResult {
   record: RunRecord;
   /** Set only if `--output` copy failed after an otherwise-succeeded run; see the module doc. */
   exportError?: { code: string; message: string };
+  /** Remote runs only: paid resources could not be confirmed deleted. The scientific result is still valid. */
+  cleanupPending?: { code: "CLOUD_CLEANUP_PENDING"; resources: Array<{ role: "cpu" | "gpu" | "volume"; providerId: string }> };
 }
 
 function runFailure(code: string, message: string, remediation: string, details?: Record<string, unknown>): MoldeskError {

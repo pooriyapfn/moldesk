@@ -94,8 +94,22 @@ export type {
   CloudStatus,
   ConnectResult,
 } from "./cloud/accounts.js";
+export { planCloudRun, runCloudModel, confirmRunResourcesGone } from "./cloud/run.js";
+export type {
+  CleanupOutcome,
+  CloudPlan,
+  CloudQuoteOptions,
+  CloudRunDeps,
+  CloudRunModelOptions,
+  CloudRunOptions,
+  ResolvedModel,
+} from "./cloud/run.js";
+export { assertApprovalValid, buildQuote, APPROVAL_MAX_AGE_MS, DEFAULT_MAX_LIFETIME_SECONDS } from "./cloud/quote.js";
+export type { CloudApproval, CloudQuote, QuoteInputs, QuoteRange } from "./cloud/quote.js";
+export { resolveDeadlineGuard } from "./cloud/guard.js";
+export type { DeadlineGuard, DeadlineRegistration } from "./cloud/guard.js";
 export { runModel } from "./run.js";
-export type { RunArtifact, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
+export type { RunArtifact, RunCompute, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
 
 export { openInBrowser } from "@moldesk/runtime";
 export type { OpenResult } from "@moldesk/runtime";
