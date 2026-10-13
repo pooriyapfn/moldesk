@@ -51,6 +51,7 @@ export const WORKER_BOOTSTRAP_SCRIPT = [
   'curl -fsSL "$MOLDESK_WORKER_BUNDLE_URL" -o worker.tgz',
   'echo "$MOLDESK_WORKER_BUNDLE_SHA256  worker.tgz" | sha256sum -c -',
   "tar -xzf worker.tgz",
+  "export MOLDESK_MODELS_DIR=/opt/moldesk/worker/models",
   "exec node worker/main.js",
 ].join("\n");
 

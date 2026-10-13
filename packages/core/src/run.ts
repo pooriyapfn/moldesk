@@ -9,6 +9,7 @@ import {
   type RuntimeProvider,
   type SystemReport,
 } from "@moldesk/runtime";
+import type { CloudRunDeps, CloudRunOptions } from "./cloud/run.js";
 import { MoldeskError } from "./errors.js";
 import { listInstalledModels } from "./install-state.js";
 import { allocateRunDirectory, collectRunOutputs, createRunSnapshot, finalizeRun, prepareRunParams, toErrorInfo, writeRunRecord } from "./run-lifecycle.js";
@@ -37,6 +38,13 @@ export interface RunModelOptions {
   runtimeProvider?: RuntimeProvider;
   /** Create the offline molecular report for a successful run when the adapter describes one. Default true. */
   visualize?: boolean;
+  /** `"local"` (default) runs on this machine; `"runpod"` runs on rented compute and requires `cloud`. */
+  compute?: "local" | "runpod";
+  /** Approved quote and limits for a remote run. Rejected for local runs. */
+  cloud?: CloudRunOptions;
+  /** Injected for tests; defaults to the production Runpod wiring. */
+  cloudDeps?: CloudRunDeps;
+  onProgress?: (event: { stage: string; message?: string }) => void;
 }
 
 export interface RunRecord {
@@ -115,6 +123,36 @@ export async function runModel(
   options: RunModelOptions = {},
 ): Promise<RunModelResult> {
   const paths = options.paths ?? getMoldeskPaths();
+
+  // --- Remote execution is dispatched before any local installation lookup: it never needs one. ---
+  if (options.compute === "runpod") {
+    if (!options.cloud) {
+      throw runFailure("CLOUD_OPTIONS_REQUIRED", "Cloud execution needs an approved quote.", "Pass --cache-policy, --max-budget and --max-lifetime and approve the quote.");
+    }
+    if (options.runtime === "docker") {
+      throw runFailure("CLOUD_RUNTIME_UNSUPPORTED", "The docker runtime is not supported for cloud execution.", "Use the python runtime.");
+    }
+    const { runCloudModel } = await import("./cloud/run.js");
+    const { createRunpodCloudDeps } = await import("./cloud/deps.js");
+    const deps = options.cloudDeps ?? (await createRunpodCloudDeps({ paths }));
+    return runCloudModel(
+      modelName,
+      inputPath,
+      {
+        params: options.params,
+        outputDir: options.outputDir,
+        signal: options.signal,
+        onLog: options.onLog,
+        visualize: options.visualize,
+        cloud: options.cloud,
+        onProgress: options.onProgress,
+      },
+      { ...deps, paths },
+    );
+  }
+  if (options.cloud || options.cloudDeps) {
+    throw runFailure("CLOUD_OPTIONS_WITHOUT_CLOUD", "Cloud options were given for a local run.", "Add --compute runpod, or remove the cloud options.");
+  }
 
   // --- Step 1: load and validate manifest. No run directory yet: a failure here rejects. ---
   const manifest = listAvailableModels().find((entry) => entry.name === modelName);
