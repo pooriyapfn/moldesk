@@ -99,6 +99,10 @@ function failure(code: string, message: string, remediation: string, details?: R
   return new MoldeskError({ code, message, remediation, details });
 }
 
+export function defaultResolveModelForRecovery(name: string): ResolvedModel {
+  return defaultResolveModel(name);
+}
+
 function defaultResolveModel(name: string): ResolvedModel {
   const manifest = listAvailableModels().find((entry) => entry.name === name);
   if (!manifest) throw failure("UNKNOWN_MODEL", `Unknown model "${name}".`, "Run `moldesk list` to see available models.");
@@ -385,6 +389,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     let guardId: string | undefined;
     try {
       guardId = (await guard.register({ runId: dirs.runId, provider: deps.provider.name, clientId: journal.clientId, deadlineAt })).id;
+      journal.updateJob(dirs.runId, { guardId });
     } catch (error) {
       const info = toErrorInfo(error, "CLOUD_GUARD_UNAVAILABLE");
       abort(info.code, info.message);

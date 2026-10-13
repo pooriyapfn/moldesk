@@ -20,6 +20,7 @@ import type { DeadlineGuard } from "./guard.js";
 import { buildQuote } from "./quote.js";
 import { planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
 import { CloudJournal } from "./state.js";
+import { recoverCloudRun } from "./manage.js";
 
 const DIGEST = "a".repeat(64);
 const homes: string[] = [];
@@ -139,7 +140,7 @@ class FakeBackend implements ExecutionBackend {
   createThenFail = false;
   collectFailures = 0;
   files: Record<string, string> = { "answer.out": "result-bytes" };
-  constructor(private readonly provider: FakeProvider, private readonly script: Script, private readonly events: string[]) {}
+  constructor(private readonly provider: FakeProvider, readonly script: Script, private readonly events: string[]) {}
   async start(job: { runId: string }, context: BackendContext): Promise<JobHandle> {
     this.starts += 1;
     this.events.push("backend.start");
@@ -148,6 +149,9 @@ class FakeBackend implements ExecutionBackend {
     context.ledger.created(intent.intentId, pod.id);
     if (this.startError) throw this.startError;
     return { version: 1, runId: job.runId, podId: pod.id, endpoint: "https://worker.example" };
+  }
+  reconnect(runId: string, podId: string): JobHandle {
+    return { version: 1, runId, podId, endpoint: "https://worker.example" };
   }
   async observe(_handle: JobHandle, _after?: number): Promise<JobSnapshot> {
     const snapshot = this.script[Math.min(this.observes, this.script.length - 1)]!;
@@ -413,5 +417,88 @@ describe("planCloudRun", () => {
     const plan = await planCloudRun("fake-model", box.inputPath, { cloud: { cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600 } }, box.deps);
     expect(plan.quote.id).toBe(buildQuote({ provider: "runpod", manifest: plan.manifest, cloud: plan.cloud, catalog: catalog(), cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600, inputs: [{ role: "job", sha256: plan.input.sha256, sizeBytes: 3 }] }).id);
     expect(fs.existsSync(box.paths.runs)).toBe(false);
+  });
+});
+
+describe("recoverCloudRun", () => {
+  const recoverDeps = (box: ReturnType<typeof sandbox>) => ({ provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+
+  it("finishes owed cleanup after the provider recovers, disarms the guard and never restarts inference", async () => {
+    const box = sandbox();
+    box.provider.failTerminate = true;
+    const first = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    expect(first.cleanupPending).toBeDefined();
+    expect(box.guardState.disarmed).toEqual([]);
+    box.provider.failTerminate = false;
+
+    const recovered = await recoverCloudRun(first.record.id, recoverDeps(box));
+    expect(recovered.cleanup.confirmed).toBe(true);
+    expect(box.provider.pods.size).toBe(0);
+    expect(box.guardState.disarmed).toEqual(["g1"]);
+    expect(box.backend.starts).toBe(1);
+    const journal = CloudJournal.open(box.paths);
+    expect(journal.getJob(first.record.id)).toMatchObject({ status: "succeeded", guardId: "g1" });
+    expect(journal.listOpenJobs()).toHaveLength(0);
+    journal.close();
+    const onDisk = JSON.parse(fs.readFileSync(path.join(first.record.command.cwd, "run.json"), "utf8"));
+    expect(onDisk.compute.cleanup).toBe("confirmed");
+  });
+
+  it("downloads results left on a still-alive pod after a transfer failure, then cleans up", async () => {
+    const box = sandbox();
+    box.provider.failTerminate = true;
+    box.backend.collectFailures = 1000;
+    const failed = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    expect(failed.record.error?.code).toBe("CLOUD_TRANSFER_FAILED");
+    expect(box.provider.pods.size).toBe(1);
+
+    box.provider.failTerminate = false;
+    box.backend.collectFailures = 0;
+    const recovered = await recoverCloudRun(failed.record.id, recoverDeps(box));
+    expect(recovered.collected).toBe(true);
+    expect(recovered.status).toBe("succeeded");
+    expect(recovered.result?.record.outputs).toHaveLength(1);
+    expect(box.provider.pods.size).toBe(0);
+    expect(box.backend.starts).toBe(1);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(failed.record.command.cwd, "run.json"), "utf8"));
+    expect(onDisk.status).toBe("succeeded");
+    expect(onDisk.error).toBeUndefined();
+  });
+
+  it("marks an interrupted run failed and terminates its pod", async () => {
+    const box = sandbox();
+    box.provider.failTerminate = true;
+    const first = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    // Rewrite history as if the client died mid-run.
+    const file = path.join(first.record.command.cwd, "run.json");
+    const record = JSON.parse(fs.readFileSync(file, "utf8"));
+    record.status = "running";
+    delete record.finishedAt;
+    delete record.error;
+    record.outputs = [];
+    fs.writeFileSync(file, JSON.stringify(record));
+    fs.rmSync(path.join(first.record.command.cwd, "output"), { recursive: true, force: true });
+    box.backend.script.splice(0, box.backend.script.length, runningSnap());
+    box.backend.observes = 0;
+    box.provider.failTerminate = false;
+
+    // The worker is still running: recovery must not silently kill an approved job.
+    const waiting = await recoverCloudRun(first.record.id, recoverDeps(box));
+    expect(waiting.status).toBe("running");
+    expect(waiting.cleanup.confirmed).toBe(false);
+    expect(box.provider.pods.size).toBe(1);
+
+    const forced = await recoverCloudRun(first.record.id, recoverDeps(box), { terminateRunning: true });
+    expect(forced.cleanup.confirmed).toBe(true);
+    expect(forced.status).toBe("failed");
+    expect(box.provider.pods.size).toBe(0);
+    const after = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(after.error.code).toBe("CLOUD_RUN_INTERRUPTED");
+    expect(after.finishedAt).toBeDefined();
+  });
+
+  it("rejects unknown runs", async () => {
+    const box = sandbox();
+    await expect(recoverCloudRun("2026-01-01T00-00-00-000Z-00000000-0000-0000-0000-000000000000", recoverDeps(box))).rejects.toMatchObject({ code: "CLOUD_RUN_UNKNOWN" });
   });
 });

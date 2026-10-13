@@ -314,6 +314,10 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     }
   }
 
+  reconnect(runId: string, podId: string, volumeId?: string): JobHandle {
+    return { version: EXECUTION_CONTRACT_VERSION, runId, podId, ...(volumeId ? { volumeId } : {}), endpoint: this.endpoint(podId) };
+  }
+
   async observe(handle: JobHandle, after = 0): Promise<JobSnapshot> {
     return (await this.clientFor(handle)).status(handle.runId, after);
   }

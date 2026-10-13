@@ -106,6 +106,8 @@ export type {
 } from "./cloud/run.js";
 export { assertApprovalValid, buildQuote, APPROVAL_MAX_AGE_MS, DEFAULT_MAX_LIFETIME_SECONDS } from "./cloud/quote.js";
 export type { CloudApproval, CloudQuote, QuoteInputs, QuoteRange } from "./cloud/quote.js";
+export { executeCloudCacheDeletion, listCloudCaches, planCloudCacheDeletion, recoverCloudRun } from "./cloud/manage.js";
+export type { CacheDeletionPlan, CacheDeletionResult, CloudCacheListing, RecoverDeps, RecoverResult } from "./cloud/manage.js";
 export { createRunpodCloudDeps } from "./cloud/deps.js";
 export type { RunpodDepsOptions } from "./cloud/deps.js";
 export { resolveWorkerBundle } from "./cloud/worker-release.js";

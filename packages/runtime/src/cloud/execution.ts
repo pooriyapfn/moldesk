@@ -139,6 +139,8 @@ export interface BackendContext {
 export interface ExecutionBackend {
   /** Provision, bootstrap the worker, upload inputs, prepare assets and runtime, and begin execution. */
   start(job: ApprovedJob, context: BackendContext): Promise<JobHandle>;
+  /** Rebuild a handle for a Pod this client created earlier (e.g. after a restart) so results can still be fetched. */
+  reconnect?(runId: string, podId: string, volumeId?: string): JobHandle;
   observe(handle: JobHandle, after?: number): Promise<JobSnapshot>;
   cancel(handle: JobHandle): Promise<void>;
   /** Download and verify every inventory file into `localOutputDir`; never reruns inference. */

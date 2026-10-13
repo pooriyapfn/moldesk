@@ -40,6 +40,8 @@ export interface CloudJobRecord {
   volumeId: string | null;
   /** ISO time after which all of this job's resources must be gone. */
   deadlineAt: string;
+  /** Registration id of the independent deadline guard, so recovery can disarm it. */
+  guardId: string | null;
   manifestDigest: string;
   runtimeDigest: string | null;
   transferState: string | null;
@@ -150,6 +152,7 @@ function toJob(row: Row): CloudJobRecord {
     datacenterId: (row.datacenter_id as string | null) ?? null,
     volumeId: (row.volume_id as string | null) ?? null,
     deadlineAt: row.deadline_at as string,
+    guardId: (row.guard_id as string | null) ?? null,
     manifestDigest: row.manifest_digest as string,
     runtimeDigest: (row.runtime_digest as string | null) ?? null,
     transferState: (row.transfer_state as string | null) ?? null,
@@ -244,6 +247,7 @@ export class CloudJournal {
           datacenter_id TEXT,
           volume_id TEXT,
           deadline_at TEXT NOT NULL,
+          guard_id TEXT,
           manifest_digest TEXT NOT NULL,
           runtime_digest TEXT,
           transfer_state TEXT,
@@ -316,7 +320,7 @@ export class CloudJournal {
 
   updateJob(
     runId: string,
-    patch: Partial<Pick<CloudJobRecord, "stage" | "status" | "gpuId" | "datacenterId" | "volumeId" | "runtimeDigest" | "transferState" | "error">>,
+    patch: Partial<Pick<CloudJobRecord, "stage" | "status" | "gpuId" | "datacenterId" | "volumeId" | "guardId" | "runtimeDigest" | "transferState" | "error">>,
   ): CloudJobRecord {
     const columns: Record<string, unknown> = {
       stage: patch.stage,
@@ -324,6 +328,7 @@ export class CloudJournal {
       gpu_id: patch.gpuId,
       datacenter_id: patch.datacenterId,
       volume_id: patch.volumeId,
+      guard_id: patch.guardId,
       runtime_digest: patch.runtimeDigest,
       transfer_state: patch.transferState,
     };
