@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/registry",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Model manifest loading and resolution for MoleculeDesk",
   "license": "MIT",
   "type": "module",
