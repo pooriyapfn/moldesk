@@ -55,6 +55,18 @@ export { MoldeskError } from "./providers.js";
 export { PythonRuntimeProvider } from "./providers/python.js";
 export { redactEnv } from "./redact.js";
 export { RunpodProvider, RUNPOD_API_BASE, RUNPOD_USER_AGENT } from "./cloud/runpod.js";
+export {
+  CredentialStore,
+  KEYRING_SERVICE,
+  DEFAULT_ACCOUNT_REF,
+  PROVIDER_ENV_VARS,
+  createKeyringBackend,
+  credentialFingerprint,
+  parseDotEnv,
+  redactSecrets,
+  validateSecretShape,
+} from "./cloud/credentials.js";
+export type { CredentialSource, CredentialStoreOptions, ResolvedCredential, SecretBackend } from "./cloud/credentials.js";
 export type { RunpodProviderOptions } from "./cloud/runpod.js";
 export type * from "./cloud/types.js";
 export { getHardwareInfo, getDiskInfo } from "./hardware/index.js";
