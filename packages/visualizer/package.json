@@ -1,6 +1,6 @@
 {
   "name": "@moldesk/visualizer",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Offline, self-contained Mol* molecular reports for MoleculeDesk",
   "license": "MIT",
   "type": "module",

@@ -63,6 +63,10 @@ MoleculeDesk focuses on a few principles:
 * **Hardware awareness**
   Detect available CPU, GPU, memory, CUDA, and runtime capabilities before running a model.
 
+### Optional cloud execution (in development)
+
+Runpod support is being developed for running molecular AI models with your own cloud account and returning verified results locally. Choose temporary model assets (`ephemeral`) or retain a reusable model cache (`persistent`); retained storage continues to incur charges. Boltz-2 is the first target. Cloud execution is currently disabled pending a validated worker release and live cloud tests. Shutdown is best effort: if MoleculeDesk disconnects, Pods may keep charging; each run requires explicit risk acknowledgment. Read the [Runpod cloud execution development post](https://moleculedesk.com/docs/guides/runpod-cloud-execution) for the planned workflow and onboarding.
+
 ## Architecture
 
 ```text

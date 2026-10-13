@@ -54,6 +54,32 @@ export type {
 export { MoldeskError } from "./providers.js";
 export { PythonRuntimeProvider } from "./providers/python.js";
 export { redactEnv } from "./redact.js";
+export { RunpodProvider, RUNPOD_API_BASE, RUNPOD_USER_AGENT } from "./cloud/runpod.js";
+export {
+  CredentialStore,
+  KEYRING_SERVICE,
+  DEFAULT_ACCOUNT_REF,
+  PROVIDER_ENV_VARS,
+  createKeyringBackend,
+  credentialFingerprint,
+  redactSecrets,
+  validateSecretShape,
+} from "./cloud/credentials.js";
+export type { CredentialSource, CredentialStoreOptions, ResolvedCredential, SecretBackend } from "./cloud/credentials.js";
+export type { RunpodProviderOptions } from "./cloud/runpod.js";
+export type * from "./cloud/types.js";
+export { EXECUTION_CONTRACT_VERSION, WORKER_PORT, toWireJob } from "./cloud/execution.js";
+export {
+  RunpodExecutionBackend,
+  WORKER_BOOTSTRAP_SCRIPT,
+  MIN_WORKER_READY_TIMEOUT_MS,
+  VOLUME_MOUNT,
+  createKeyringTokenStore,
+} from "./cloud/runpod-backend.js";
+export type { RunpodBackendOptions, TokenStore, WorkerBundle } from "./cloud/runpod-backend.js";
+export { WorkerClient, WORKER_USER_AGENT, isSafeRelativePath, validateInventory } from "./cloud/worker-client.js";
+export type { WorkerClientOptions } from "./cloud/worker-client.js";
+export type * from "./cloud/execution.js";
 export { getHardwareInfo, getDiskInfo } from "./hardware/index.js";
 export { detectPython } from "./python/index.js";
 export {

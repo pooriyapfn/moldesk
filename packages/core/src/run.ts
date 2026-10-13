@@ -1,24 +1,19 @@
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
-import { getAdapter, validateParams, type RunContext } from "@moldesk/adapters";
+import { getAdapter, type RunContext } from "@moldesk/adapters";
 import { listAvailableModels, type RuntimeKind } from "@moldesk/registry";
 import {
   getMoldeskPaths,
-  getSystemReport,
   redactEnv,
-  runDir,
-  stageCompanionInputs,
   PythonRuntimeProvider,
   type MoldeskPaths,
   type RuntimeProvider,
   type SystemReport,
 } from "@moldesk/runtime";
+import type { CloudRunDeps, CloudRunOptions } from "./cloud/run.js";
 import { MoldeskError } from "./errors.js";
-import { digest, sha256File } from "./hash.js";
 import { listInstalledModels } from "./install-state.js";
-import { generateRunReport, type RunArtifact, type RunWarning } from "./run-report.js";
-import { VERSION } from "./version.js";
+import { allocateRunDirectory, collectRunOutputs, createRunSnapshot, finalizeRun, prepareRunParams, toErrorInfo, writeRunRecord } from "./run-lifecycle.js";
+import type { RunArtifact, RunWarning } from "./run-report.js";
 
 /**
  * `runModel` only rejects for usage errors discovered before a run directory
@@ -43,6 +38,13 @@ export interface RunModelOptions {
   runtimeProvider?: RuntimeProvider;
   /** Create the offline molecular report for a successful run when the adapter describes one. Default true. */
   visualize?: boolean;
+  /** `"local"` (default) runs on this machine; `"runpod"` runs on rented compute and requires `cloud`. */
+  compute?: "local" | "runpod";
+  /** Approved quote and limits for a remote run. Rejected for local runs. */
+  cloud?: CloudRunOptions;
+  /** Injected for tests; defaults to the production Runpod wiring. */
+  cloudDeps?: CloudRunDeps;
+  onProgress?: (event: { stage: string; message?: string }) => void;
 }
 
 export interface RunRecord {
@@ -75,6 +77,33 @@ export interface RunRecord {
   artifacts?: RunArtifact[];
   /** Nonfatal problems, e.g. the report could not be created. They never change `status`. */
   warnings?: RunWarning[];
+  /** Present only for remote runs. `hardware` above stays the local client's; the machine that ran inference is here. */
+  compute?: RunCompute;
+}
+
+export interface RunCompute {
+  provider: string;
+  cachePolicy: "ephemeral" | "persistent";
+  quoteId: string;
+  /** Last pipeline stage reached, e.g. "running" or "collecting". */
+  stage: string;
+  datacenterId: string;
+  gpuId: string;
+  /** Provider resource IDs that were created for this run (pods and volumes). */
+  resources: Array<{ role: "cpu" | "gpu" | "volume"; providerId: string }>;
+  /** What actually ran inference, reported by the worker. */
+  hardware?: { name: string; memoryMb?: number; driverVersion?: string; cudaVersion?: string };
+  /** POSIX command and cwd on the worker; `record.command.cwd` stays the local run directory. */
+  remoteCommand?: { executable: string; args: string[]; cwd: string };
+  pythonVersion?: string;
+  dependencyFreeze?: string[];
+  sourceRevision?: string;
+  cleanup: "confirmed" | "pending";
+  /** Warnings the user explicitly acknowledged before approval, e.g. "lifetime-risk". */
+  acknowledgedRisks?: string[];
+  workerLogCursor?: number;
+  /** `complete: false` means the worker evicted log chunks before they could be fetched (bounded tail). */
+  logs?: { complete: boolean; lostChunks: number };
 }
 
 export type { RunArtifact, RunWarning };
@@ -84,22 +113,12 @@ export interface RunModelResult {
   record: RunRecord;
   /** Set only if `--output` copy failed after an otherwise-succeeded run; see the module doc. */
   exportError?: { code: string; message: string };
+  /** Remote runs only: paid resources could not be confirmed deleted. The scientific result is still valid. */
+  cleanupPending?: { code: "CLOUD_CLEANUP_PENDING"; resources: Array<{ role: "cpu" | "gpu" | "volume"; providerId: string }> };
 }
 
 function runFailure(code: string, message: string, remediation: string, details?: Record<string, unknown>): MoldeskError {
   return new MoldeskError({ code, message, remediation, details });
-}
-
-function toErrorInfo(error: unknown, fallbackCode: string): { code: string; message: string } {
-  if (error instanceof MoldeskError) return { code: error.code, message: error.message };
-  return { code: fallbackCode, message: error instanceof Error ? error.message : String(error) };
-}
-
-function writeRunRecord(runDirPath: string, record: RunRecord): void {
-  const file = path.join(runDirPath, "run.json");
-  const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, file);
 }
 
 export async function runModel(
@@ -108,6 +127,36 @@ export async function runModel(
   options: RunModelOptions = {},
 ): Promise<RunModelResult> {
   const paths = options.paths ?? getMoldeskPaths();
+
+  // --- Remote execution is dispatched before any local installation lookup: it never needs one. ---
+  if (options.compute === "runpod") {
+    if (!options.cloud) {
+      throw runFailure("CLOUD_OPTIONS_REQUIRED", "Cloud execution needs an approved quote.", "Pass --cache-policy, --max-budget and --max-lifetime and approve the quote.");
+    }
+    if (options.runtime === "docker") {
+      throw runFailure("CLOUD_RUNTIME_UNSUPPORTED", "The docker runtime is not supported for cloud execution.", "Use the python runtime.");
+    }
+    const { runCloudModel } = await import("./cloud/run.js");
+    const { createRunpodCloudDeps } = await import("./cloud/deps.js");
+    const deps = options.cloudDeps ?? (await createRunpodCloudDeps({ paths }));
+    return runCloudModel(
+      modelName,
+      inputPath,
+      {
+        params: options.params,
+        outputDir: options.outputDir,
+        signal: options.signal,
+        onLog: options.onLog,
+        visualize: options.visualize,
+        cloud: options.cloud,
+        onProgress: options.onProgress,
+      },
+      { ...deps, paths },
+    );
+  }
+  if (options.cloud || options.cloudDeps) {
+    throw runFailure("CLOUD_OPTIONS_WITHOUT_CLOUD", "Cloud options were given for a local run.", "Add --compute runpod, or remove the cloud options.");
+  }
 
   // --- Step 1: load and validate manifest. No run directory yet: a failure here rejects. ---
   const manifest = listAvailableModels().find((entry) => entry.name === modelName);
@@ -151,79 +200,26 @@ export async function runModel(
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
 
-  // Platform-dependent defaults (e.g. Boltz's `accelerator`) come from the adapter,
-  // not a static `ParamDescriptor.default`, since the right value depends on which
-  // platform-specific runtime entry was actually installed. Pre-seed `supplied` with
-  // them (as strings, since `validateParams` coerces from `--param` strings) for any
-  // key the caller didn't explicitly pass — an explicit `--param` always wins.
-  const dynamicDefaults = adapter.resolveParamDefaults?.({ manifestName: manifest.name, installed }) ?? {};
-  const suppliedParams = { ...(options.params ?? {}) };
-  for (const [key, value] of Object.entries(dynamicDefaults)) {
-    if (suppliedParams[key] === undefined) suppliedParams[key] = String(value);
-  }
-  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], suppliedParams);
-  if (paramErrors.length > 0) {
-    throw runFailure("INVALID_RUN_PARAMS", paramErrors.join("; "), "Fix the listed --param values and retry.", { errors: paramErrors });
-  }
+  const { effectiveParams } = prepareRunParams(adapter, manifest.name, { runtime: installed.runtime }, options.params);
 
   // --- Step 4: allocate run ID and directory. From here on, every outcome resolves. ---
-  const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
-  const runDirPath = runDir(runId, { MOLDESK_HOME: paths.home });
-  const inputDir = path.join(runDirPath, "input");
-  const outputDir = path.join(runDirPath, "output");
-  fs.mkdirSync(inputDir, { recursive: true });
-  fs.mkdirSync(outputDir, { recursive: true });
+  const dirs = allocateRunDirectory(paths);
+  const { runDirPath, outputDir } = dirs;
 
-  // --- Step 5: copy/snapshot the original input. ---
-  const storedInputPath = path.join(inputDir, path.basename(resolvedInputPath));
-  fs.copyFileSync(resolvedInputPath, storedInputPath);
-  const inputSha256 = await sha256File(storedInputPath);
-  const inputRecords: RunRecord["input"] = [
-    { originalPath: resolvedInputPath, storedPath: storedInputPath, sha256: inputSha256, role: "job" },
-  ];
-
-  // Models whose job file references separate companion files (e.g. DiffDock-L's
-  // protein PDB + ligand file) declare them via `resolveCompanionInputs`, given the
-  // *original* (pre-copy) resolved job path so relative references resolve against
-  // where the job file actually lives. Absent means unchanged single-file behavior.
-  const companionRefs = await adapter.resolveCompanionInputs?.(resolvedInputPath) ?? [];
-  const stagedCompanions = companionRefs.length > 0
-    ? stageCompanionInputs({ jobFilePath: resolvedInputPath, refs: companionRefs, inputDir })
-    : [];
-  for (const staged of stagedCompanions) {
-    inputRecords.push({
-      originalPath: staged.originalPath,
-      storedPath: staged.storedPath,
-      sha256: await sha256File(staged.storedPath),
-      role: staged.id,
-    });
-  }
-  const companionInputs = stagedCompanions.map((staged) => ({ id: staged.id, path: staged.storedPath }));
-
-  const hardware = await getSystemReport();
-  const startedAt = new Date().toISOString();
-  const record: RunRecord = {
-    schemaVersion: 1,
-    id: runId,
-    status: "preparing",
-    model: manifest.name,
-    modelVersion: manifest.modelVersion,
-    adapterVersion: manifest.adapterVersion,
-    moldeskVersion: VERSION,
+  // --- Steps 5-6: snapshot inputs and write the initial record. ---
+  const snapshot = await createRunSnapshot({
+    dirs,
+    manifest,
+    adapter,
     runtime: installed.runtime.kind,
     installationFingerprint: installed.runtime.fingerprint,
-    manifestSha256: digest(manifest),
-    hardware,
-    input: inputRecords,
-    parameters: { supplied: options.params ?? {}, effective: effectiveParams },
-    command: { executable: "", args: [], cwd: runDirPath },
-    startedAt,
-    outputs: [],
-    logs: { stdout: path.join(runDirPath, "stdout.log"), stderr: path.join(runDirPath, "stderr.log") },
-  };
-
-  // --- Step 6: write the initial record. From this point, every path below finalizes run.json. ---
-  writeRunRecord(runDirPath, record);
+    resolvedInputPath,
+    suppliedParams: options.params ?? {},
+    effectiveParams,
+    signal: options.signal,
+  });
+  if (!snapshot.ok) return { status: snapshot.record.status as RunModelResult["status"], record: snapshot.record };
+  const { record, startedAt, storedInputPath, companionInputs } = snapshot;
 
   const runContext: RunContext = {
     manifestName: manifest.name,
@@ -280,16 +276,8 @@ export async function runModel(
         message: `${modelName} exited with code ${execution.exitCode}.`,
       };
     } else {
-      const collected = await adapter.collectOutputs(runContext);
       // --- Step 12: checksum + size each output. ---
-      record.outputs = await Promise.all(
-        collected.map(async (output) => ({
-          id: output.id,
-          path: output.path,
-          sha256: await sha256File(output.path),
-          sizeBytes: fs.statSync(output.path).size,
-        })),
-      );
+      record.outputs = await collectRunOutputs(adapter, runContext);
       record.status = "succeeded";
     }
   } catch (error) {
@@ -297,39 +285,14 @@ export async function runModel(
     record.error = toErrorInfo(error, "RUN_EXECUTION_FAILED");
   }
 
-  // --- Derived report. Deliberately outside the try/catch above: describing or exporting a
-  // report can only ever add a warning, never change the model's outcome or error. ---
-  if (record.status === "succeeded" && options.visualize !== false) {
-    const report = await generateRunReport({ adapter, context: runContext, runDirPath, record, signal: options.signal });
-    if (report.artifact) record.artifacts = [report.artifact];
-    if (report.warning) record.warnings = [report.warning];
-  }
-
-  // --- Step 13: write the final record atomically. ---
-  const finishedAt = new Date().toISOString();
-  record.finishedAt = finishedAt;
-  record.durationMs = Date.parse(finishedAt) - Date.parse(startedAt);
-  writeRunRecord(runDirPath, record);
-
-  const result: RunModelResult = { status: record.status as RunModelResult["status"], record };
-
-  // --- --output: a distinct, post-finalization copy step; never changes the run's own status. ---
-  if (result.status === "succeeded" && options.outputDir) {
-    try {
-      fs.mkdirSync(options.outputDir, { recursive: true });
-      for (const output of record.outputs) {
-        const target = path.join(options.outputDir, path.basename(output.path));
-        fs.copyFileSync(output.path, target, fs.constants.COPYFILE_EXCL);
-      }
-      // The report is self-contained; copy it under a name that cannot collide with outputs.
-      for (const artifact of record.artifacts ?? []) {
-        fs.copyFileSync(artifact.path, path.join(options.outputDir, `moldesk-report-${record.id}.html`), fs.constants.COPYFILE_EXCL);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.exportError = { code: "OUTPUT_COLLISION", message };
-    }
-  }
-
-  return result;
+  return finalizeRun({
+    adapter,
+    context: runContext,
+    runDirPath,
+    record,
+    startedAt,
+    signal: options.signal,
+    visualize: options.visualize,
+    outputDir: options.outputDir,
+  });
 }

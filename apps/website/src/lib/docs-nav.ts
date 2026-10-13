@@ -47,6 +47,10 @@ export const docsNav: DocNavSection[] = [
     items: [
       { title: "Run Boltz-2 locally", slug: "guides/run-boltz-locally" },
       { title: "Molecular AI on Apple Silicon", slug: "guides/apple-silicon" },
+      {
+        title: "Runpod cloud execution",
+        slug: "guides/runpod-cloud-execution",
+      },
     ],
   },
   {

@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Runpod cloud execution code (`moldesk run --compute runpod`, `moldesk cloud ...`), **disabled
+  and not usable yet**: no model declares a cloud block and no worker bundle is published, pending
+  live validation. When enabled, shutdown is best effort and every run requires explicit
+  acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Adds
+  `better-sqlite3` and `@napi-rs/keyring` as runtime dependencies. See `docs/cloud-execution.md`.
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a
   fullscreen, always-dark Mol* 3D view, a floating toolbox, and a colored sequence
   strip in blocks of ten, no network access.
