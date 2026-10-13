@@ -34,8 +34,19 @@ export interface CloudDataCenter {
   networkVolumeTypes: string[];
 }
 
+/**
+ * Storage rates, only when the provider publishes them. Runpod's catalog API does not expose disk or
+ * network-volume prices (only historical billing), so its provider leaves this undefined and quotes
+ * state those costs as unknown instead of guessing.
+ */
+export interface CloudStorageRates {
+  containerDiskUsdPerGbMonth?: number;
+  networkVolumeUsdPerGbMonth?: number;
+}
+
 export interface CloudCatalog {
   retrievedAt: string;
+  storageRates?: CloudStorageRates;
   gpus: CloudGpuType[];
   cpus: CloudCpuType[];
   dataCenters: CloudDataCenter[];

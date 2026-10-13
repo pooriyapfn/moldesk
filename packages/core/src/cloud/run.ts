@@ -368,6 +368,18 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     record.compute = compute;
     const persist = (): void => writeRunRecord(runDirPath, record);
 
+    // Worker logs are persisted locally as they arrive, independent of any terminal tee or --json,
+    // so they outlive the machine they came from. (The worker keeps only a bounded tail.)
+    const stdoutPath = path.join(runDirPath, "stdout.log");
+    const stderrPath = path.join(runDirPath, "stderr.log");
+    fs.writeFileSync(stdoutPath, "", { flag: "a", mode: 0o600 });
+    fs.writeFileSync(stderrPath, "", { flag: "a", mode: 0o600 });
+    record.logs = { stdout: stdoutPath, stderr: stderrPath };
+    const saveLogs = (snapshot: JobSnapshot): void => {
+      if (snapshot.logs.stdout) fs.appendFileSync(stdoutPath, snapshot.logs.stdout);
+      if (snapshot.logs.stderr) fs.appendFileSync(stderrPath, snapshot.logs.stderr);
+    };
+
     const localContext: RunContext = {
       manifestName: plan.manifest.name,
       inputPath: storedInputPath,
@@ -477,7 +489,12 @@ export async function runCloudModel(modelName: string, inputPath: string, option
           await sleep(pollMs);
           continue;
         }
+        saveLogs(snapshotLast);
         cursor = snapshotLast.logs.cursor;
+        if (compute.workerLogCursor !== cursor) {
+          compute.workerLogCursor = cursor;
+          persist();
+        }
         if (snapshotLast.logs.stdout) options.onLog?.("stdout", snapshotLast.logs.stdout);
         if (snapshotLast.logs.stderr) options.onLog?.("stderr", snapshotLast.logs.stderr);
         if (snapshotLast.stage !== compute.stage) progress(snapshotLast.stage);
@@ -512,7 +529,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
           let lastError: unknown;
           for (let attempt = 1; !inventory; attempt += 1) {
             try {
-              inventory = await backend.collect(handle, dirs.outputDir);
+              inventory = await backend.collect(handle, dirs.outputDir, { signal: options.signal });
             } catch (error) {
               lastError = error;
               if (options.signal?.aborted || now().getTime() + 2000 * attempt > windowEnd) break;
@@ -522,7 +539,8 @@ export async function runCloudModel(modelName: string, inputPath: string, option
           if (!inventory) {
             const info = toErrorInfo(lastError, "CLOUD_TRANSFER_FAILED");
             journal.updateJob(dirs.runId, { transferState: "failed" });
-            abort("CLOUD_TRANSFER_FAILED", `Results could not be downloaded: ${info.message}`);
+            if (options.signal?.aborted || info.code === "RUN_CANCELLED") abort("RUN_CANCELLED", "Run was cancelled.", "cancelled");
+            else abort("CLOUD_TRANSFER_FAILED", `Results could not be downloaded: ${info.message}`);
           } else {
             journal.updateJob(dirs.runId, { transferState: "verified" });
             // Existing local collection: a missing required output is a failure even after exit 0.
@@ -535,6 +553,15 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       const info = toErrorInfo(error, "CLOUD_RUN_FAILED");
       if (options.signal?.aborted) abort("RUN_CANCELLED", "Run was cancelled.", "cancelled");
       else abort(info.code, info.message);
+    }
+
+    // Best-effort final drain of any log tail not yet saved (cancel, deadline, unreachable worker paths).
+    if (handle && !(snapshotLast && snapshotLast.state !== "running" && snapshotLast.state !== "pending")) {
+      const tail = await backend.observe(handle, cursor).catch(() => undefined);
+      if (tail) {
+        saveLogs(tail);
+        compute.workerLogCursor = tail.logs.cursor;
+      }
     }
 
     // --- Cleanup first (separate from the possibly-aborted signal), then report generation. ---

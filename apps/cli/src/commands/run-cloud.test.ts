@@ -92,7 +92,7 @@ function fakeDeps(opts: { terminateFails?: boolean; guardRefuses?: boolean } = {
       return { version: 1, runId: job.runId, podId: "pod1", endpoint: "https://w" };
     },
     async observe() {
-      return { stage: "running", state: "succeeded", exitCode: 0, logs: { cursor: 1, stdout: "", stderr: "" }, runtime: { dependencyFreeze: [], gpu: { name: "A40" } } };
+      return { stage: "running", state: "succeeded", exitCode: 0, logs: { cursor: 1, stdout: "hello from the worker\n", stderr: "note\n" }, runtime: { dependencyFreeze: [], gpu: { name: "A40" } } };
     },
     async cancel() {},
     async collect(_h: unknown, dir: string) {
@@ -207,6 +207,10 @@ describe("moldesk run --compute runpod", () => {
     await run({ deps: async () => f.deps }, ...base, "--yes", "--json");
     const parsed = JSON.parse(out.join("\n"));
     expect(parsed).toMatchObject({ status: "succeeded", record: { compute: { provider: "runpod", cleanup: "confirmed" } } });
+    // Logs are persisted for --json runs too, and survive the machine being terminated.
+    expect(fs.readFileSync(parsed.record.logs.stdout, "utf8")).toBe("hello from the worker\n");
+    expect(fs.readFileSync(parsed.record.logs.stderr, "utf8")).toBe("note\n");
+    expect(f.pods.size).toBe(0);
   });
 
   it("exits 14 and provisions nothing when the deadline guard refuses", async () => {
@@ -233,7 +237,10 @@ describe("formatQuote", () => {
     const plan = await planCloudRun("fake-model", inputPath(), { cloud: { cachePolicy: "persistent", maxBudgetUsd: 5, maxLifetimeSeconds: 3600 } }, f.deps);
     const text = formatQuote(plan.quote);
     expect(text).toContain("not a provider-enforced spend cap");
-    expect(text).toContain("recurring until you delete the cache; rate unknown");
+    expect(text).toContain("40 GB network volume kept until you delete it; monthly cost unknown (rate not published)");
+    expect(text).toContain("container disk 40 GB x 2 machine(s): cost unknown (rate not published)");
+    expect(text).toMatch(/NOT counted: .*container disk charges.*retained network volume storage/);
+    expect(text).toMatch(/unknown:\s+container disk rate is not published.*network volume rate is not published/);
     expect(text).toContain("no measured estimate available");
     expect(text).toContain("Prep CPU:");
   });

@@ -38,9 +38,9 @@ function resolveDeps(deps: CloudAccountDeps) {
 
 export interface ConnectResult {
   provider: string;
-  /** Where future runs will read the key from. Env and .env override the keyring. */
+  /** Where future runs will read the key from. An environment variable overrides the keyring. */
   storedIn: "keyring";
-  /** Present when an environment or .env key will still take precedence over the stored one. */
+  /** Present when an environment key will still take precedence over the stored one. */
   overriddenBy?: CredentialSource;
   checkedAt: string;
 }

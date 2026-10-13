@@ -48,8 +48,13 @@ export function formatQuote(quote: CloudQuote): string {
     ...(quote.cpu ? [`  Prep CPU:     ${quote.cpu.id} x${quote.cpu.vcpuCount} at ${money(quote.cpu.priceUsdPerHour)}/h (asset preparation only)`] : []),
     `  Cache policy: ${quote.cachePolicy}`,
     `  Limits:       lifetime ${quote.maxLifetimeSeconds}s, budget ${money(quote.maxBudgetUsd)}`,
-    `  Worst case:   ${money(quote.cost.worstCaseComputeUsd)} compute (a ceiling for this estimate, not a provider-enforced spend cap)`,
-    `  Storage:      ${quote.cost.storage.recurring ? "recurring until you delete the cache; rate unknown" : "none retained"}`,
+    `  Compute:      worst case ${money(quote.cost.worstCaseComputeUsd)} (hourly rate x lifetime limit; a ceiling for this estimate, not a provider-enforced spend cap)`,
+    `  Temp storage: ${quote.cost.temporaryStorage.worstCaseUsd === null ? `container disk ${quote.cost.temporaryStorage.diskGb} GB x ${quote.cost.temporaryStorage.machines} machine(s): cost unknown (rate not published)` : `container disk worst case ${money(quote.cost.temporaryStorage.worstCaseUsd)}`}`,
+    `  Retained:     ${quote.cost.recurringStorage.recurring ? `${quote.cost.recurringStorage.volumeGb} GB network volume kept until you delete it; ${quote.cost.recurringStorage.usdPerMonth === null ? "monthly cost unknown (rate not published)" : `about ${money(quote.cost.recurringStorage.usdPerMonth)}/month`}` : "nothing is kept after the run"}`,
+    `  Budget:       ${money(quote.maxBudgetUsd)} is checked against ${money(quote.cost.worstCaseBudgetedUsd)}`,
+    `    counts:     ${quote.budgetCoverage.counted.join("; ")}`,
+    `    NOT counted: ${quote.budgetCoverage.notCounted.join("; ")}`,
+    ...(quote.budgetCoverage.unknown.length > 0 ? [`    unknown:    ${quote.budgetCoverage.unknown.join("; ")}`] : []),
     `  Timing:       no measured estimate available`,
     `  Upload:       ${quote.upload.files} file(s), ${quote.upload.bytes} bytes`,
     ...quote.disclosures.map((line) => `  - ${line}`),
@@ -164,6 +169,7 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
       if (result.exportError) console.error(`  --output copy failed: ${result.exportError.message}`);
       if (result.record.compute?.hardware) console.log(`  Ran on: ${result.record.compute.hardware.name} (${result.record.compute.datacenterId})`);
       console.log(`  Run directory: ${result.record.command.cwd}`);
+      console.log(`  Logs: ${result.record.logs.stdout} and ${result.record.logs.stderr}`);
     }
 
     if (result.cleanupPending) {

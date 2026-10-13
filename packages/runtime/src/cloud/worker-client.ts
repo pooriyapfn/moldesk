@@ -19,6 +19,18 @@ export interface WorkerClientOptions {
   requestTimeoutMs?: number;
   /** Test-only: permit plain http (loopback). Production endpoints must be https. */
   allowInsecureLoopback?: boolean;
+  /** A stream that delivers no bytes for this long is aborted (and retried by range). Default 60 s. */
+  idleTimeoutMs?: number;
+  /** Cancels every in-flight request, including bodies still streaming. */
+  signal?: AbortSignal;
+}
+
+interface Guard {
+  signal: AbortSignal;
+  arm(ms: number): void;
+  release(): void;
+  cancelled(): boolean;
+  timedOut(): boolean;
 }
 
 function workerError(code: string, message: string, remediation: string, details?: Record<string, unknown>, cause?: unknown): MoldeskError {
@@ -36,6 +48,7 @@ export class WorkerClient {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly base: string;
   private readonly timeoutMs: number;
+  private readonly idleMs: number;
 
   constructor(private readonly options: WorkerClientOptions) {
     const url = new URL(options.endpoint);
@@ -47,55 +60,100 @@ export class WorkerClient {
     this.fetchFn = options.fetch ?? fetch;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.timeoutMs = options.requestTimeoutMs ?? 60_000;
+    this.idleMs = options.idleTimeoutMs ?? 60_000;
   }
 
-  private async send(method: string, route: string, init: { body?: RequestInit["body"]; headers?: Record<string, string>; json?: unknown; timeoutMs?: number; duplex?: boolean } = {}): Promise<Response> {
+  /** Timeout + cancellation scope covering headers AND body streaming; the timer is only released by the caller. */
+  private guard(ms: number, external?: AbortSignal): Guard {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? this.timeoutMs);
-    try {
-      return await this.fetchFn(`${this.base}${route}`, {
-        method,
-        headers: {
-          Authorization: `Bearer ${this.options.token}`,
-          "User-Agent": WORKER_USER_AGENT,
-          ...(init.json !== undefined ? { "Content-Type": "application/json" } : {}),
-          ...init.headers,
-        },
-        ...(init.json !== undefined ? { body: JSON.stringify(init.json) } : init.body !== undefined ? { body: init.body } : {}),
-        ...(init.duplex ? ({ duplex: "half" } as Record<string, unknown>) : {}),
-        signal: controller.signal,
-      } as RequestInit);
-    } catch (error) {
-      throw workerError("CLOUD_WORKER_UNREACHABLE", "Could not reach the worker.", "Check the connection; the machine may still be booting.", { route }, error);
-    } finally {
+    const source = external ?? this.options.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const onAbort = (): void => controller.abort();
+    if (source?.aborted) controller.abort();
+    else source?.addEventListener("abort", onAbort, { once: true });
+    const arm = (next: number): void => {
       clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, next);
+    };
+    arm(ms);
+    return {
+      signal: controller.signal,
+      arm,
+      release: () => {
+        clearTimeout(timer);
+        source?.removeEventListener("abort", onAbort);
+      },
+      cancelled: () => source?.aborted === true,
+      timedOut: () => timedOut,
+    };
+  }
+
+  private failure(guard: Guard, route: string, cause: unknown): MoldeskError {
+    if (guard.cancelled()) return workerError("RUN_CANCELLED", "Cancelled.", "None.", { route }, cause);
+    if (guard.timedOut()) return workerError("CLOUD_WORKER_TIMEOUT", "The worker did not respond in time.", "Retry; the machine may be overloaded or the connection stalled.", { route }, cause);
+    return workerError("CLOUD_WORKER_UNREACHABLE", "Could not reach the worker.", "Check the connection; the machine may still be booting.", { route }, cause);
+  }
+
+  private requestInit(method: string, init: { body?: RequestInit["body"]; headers?: Record<string, string>; json?: unknown; duplex?: boolean }, signal: AbortSignal): RequestInit {
+    return {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.options.token}`,
+        "User-Agent": WORKER_USER_AGENT,
+        ...(init.json !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+      ...(init.json !== undefined ? { body: JSON.stringify(init.json) } : init.body !== undefined ? { body: init.body } : {}),
+      ...(init.duplex ? ({ duplex: "half" } as Record<string, unknown>) : {}),
+      signal,
+    } as RequestInit;
+  }
+
+  /** Whole-request deadline: the body is read inside the same timeout/cancellation scope as the headers. */
+  private async requestText(
+    method: string,
+    route: string,
+    init: { body?: RequestInit["body"]; headers?: Record<string, string>; json?: unknown; timeoutMs?: number; duplex?: boolean; signal?: AbortSignal } = {},
+  ): Promise<{ status: number; ok: boolean; text: string }> {
+    const guard = this.guard(init.timeoutMs ?? this.timeoutMs, init.signal);
+    try {
+      const response = await this.fetchFn(`${this.base}${route}`, this.requestInit(method, init, guard.signal));
+      const text = await response.text();
+      return { status: response.status, ok: response.ok, text };
+    } catch (error) {
+      throw this.failure(guard, route, error);
+    } finally {
+      guard.release();
     }
   }
 
-  private async json<T>(response: Response, route: string): Promise<T> {
-    if (response.status === 401 || response.status === 403) {
-      throw workerError("CLOUD_WORKER_AUTH_FAILED", "The worker rejected the job token.", "The worker belongs to a different job; do not retry with another token.", { route, status: response.status });
+  private parse<T>(result: { status: number; ok: boolean; text: string }, route: string): T {
+    if (result.status === 401 || result.status === 403) {
+      throw workerError("CLOUD_WORKER_AUTH_FAILED", "The worker rejected the job token.", "The worker belongs to a different job; do not retry with another token.", { route, status: result.status });
     }
-    const text = await response.text();
-    if (text.length > MAX_JSON_BYTES) throw workerError("CLOUD_BAD_RESPONSE", "Worker response too large.", "Retry.", { route });
-    if (!response.ok) {
+    if (result.text.length > MAX_JSON_BYTES) throw workerError("CLOUD_BAD_RESPONSE", "Worker response too large.", "Retry.", { route });
+    if (!result.ok) {
       let detail: string | undefined;
       try {
-        detail = (JSON.parse(text) as { message?: string }).message;
+        detail = (JSON.parse(result.text) as { message?: string }).message;
       } catch {
-        detail = text.slice(0, 200);
+        detail = result.text.slice(0, 200);
       }
-      throw workerError("CLOUD_WORKER_ERROR", `Worker error ${response.status}${detail ? `: ${detail}` : ""}.`, "Retry or inspect the run logs.", { route, status: response.status });
+      throw workerError("CLOUD_WORKER_ERROR", `Worker error ${result.status}${detail ? `: ${detail}` : ""}.`, "Retry or inspect the run logs.", { route, status: result.status });
     }
     try {
-      return JSON.parse(text) as T;
+      return JSON.parse(result.text) as T;
     } catch (error) {
       throw workerError("CLOUD_BAD_RESPONSE", "The worker returned malformed JSON.", "Retry.", { route }, error);
     }
   }
 
   async health(): Promise<{ contract: number; workerVersion: string }> {
-    const result = await this.json<{ contract: number; workerVersion: string }>(await this.send("GET", "/v1/health", { timeoutMs: 15_000 }), "/v1/health");
+    const result = this.parse<{ contract: number; workerVersion: string }>(await this.requestText("GET", "/v1/health", { timeoutMs: 15_000 }), "/v1/health");
     if (result.contract !== EXECUTION_CONTRACT_VERSION) {
       throw workerError("CLOUD_WORKER_VERSION_MISMATCH", `Worker speaks contract ${result.contract}; this client speaks ${EXECUTION_CONTRACT_VERSION}.`, "Use matching MoleculeDesk versions.");
     }
@@ -129,33 +187,33 @@ export class WorkerClient {
     if (stat.size !== file.sizeBytes) throw workerError("CLOUD_INPUT_CHANGED", "The input changed size after it was quoted.", "Request a new quote.");
     const route = `/v1/jobs/${encodeURIComponent(runId)}/input/${file.relativePath.split("/").map(encodeURIComponent).join("/")}`;
     const body = Readable.toWeb(fs.createReadStream(file.sourcePath)) as unknown as RequestInit["body"];
-    const response = await this.send("PUT", route, {
+    const response = await this.requestText("PUT", route, {
       body,
       duplex: true,
       timeoutMs: 10 * 60_000,
       headers: { "Content-Type": "application/octet-stream", "Content-Length": String(file.sizeBytes), "X-Moldesk-Sha256": file.sha256 },
     });
-    await this.json<{ ok: true }>(response, route);
+    this.parse<{ ok: true }>(response, route);
   }
 
   async start(job: WireJob): Promise<void> {
     const route = `/v1/jobs/${encodeURIComponent(job.runId)}/start`;
-    await this.json<{ ok: true }>(await this.send("POST", route, { json: job }), route);
+    this.parse<{ ok: true }>(await this.requestText("POST", route, { json: job }), route);
   }
 
   async status(runId: string, after = 0): Promise<JobSnapshot> {
     const route = `/v1/jobs/${encodeURIComponent(runId)}/status?after=${after}`;
-    return this.json<JobSnapshot>(await this.send("GET", route, { timeoutMs: 20_000 }), route);
+    return this.parse<JobSnapshot>(await this.requestText("GET", route, { timeoutMs: 20_000 }), route);
   }
 
   async cancel(runId: string): Promise<void> {
     const route = `/v1/jobs/${encodeURIComponent(runId)}/cancel`;
-    await this.json<{ ok: true }>(await this.send("POST", route, { timeoutMs: 20_000 }), route);
+    this.parse<{ ok: true }>(await this.requestText("POST", route, { timeoutMs: 20_000 }), route);
   }
 
-  async inventory(runId: string): Promise<ArtifactInventory> {
+  async inventory(runId: string, signal?: AbortSignal): Promise<ArtifactInventory> {
     const route = `/v1/jobs/${encodeURIComponent(runId)}/inventory`;
-    const inventory = await this.json<ArtifactInventory>(await this.send("GET", route), route);
+    const inventory = this.parse<ArtifactInventory>(await this.requestText("GET", route, { signal }), route);
     validateInventory(inventory);
     return inventory;
   }
@@ -165,15 +223,15 @@ export class WorkerClient {
    * then promotes them into `localOutputDir`. Nothing is promoted unless everything verified, and a
    * partial file is resumed by byte range then re-verified in full. Never reruns inference.
    */
-  async collect(runId: string, localOutputDir: string): Promise<ArtifactInventory> {
-    const inventory = await this.inventory(runId);
+  async collect(runId: string, localOutputDir: string, options: { signal?: AbortSignal } = {}): Promise<ArtifactInventory> {
+    const inventory = await this.inventory(runId, options.signal);
     const staging = path.join(localOutputDir, `.moldesk-staging-${randomUUID()}`);
     fs.mkdirSync(staging, { recursive: true });
     try {
       for (const file of inventory.files) {
         const target = path.join(staging, ...file.path.split("/"));
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        await this.downloadVerified(runId, file, target);
+        await this.downloadVerified(runId, file, target, options.signal);
       }
       for (const file of inventory.files) {
         const finalPath = path.join(localOutputDir, ...file.path.split("/"));
@@ -189,16 +247,31 @@ export class WorkerClient {
     }
   }
 
-  private async downloadVerified(runId: string, file: InventoryFile, target: string): Promise<void> {
+  private async downloadVerified(runId: string, file: InventoryFile, target: string, signal?: AbortSignal): Promise<void> {
     const route = `/v1/jobs/${encodeURIComponent(runId)}/files/${file.path.split("/").map(encodeURIComponent).join("/")}`;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const have = fs.existsSync(target) ? fs.statSync(target).size : 0;
       const resume = have > 0 && have < file.sizeBytes;
       if (!resume && have > 0) fs.rmSync(target, { force: true });
-      const response = await this.send("GET", route, { timeoutMs: 10 * 60_000, headers: resume ? { Range: `bytes=${have}-` } : {} });
-      if (response.status === 401 || response.status === 403) throw workerError("CLOUD_WORKER_AUTH_FAILED", "The worker rejected the job token.", "Do not retry.");
+      // One scope per attempt: it covers connecting, headers and every body chunk, and is re-armed on
+      // each chunk so only a genuinely stalled stream times out. Cancellation aborts it immediately.
+      const guard = this.guard(this.idleMs, signal);
+      let response: Response;
+      try {
+        response = await this.fetchFn(`${this.base}${route}`, this.requestInit("GET", { headers: resume ? { Range: `bytes=${have}-` } : {} }, guard.signal));
+      } catch (error) {
+        guard.release();
+        const failure = this.failure(guard, route, error);
+        if (failure.code === "RUN_CANCELLED" || attempt === 3) throw failure.code === "RUN_CANCELLED" ? failure : workerError("CLOUD_TRANSFER_FAILED", `Could not download ${file.path}.`, "Retry recovery before the lifetime limit.", { path: file.path }, error);
+        continue;
+      }
+      if (response.status === 401 || response.status === 403) {
+        guard.release();
+        throw workerError("CLOUD_WORKER_AUTH_FAILED", "The worker rejected the job token.", "Do not retry.");
+      }
       const okStatus = resume ? response.status === 206 : response.status === 200;
       if (!okStatus || !response.body) {
+        guard.release();
         if (resume && response.status === 200) fs.rmSync(target, { force: true }); // server ignored Range: restart this file only
         if (attempt === 3) throw workerError("CLOUD_TRANSFER_FAILED", `Could not download ${file.path} (status ${response.status}).`, "Retry recovery before the lifetime limit.");
         continue;
@@ -207,15 +280,23 @@ export class WorkerClient {
       const closeSink = (): Promise<void> => new Promise<void>((resolve, reject) => sink.end((error?: Error | null) => (error ? reject(error) : resolve())));
       try {
         for await (const chunk of Readable.fromWeb(response.body as never)) {
+          guard.arm(this.idleMs);
           if (!sink.write(chunk)) await new Promise<void>((resolve) => sink.once("drain", resolve));
         }
         await closeSink();
-      } catch {
+      } catch (error) {
         // Flush what arrived so the next attempt can resume from it by byte range.
         await closeSink().catch(() => undefined);
-        if (attempt === 3) throw workerError("CLOUD_TRANSFER_FAILED", `The download of ${file.path} was interrupted.`, "Retry recovery before the lifetime limit.");
+        const cancelled = guard.cancelled();
+        const stalled = guard.timedOut();
+        guard.release();
+        if (cancelled) throw workerError("RUN_CANCELLED", "Cancelled during download.", "None.", { path: file.path }, error);
+        if (attempt === 3) {
+          throw workerError("CLOUD_TRANSFER_FAILED", `The download of ${file.path} was ${stalled ? "stalled" : "interrupted"}.`, "Retry recovery before the lifetime limit.", { path: file.path }, error);
+        }
         continue;
       }
+      guard.release();
       // Verify the complete file regardless of how it was assembled.
       const size = fs.statSync(target).size;
       const hash = createHash("sha256");

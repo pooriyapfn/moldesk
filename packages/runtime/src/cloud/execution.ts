@@ -144,7 +144,7 @@ export interface ExecutionBackend {
   observe(handle: JobHandle, after?: number): Promise<JobSnapshot>;
   cancel(handle: JobHandle): Promise<void>;
   /** Download and verify every inventory file into `localOutputDir`; never reruns inference. */
-  collect(handle: JobHandle, localOutputDir: string): Promise<ArtifactInventory>;
+  collect(handle: JobHandle, localOutputDir: string, options?: { signal?: AbortSignal }): Promise<ArtifactInventory>;
   /**
    * Terminate every paid resource this job owns (GPU/CPU pods; never the persistent volume) and
    * confirm via the provider. Safe to call repeatedly; absence is success.

@@ -76,7 +76,7 @@ describe("buildQuote", () => {
     expect(quote.datacenterId).toBe("DC-NOVOL");
     expect(quote.cost.worstCaseComputeUsd).toBe(0.6);
     expect(quote.timing).toEqual({ preparation: null, inference: null, transfer: null });
-    expect(quote.cost.storage).toEqual({ recurring: false, usdPerMonth: null });
+    expect(quote.cost.recurringStorage).toEqual({ recurring: false, volumeGb: null, usdPerMonth: null });
     expect(quote.cpu).toBeUndefined();
   });
 
@@ -85,7 +85,7 @@ describe("buildQuote", () => {
     expect(quote.datacenterId).toBe("DC-VOL");
     expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06 });
     expect(quote.cost.worstCaseComputeUsd).toBe(0.66);
-    expect(quote.cost.storage.recurring).toBe(true);
+    expect(quote.cost.recurringStorage).toEqual({ recurring: true, volumeGb: 40, usdPerMonth: null });
     expect(quote.disclosures.join(" ")).toMatch(/billed until you delete/);
   });
 
@@ -119,6 +119,49 @@ describe("buildQuote", () => {
     expect(buildQuote(inputs({ cachePolicy: "persistent" })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ maxLifetimeSeconds: 1800 })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ gpuId: "l40" })).id).not.toBe(base.id);
+  });
+});
+
+describe("storage costs and budget coverage", () => {
+  const withRates = () => ({ ...catalog(), storageRates: { containerDiskUsdPerGbMonth: 0.1, networkVolumeUsdPerGbMonth: 0.07 } });
+
+  it("states storage as unknown, not counted, when the provider publishes no rates", () => {
+    const eph = buildQuote(inputs());
+    expect(eph.cost.temporaryStorage).toEqual({ diskGb: 40, machines: 1, worstCaseUsd: null });
+    expect(eph.cost.worstCaseBudgetedUsd).toBe(eph.cost.worstCaseComputeUsd);
+    expect(eph.budgetCoverage.unknown).toEqual(["container disk rate is not published by the provider's catalog API"]);
+    expect(eph.budgetCoverage.notCounted.join(" | ")).toMatch(/container disk charges \(40 GB x 1 machine\)/);
+    expect(eph.budgetCoverage.notCounted.join(" | ")).toMatch(/network transfer or any other provider fees/);
+    expect(eph.budgetCoverage.counted).toHaveLength(1);
+
+    const per = buildQuote(inputs({ cachePolicy: "persistent" }));
+    expect(per.cost.temporaryStorage.machines).toBe(2);
+    expect(per.budgetCoverage.unknown).toHaveLength(2);
+    expect(per.budgetCoverage.notCounted.join(" | ")).toMatch(/retained network volume storage \(40 GB\), billed monthly until deleted(?!:)/);
+  });
+
+  it("counts temporary storage in the budget and reports recurring storage separately when rates are published", () => {
+    const eph = buildQuote(inputs({ catalog: withRates() }));
+    expect(eph.cost.temporaryStorage.worstCaseUsd).toBeCloseTo(40 * 0.1 * (1 / 730), 4);
+    expect(eph.cost.worstCaseBudgetedUsd).toBeCloseTo(0.6 + eph.cost.temporaryStorage.worstCaseUsd!, 4);
+    expect(eph.budgetCoverage.unknown).toEqual([]);
+    expect(eph.budgetCoverage.counted.join(" | ")).toMatch(/container disk/);
+
+    const per = buildQuote(inputs({ cachePolicy: "persistent", catalog: withRates() }));
+    expect(per.cost.recurringStorage).toEqual({ recurring: true, volumeGb: 40, usdPerMonth: 2.8 });
+    expect(per.budgetCoverage.notCounted.join(" | ")).toMatch(/billed monthly until deleted: about \$2\.8\/month/);
+    expect(per.budgetCoverage.unknown).toEqual([]);
+    // Recurring storage is disclosed, never silently folded into the one-run budget.
+    expect(per.cost.worstCaseBudgetedUsd).toBeCloseTo(per.cost.worstCaseComputeUsd + per.cost.temporaryStorage.worstCaseUsd!, 4);
+  });
+
+  it("rejects when known storage pushes the counted worst case over the budget", () => {
+    expect(buildQuote(inputs({ maxBudgetUsd: 0.6 })).cost.worstCaseBudgetedUsd).toBe(0.6);
+    expect(() => buildQuote(inputs({ maxBudgetUsd: 0.6, catalog: withRates() }))).toThrow(expect.objectContaining({ code: "CLOUD_BUDGET_EXCEEDED" }));
+  });
+
+  it("does not change the approval id", () => {
+    expect(buildQuote(inputs({ catalog: withRates() })).id).toBe(buildQuote(inputs()).id);
   });
 });
 

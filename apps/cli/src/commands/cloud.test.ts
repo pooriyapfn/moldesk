@@ -72,7 +72,7 @@ async function run(options: { env?: NodeJS.ProcessEnv; validate?: () => Promise<
   program.exitOverride();
   registerCloudCommand(program, {
     paths: getMoldeskPaths({ MOLDESK_HOME: home }),
-    store: new CredentialStore({ backend: backend(), env: options.env ?? {}, dotEnvDir: home }),
+    store: new CredentialStore({ backend: backend(), env: options.env ?? {} }),
     createProvider: () => provider(options.validate ?? (async () => ({ ok: true, checkedAt: "t" })), options.pods),
   });
   await program.parseAsync(["cloud", ...args], { from: "user" });

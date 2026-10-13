@@ -161,8 +161,12 @@ class FakeBackend implements ExecutionBackend {
   async cancel() {
     this.cancelled = true;
   }
-  async collect(_handle: JobHandle, dir: string): Promise<ArtifactInventory> {
+  hangCollect = false;
+  async collect(_handle: JobHandle, dir: string, options?: { signal?: AbortSignal }): Promise<ArtifactInventory> {
     this.collects += 1;
+    if (this.hangCollect) {
+      await new Promise<never>((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(new MoldeskError({ code: "RUN_CANCELLED", message: "Cancelled during download.", remediation: "None." }))));
+    }
     if (this.collectFailures > 0) {
       this.collectFailures -= 1;
       throw new Error("connection reset");
@@ -358,6 +362,18 @@ describe("runCloudModel", () => {
     expect(box.provider.pods.size).toBe(0);
   });
 
+  it("cancels a download that is in flight, marks the run cancelled and still terminates the machine", async () => {
+    const controller = new AbortController();
+    const box = sandbox();
+    box.backend.hangCollect = true;
+    const options = await box.optionsFor({ signal: controller.signal, onProgress: (event) => event.stage === "collecting" && setTimeout(() => controller.abort(), 10) });
+    const result = await runCloudModel("fake-model", box.inputPath, options, box.deps);
+    expect(result.status).toBe("cancelled");
+    expect(result.record.error?.code).toBe("RUN_CANCELLED");
+    expect(box.provider.pods.size).toBe(0);
+    expect(box.backend.starts).toBe(1);
+  });
+
   it("stops at the approved lifetime and reports CLOUD_DEADLINE_EXCEEDED", async () => {
     const box = sandbox([runningSnap()], { pollIntervalMs: 600_000 });
     const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps);
@@ -400,6 +416,52 @@ describe("runCloudModel", () => {
     expect(journal.getJob(result.record.id)).toMatchObject({ status: "cleanup_pending", error: { code: "CLOUD_CLEANUP_PENDING" } });
     expect(journal.listOpenJobs()).toHaveLength(1);
     journal.close();
+  });
+});
+
+describe("log persistence", () => {
+  const logSnap = (stdout: string, stderr: string, state: JobSnapshot["state"], cursor: number): JobSnapshot => ({ stage: "running", state, ...(state === "succeeded" ? { exitCode: 0 } : state === "failed" ? { exitCode: 1 } : {}), logs: { cursor, stdout, stderr } });
+
+  it("saves worker stdout/stderr to the files run.json references, without any terminal tee, and they outlive cleanup", async () => {
+    const box = sandbox([logSnap("step 1\n", "warn\n", "running", 1), logSnap("step 2\n", "", "succeeded", 2)]);
+    const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps); // no onLog
+    expect(box.provider.pods.size).toBe(0);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(result.record.command.cwd, "run.json"), "utf8"));
+    expect(fs.readFileSync(onDisk.logs.stdout, "utf8")).toBe("step 1\nstep 2\n");
+    expect(fs.readFileSync(onDisk.logs.stderr, "utf8")).toBe("warn\n");
+    expect(onDisk.compute.workerLogCursor).toBe(2);
+    expect(path.dirname(onDisk.logs.stdout)).toBe(result.record.command.cwd);
+  });
+
+  it("keeps the logs of a failed run, including the tail drained before cleanup", async () => {
+    const box = sandbox([logSnap("", "", "running", 0), logSnap("", "Traceback...\n", "failed", 1)]);
+    const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps);
+    expect(result.status).toBe("failed");
+    expect(fs.readFileSync(result.record.logs.stderr, "utf8")).toBe("Traceback...\n");
+  });
+
+  it("drains the remaining tail when the run is cancelled mid-way", async () => {
+    const controller = new AbortController();
+    const box = sandbox([logSnap("early\n", "", "running", 1)]);
+    const options = await box.optionsFor({ signal: controller.signal, onLog: () => controller.abort() });
+    const result = await runCloudModel("fake-model", box.inputPath, options, box.deps);
+    expect(result.status).toBe("cancelled");
+    expect(fs.readFileSync(result.record.logs.stdout, "utf8")).toContain("early");
+  });
+
+  it("recovery appends only the log tail written since the saved cursor", async () => {
+    const box = sandbox([logSnap("a\n", "", "running", 1), logSnap("b\n", "", "succeeded", 2)]);
+    box.provider.failTerminate = true;
+    box.backend.collectFailures = 1000;
+    const failed = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    expect(fs.readFileSync(failed.record.logs.stdout, "utf8")).toBe("a\nb\n");
+    // The worker later produced one more line.
+    box.backend.script.splice(0, box.backend.script.length, logSnap("c\n", "", "succeeded", 3));
+    box.backend.observes = 0;
+    box.provider.failTerminate = false;
+    box.backend.collectFailures = 0;
+    await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+    expect(fs.readFileSync(failed.record.logs.stdout, "utf8")).toBe("a\nb\nc\n");
   });
 });
 

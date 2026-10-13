@@ -61,7 +61,11 @@ export async function recoverCloudRun(runId: string, deps: RecoverDeps, options:
     if (record.status !== "succeeded" && livePod?.providerId && deps.backend?.reconnect) {
       const handle = deps.backend.reconnect(runId, livePod.providerId, job.volumeId ?? undefined);
       try {
-        const snapshot = await deps.backend.observe(handle);
+        const snapshot = await deps.backend.observe(handle, record.compute?.workerLogCursor ?? 0);
+        // Keep the local logs complete: append whatever the worker produced since the last saved cursor.
+        if (snapshot.logs.stdout) fs.appendFileSync(record.logs.stdout, snapshot.logs.stdout);
+        if (snapshot.logs.stderr) fs.appendFileSync(record.logs.stderr, snapshot.logs.stderr);
+        if (record.compute) record.compute.workerLogCursor = snapshot.logs.cursor;
         if (snapshot.state === "succeeded") {
           const outputDir = path.join(runDirPath, "output");
           await deps.backend.collect(handle, outputDir);

@@ -10,6 +10,8 @@ export const APPROVAL_MAX_AGE_MS = 15 * 60 * 1000;
 /** A price rise above this fraction since approval requires a new approval. */
 export const PRICE_TOLERANCE = 0.1;
 export const DEFAULT_MAX_LIFETIME_SECONDS = 3600;
+/** Billing months are 730 hours. */
+const HOURS_PER_MONTH = 730;
 export const DEFAULT_PREP_CPU = { id: "cpu3c", vcpuCount: 2 } as const;
 
 export interface QuoteRange {
@@ -36,8 +38,15 @@ export interface CloudQuote {
   cost: {
     /** Hourly rate times the approved lifetime for every paid compute role. A ceiling, not a spend cap. */
     worstCaseComputeUsd: number;
-    storage: { recurring: boolean; usdPerMonth: number | null };
+    /** Container disk for the machines' lifetime; `null` when the provider publishes no rate. */
+    temporaryStorage: { diskGb: number; machines: number; worstCaseUsd: number | null };
+    /** Retained network volume; billed monthly until deleted. `null` when the provider publishes no rate. */
+    recurringStorage: { recurring: boolean; volumeGb: number | null; usdPerMonth: number | null };
+    /** What `maxBudgetUsd` is compared against: compute plus any temporary storage with a known rate. */
+    worstCaseBudgetedUsd: number;
   };
+  /** Exactly what the budget guard covers, what it does not, and which costs have no known figure. */
+  budgetCoverage: { counted: string[]; notCounted: string[]; unknown: string[] };
   /** `null` means no measured estimate exists; it is never guessed. */
   timing: { preparation: QuoteRange | null; inference: QuoteRange | null; transfer: QuoteRange | null };
   disclosures: string[];
@@ -128,12 +137,37 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
   }
 
   const worstCaseComputeUsd = round((gpu.priceUsdPerHour + (cpu?.priceUsdPerHour ?? 0)) * hours);
-  if (worstCaseComputeUsd > input.maxBudgetUsd) {
+
+  // Storage: only rates the provider actually publishes are used; everything else is stated as unknown.
+  const rates = input.catalog.storageRates;
+  const machines = cpu ? 2 : 1;
+  const diskGb = input.cloud.ephemeralDiskGb;
+  const diskRate = rates?.containerDiskUsdPerGbMonth;
+  const temporaryUsd = diskRate !== undefined ? round(diskGb * machines * diskRate * (hours / HOURS_PER_MONTH)) : null;
+  const volumeRate = rates?.networkVolumeUsdPerGbMonth;
+  const volumeGb = persistent ? input.cloud.volumeGb : null;
+  const volumeMonthlyUsd = persistent && volumeRate !== undefined ? round(input.cloud.volumeGb * volumeRate) : null;
+  const worstCaseBudgetedUsd = round(worstCaseComputeUsd + (temporaryUsd ?? 0));
+
+  const counted = [`GPU${cpu ? " and preparation-CPU" : ""} compute at catalog rates for up to ${input.maxLifetimeSeconds}s each`];
+  const notCounted: string[] = [];
+  const unknown: string[] = [];
+  if (temporaryUsd !== null) counted.push(`container disk (${diskGb} GB x ${machines} machine${machines > 1 ? "s" : ""}) at the published rate`);
+  else {
+    notCounted.push(`container disk charges (${diskGb} GB x ${machines} machine${machines > 1 ? "s" : ""})`);
+    unknown.push("container disk rate is not published by the provider's catalog API");
+  }
+  if (persistent) {
+    notCounted.push(`retained network volume storage (${input.cloud.volumeGb} GB), billed monthly until deleted${volumeMonthlyUsd !== null ? `: about $${volumeMonthlyUsd}/month` : ""}`);
+    if (volumeMonthlyUsd === null) unknown.push("network volume rate is not published by the provider's catalog API");
+  }
+  notCounted.push("network transfer or any other provider fees", "charges for time beyond the lifetime limit if a machine is not terminated");
+  if (worstCaseBudgetedUsd > input.maxBudgetUsd) {
     throw rejected(
       "CLOUD_BUDGET_EXCEEDED",
-      `Worst-case compute cost $${worstCaseComputeUsd} (${gpu.name} at $${gpu.priceUsdPerHour}/h for up to ${input.maxLifetimeSeconds}s) exceeds the $${input.maxBudgetUsd} budget.`,
+      `Worst-case cost counted against the budget, $${worstCaseBudgetedUsd} (${gpu.name} at $${gpu.priceUsdPerHour}/h for up to ${input.maxLifetimeSeconds}s${temporaryUsd !== null ? " plus container disk" : ""}), exceeds the $${input.maxBudgetUsd} budget.`,
       "Raise --max-budget, lower --max-lifetime, or choose a cheaper GPU. The budget is a guard on this estimate, not a provider-enforced cap.",
-      { worstCaseComputeUsd, maxBudgetUsd: input.maxBudgetUsd },
+      { worstCaseBudgetedUsd, maxBudgetUsd: input.maxBudgetUsd },
     );
   }
 
@@ -162,7 +196,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     "Capacity and price are not reserved by this quote.",
   ];
   if (persistent) {
-    disclosures.push("A network volume is created or reused and kept after the run; its storage is billed until you delete it with `moldesk cloud cache delete`. The recurring rate is not published by the catalog and is unknown here.");
+    disclosures.push("A network volume is created or reused and kept after the run; its storage is billed until you delete it with `moldesk cloud cache delete`.");
   } else {
     disclosures.push("Model assets are downloaded again on every run; nothing is retained after cleanup.");
   }
@@ -182,7 +216,13 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     upload: { files: input.inputs.length, bytes: input.inputs.reduce((total, file) => total + file.sizeBytes, 0) },
     maxLifetimeSeconds: input.maxLifetimeSeconds,
     maxBudgetUsd: input.maxBudgetUsd,
-    cost: { worstCaseComputeUsd, storage: { recurring: persistent, usdPerMonth: null } },
+    cost: {
+      worstCaseComputeUsd,
+      temporaryStorage: { diskGb, machines, worstCaseUsd: temporaryUsd },
+      recurringStorage: { recurring: persistent, volumeGb, usdPerMonth: volumeMonthlyUsd },
+      worstCaseBudgetedUsd,
+    },
+    budgetCoverage: { counted, notCounted, unknown },
     timing: { preparation: null, inference: null, transfer: null },
     disclosures,
     bindings,

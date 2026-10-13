@@ -259,6 +259,103 @@ describe("worker server + client", () => {
   });
 });
 
+/** A body that yields `first` and then never delivers or ends (a stalled connection); like real fetch, aborting the request errors it. */
+function stalledBody(first: Uint8Array, signal?: AbortSignal | null): ReadableStream<Uint8Array> {
+  let sent = false;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+    },
+    pull(controller) {
+      if (!sent) {
+        sent = true;
+        controller.enqueue(first);
+        return undefined;
+      }
+      return new Promise<void>(() => undefined); // never resolves
+    },
+  });
+}
+
+describe("timeouts and cancellation while streaming", () => {
+  const payload = "0123456789".repeat(50);
+
+  async function finishedJob(overrides: Partial<ConstructorParameters<typeof WorkerClient>[0]>, wrap?: (real: typeof fetch) => typeof fetch) {
+    const { client } = await boot(writes({ "big.bin": payload }));
+    const setup = client();
+    const input = inputFile();
+    await setup.uploadInput(RUN, input);
+    await setup.start(wire(input));
+    await untilDone(setup);
+    const real = fetch;
+    return client({ ...overrides, ...(wrap ? { fetch: wrap(real) } : {}) });
+  }
+
+  it("recovers from a stalled download by resuming from the bytes already received", async () => {
+    const ranges: Array<string | null> = [];
+    let stalled = false;
+    const c = await finishedJob({ idleTimeoutMs: 400 }, (real) => async (input, init) => {
+      if (String(input).includes("/files/big.bin")) ranges.push(new Headers(init?.headers).get("range"));
+      const response = await real(input, init);
+      if (String(input).includes("/files/big.bin") && !stalled) {
+        stalled = true;
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        return new Response(stalledBody(bytes.subarray(0, 100), init?.signal), { status: 200 });
+      }
+      return response;
+    });
+    const out = tmp();
+    await c.collect(RUN, out);
+    expect(fs.readFileSync(path.join(out, "big.bin"), "utf8")).toBe(payload);
+    expect(ranges).toEqual([null, "bytes=100-"]);
+  });
+
+  it("gives up on a download that keeps stalling instead of hanging, and promotes nothing", async () => {
+    const c = await finishedJob({ idleTimeoutMs: 40 }, (real) => async (input, init) => {
+      const response = await real(input, init);
+      if (!String(input).includes("/files/big.bin")) return response;
+      return new Response(stalledBody(new Uint8Array(await response.arrayBuffer()).subarray(0, 10), init?.signal), { status: 200 });
+    });
+    const out = tmp();
+    const started = Date.now();
+    await expect(c.collect(RUN, out)).rejects.toMatchObject({ code: "CLOUD_TRANSFER_FAILED", message: expect.stringMatching(/stalled/) });
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(fs.readdirSync(out)).toEqual([]);
+  });
+
+  it("cancellation interrupts a stalled body immediately, not after the idle timeout", async () => {
+    const controller = new AbortController();
+    const c = await finishedJob({ idleTimeoutMs: 60_000 }, (real) => async (input, init) => {
+      const response = await real(input, init);
+      if (!String(input).includes("/files/big.bin")) return response;
+      return new Response(stalledBody(new Uint8Array(await response.arrayBuffer()).subarray(0, 10), init?.signal), { status: 200 });
+    });
+    const out = tmp();
+    setTimeout(() => controller.abort(), 30);
+    const started = Date.now();
+    await expect(c.collect(RUN, out, { signal: controller.signal })).rejects.toMatchObject({ code: "RUN_CANCELLED" });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(fs.readdirSync(out)).toEqual([]);
+  });
+
+  it("times out a JSON response whose body never finishes", async () => {
+    const { client } = await boot(writes({}));
+    const c = client({
+      requestTimeoutMs: 50,
+      fetch: async (_input, init) => new Response(stalledBody(new TextEncoder().encode('{"stage":'), init?.signal), { status: 200 }),
+    });
+    await expect(c.status(RUN)).rejects.toMatchObject({ code: "CLOUD_WORKER_TIMEOUT" });
+  });
+
+  it("a client-level signal cancels in-flight JSON requests too", async () => {
+    const controller = new AbortController();
+    const { client } = await boot(writes({}));
+    const c = client({ signal: controller.signal, requestTimeoutMs: 60_000, fetch: async (_input, init) => new Response(stalledBody(new TextEncoder().encode("{"), init?.signal), { status: 200 }) });
+    setTimeout(() => controller.abort(), 20);
+    await expect(c.status(RUN)).rejects.toMatchObject({ code: "RUN_CANCELLED" });
+  });
+});
+
 describe("validateInventory", () => {
   const entry = (p: string) => ({ path: p, sizeBytes: 1, sha256: "a".repeat(64) });
   it("rejects traversal, absolute, backslash, duplicate and malformed entries", () => {

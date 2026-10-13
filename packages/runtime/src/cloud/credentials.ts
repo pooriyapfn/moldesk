@@ -1,14 +1,13 @@
 import { createHmac } from "node:crypto";
-import fs from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
 import { MoldeskError } from "../providers.js";
 
 /**
- * Cloud API credentials. Lookup order is an explicit environment variable (also read from a `.env`
- * file in the working directory), then the operating system's credential store. There is no
- * plaintext-file fallback: if neither holds a key, the caller is told to connect one. Secrets are
- * never written to run records, the cloud journal, error messages or command arguments.
+ * Cloud API credentials. The OS credential store is the default. An explicit provider environment
+ * variable (e.g. RUNPOD_API_KEY) is accepted as a documented development override and takes
+ * precedence when set. Files such as `.env` are never read automatically, and there is no
+ * plaintext-file fallback: if neither source holds a key, the caller is told to connect one.
+ * Secrets are never written to run records, the cloud journal, error messages or command arguments.
  */
 
 export const KEYRING_SERVICE = "moldesk";
@@ -94,27 +93,7 @@ export function validateSecretShape(secret: string): void {
   }
 }
 
-/** Parses only the named variables from `.env`-style text; everything else in the file is ignored unread. */
-export function parseDotEnv(text: string, wanted: readonly string[]): Record<string, string> {
-  const found: Record<string, string> = {};
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!match || !wanted.includes(match[1]!)) continue;
-    let value = match[2]!.trim();
-    const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.endsWith(quote) && value.length >= 2) {
-      value = value.slice(1, -1);
-    } else {
-      value = value.replace(/\s+#.*$/, "");
-    }
-    if (value) found[match[1]!] = value;
-  }
-  return found;
-}
-
-export type CredentialSource = "env" | "dotenv" | "keyring";
+export type CredentialSource = "env" | "keyring";
 
 export interface ResolvedCredential {
   /** The secret itself. Hand it to a client; never log or persist it. */
@@ -124,20 +103,17 @@ export interface ResolvedCredential {
 
 export interface CredentialStoreOptions {
   backend?: SecretBackend;
+  /** Development override source. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
-  /** Directory whose `.env` is consulted. Defaults to the process working directory. */
-  dotEnvDir?: string;
 }
 
 export class CredentialStore {
   private readonly backend: SecretBackend;
   private readonly env: NodeJS.ProcessEnv;
-  private readonly dotEnvDir: string;
 
   constructor(options: CredentialStoreOptions = {}) {
     this.backend = options.backend ?? createKeyringBackend();
     this.env = options.env ?? process.env;
-    this.dotEnvDir = options.dotEnvDir ?? process.cwd();
   }
 
   private envVar(provider: string): string {
@@ -153,14 +129,11 @@ export class CredentialStore {
     return `${provider}:${accountRef}`;
   }
 
-  /** Environment first, then `.env`, then the OS store. Returns null when nothing is configured. */
+  /** Explicit environment override first, then the OS store. Returns null when nothing is configured. */
   async resolve(provider: string, accountRef: string = DEFAULT_ACCOUNT_REF): Promise<ResolvedCredential | null> {
     const name = this.envVar(provider);
     const fromEnv = this.env[name];
     if (fromEnv) return this.checked({ key: fromEnv, source: "env" });
-
-    const dotEnvKey = this.readDotEnv(name);
-    if (dotEnvKey) return this.checked({ key: dotEnvKey, source: "dotenv" });
 
     const stored = await this.backend.get(KEYRING_SERVICE, this.account(provider, accountRef));
     return stored ? this.checked({ key: stored, source: "keyring" }) : null;
@@ -173,7 +146,7 @@ export class CredentialStore {
       throw new MoldeskError({
         code: "CREDENTIAL_MISSING",
         message: `No ${provider} API key is configured.`,
-        remediation: `Run \`moldesk cloud connect ${provider}\`, or set ${this.envVar(provider)} in the environment or a .env file.`,
+        remediation: `Run \`moldesk cloud connect ${provider}\`, or set ${this.envVar(provider)} in the environment (development override).`,
       });
     }
     return resolved;
@@ -197,7 +170,7 @@ export class CredentialStore {
     await this.backend.set(KEYRING_SERVICE, this.account(provider, accountRef), key);
   }
 
-  /** Removes the stored key. Environment and `.env` keys are the user's own and are never touched. */
+  /** Removes the stored key. An environment variable is the user's own and is never touched. */
   async delete(provider: string, accountRef: string = DEFAULT_ACCOUNT_REF): Promise<boolean> {
     this.envVar(provider);
     return this.backend.delete(KEYRING_SERVICE, this.account(provider, accountRef));
@@ -206,17 +179,6 @@ export class CredentialStore {
   private checked(credential: ResolvedCredential): ResolvedCredential {
     validateSecretShape(credential.key);
     return credential;
-  }
-
-  private readDotEnv(name: string): string | undefined {
-    const file = path.join(this.dotEnvDir, ".env");
-    let text: string;
-    try {
-      text = fs.readFileSync(file, "utf8");
-    } catch {
-      return undefined;
-    }
-    return parseDotEnv(text, [name])[name];
   }
 }
 

@@ -326,8 +326,8 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     await (await this.clientFor(handle)).cancel(handle.runId);
   }
 
-  async collect(handle: JobHandle, localOutputDir: string): Promise<ArtifactInventory> {
-    return (await this.clientFor(handle)).collect(handle.runId, localOutputDir);
+  async collect(handle: JobHandle, localOutputDir: string, options: { signal?: AbortSignal } = {}): Promise<ArtifactInventory> {
+    return (await this.clientFor(handle)).collect(handle.runId, localOutputDir, options);
   }
 
   async release(handle: JobHandle | { runId: string }, context: Pick<BackendContext, "ledger">): Promise<void> {

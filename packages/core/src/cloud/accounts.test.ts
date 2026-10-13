@@ -34,7 +34,7 @@ function sandbox() {
     },
   };
   const paths = getMoldeskPaths({ MOLDESK_HOME: home });
-  const store = (env: NodeJS.ProcessEnv = {}) => new CredentialStore({ backend, env, dotEnvDir: home });
+  const store = (env: NodeJS.ProcessEnv = {}) => new CredentialStore({ backend, env });
   return { paths, data, store };
 }
 

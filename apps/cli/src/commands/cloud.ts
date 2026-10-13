@@ -111,7 +111,7 @@ export function registerCloudCommand(program: Command, deps: CloudAccountDeps = 
         else {
           console.log(`Connected to ${provider}. Key stored in the OS credential store.`);
           if (result.overriddenBy) {
-            console.log(`Note: a key from ${result.overriddenBy === "env" ? "the environment" : "a .env file"} still takes precedence over the stored key.`);
+            console.log(`Note: a key from the environment still takes precedence over the stored key.`);
           }
         }
       } catch (error) {
@@ -121,7 +121,7 @@ export function registerCloudCommand(program: Command, deps: CloudAccountDeps = 
 
   cloud
     .command("disconnect <provider>")
-    .description("Remove the stored API key (environment and .env keys are left alone)")
+    .description("Remove the stored API key (an environment variable is left alone)")
     .option("--json", "print the result as JSON")
     .action(async (provider: string, options: { json?: boolean }) => {
       try {

@@ -62,7 +62,6 @@ export {
   PROVIDER_ENV_VARS,
   createKeyringBackend,
   credentialFingerprint,
-  parseDotEnv,
   redactSecrets,
   validateSecretShape,
 } from "./cloud/credentials.js";
