@@ -17,7 +17,7 @@ export type {
   SystemReportDeps,
   ToolCapability,
 } from "@moldesk/runtime";
-export { listAvailableModels } from "@moldesk/registry";
+export { listAvailableModels, parseManifest } from "@moldesk/registry";
 export type {
   AssetSpec,
   CommandSpec,

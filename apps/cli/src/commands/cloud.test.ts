@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
-import { CloudJournal, CredentialStore, MoldeskError, getMoldeskPaths, type CloudProvider, type SecretBackend } from "@moldesk/core";
+import { CloudJournal, CredentialStore, MoldeskError, getMoldeskPaths, type CloudProvider, type CloudRunDeps, type SecretBackend } from "@moldesk/core";
 import { cloudExitCode, registerCloudCommand } from "./cloud.js";
 
 const KEY = "rpa_TESTKEY0123456789";
@@ -151,6 +151,77 @@ describe("cloud commands", () => {
     expect(printed).toContain("podX");
     expect(printed).toContain("Other resources on the account (not managed by MoleculeDesk): 0");
     expect(process.exitCode).toBe(13);
+  });
+});
+
+describe("recover and cache commands", () => {
+  const volumes = new Map<string, { id: string; name: string; sizeGb: number; dataCenterId: string; type: string }>();
+  const deleted: string[] = [];
+  function runDeps(): CloudRunDeps {
+    const provider = {
+      name: "runpod",
+      listVolumes: async () => [...volumes.values()],
+      getVolume: async (id: string) => volumes.get(id) ?? null,
+      deleteVolume: async (id: string) => {
+        volumes.delete(id);
+        deleted.push(id);
+        return { id, alreadyAbsent: false };
+      },
+    } as unknown as CloudProvider;
+    return { provider, paths: getMoldeskPaths({ MOLDESK_HOME: home }), accountScope: "acct" };
+  }
+  async function exec(confirmAnswer: boolean, ...args: string[]) {
+    const program = new Command();
+    program.exitOverride();
+    registerCloudCommand(program, {}, { runDeps: async () => runDeps(), confirm: async () => confirmAnswer });
+    await program.parseAsync(["cloud", ...args], { from: "user" });
+  }
+  function seedCache() {
+    volumes.clear();
+    deleted.length = 0;
+    volumes.set("vol1", { id: "vol1", name: "n", sizeGb: 40, dataCenterId: "DC-1", type: "STANDARD" });
+    const journal = CloudJournal.open(getMoldeskPaths({ MOLDESK_HOME: home }));
+    const intent = journal.recordResourceIntent({ role: "volume" });
+    journal.recordResourceCreated(intent.intentId, "vol1");
+    journal.upsertCache({ accountScope: "acct", datacenterId: "DC-1", volumeId: "vol1", model: "boltz", modelVersion: "2.2.1", cacheKey: "k".repeat(64), layoutRevision: "1", manifestDigest: "m", cachePath: "/workspace/x", sizeBytes: null, checksumManifestDigest: null });
+    journal.close();
+  }
+
+  it("cache list reports empty and populated states", async () => {
+    await exec(true, "cache", "list");
+    expect(out.join("\n")).toContain("No retained caches.");
+    out.length = 0;
+    seedCache();
+    await exec(true, "cache", "list");
+    expect(out.join("\n")).toMatch(/boltz 2\.2\.1\s+PREPARING\s+DC-1\s+volume vol1 \(40 GB, billed\)/);
+  });
+
+  it("cache delete shows exactly what will go and deletes nothing when declined", async () => {
+    seedCache();
+    await exec(false, "cache", "delete", "boltz");
+    expect(err.join("\n")).toContain("permanently deletes 1 volume(s)");
+    expect(err.join("\n")).toContain("vol1  DC-1  40 GB");
+    expect(deleted).toEqual([]);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("cache delete --yes deletes the owned volume and confirms", async () => {
+    seedCache();
+    await exec(false, "cache", "delete", "boltz", "--yes");
+    expect(out.join("\n")).toContain("Deleted volume vol1.");
+    expect(deleted).toEqual(["vol1"]);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("cache delete for a model with no cache is a no-op", async () => {
+    await exec(true, "cache", "delete", "unknown-model");
+    expect(out.join("\n")).toContain("No retained cache for unknown-model.");
+  });
+
+  it("recover rejects an unknown run with a clear code", async () => {
+    await exec(true, "recover", "2026-01-01T00-00-00-000Z-00000000-0000-0000-0000-000000000000", "--json");
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ status: "error", code: "CLOUD_RUN_UNKNOWN" });
+    expect(process.exitCode).toBe(2);
   });
 });
 

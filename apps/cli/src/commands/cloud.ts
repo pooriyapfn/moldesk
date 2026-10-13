@@ -2,11 +2,18 @@ import type { Command } from "commander";
 import {
   MoldeskError,
   connectCloudProvider,
+  createRunpodCloudDeps,
   disconnectCloudProvider,
+  executeCloudCacheDeletion,
   getCloudStatus,
+  listCloudCaches,
   listCloudResources,
+  planCloudCacheDeletion,
+  recoverCloudRun,
   type CloudAccountDeps,
+  type CloudRunDeps,
 } from "@moldesk/core";
+import { confirm } from "../utils/confirm.js";
 import { readSecret } from "../utils/secret-input.js";
 
 /** Cloud exit codes live beside the run codes (0/7/8 outcomes, 2-5 usage). */
@@ -21,7 +28,31 @@ const CLOUD_EXIT_CODES: Record<string, number> = {
   CLOUD_RATE_LIMITED: 12,
   CLOUD_CAPACITY_UNAVAILABLE: 12,
   CLOUD_UNAVAILABLE: 12,
+  CLOUD_BUDGET_REQUIRED: 2,
+  CLOUD_LIFETIME_REQUIRED: 2,
+  CLOUD_BUDGET_EXCEEDED: 2,
+  CLOUD_GPU_UNKNOWN: 2,
+  CLOUD_GPU_INELIGIBLE: 2,
+  CLOUD_OPTIONS_REQUIRED: 2,
+  CLOUD_OPTIONS_WITHOUT_CLOUD: 2,
+  CLOUD_RUNTIME_UNSUPPORTED: 2,
+  CLOUD_COMPANION_INPUTS_UNSUPPORTED: 2,
+  CLOUD_MODEL_UNSUPPORTED: 4,
+  // Consent and safety refusals: nothing was provisioned.
+  CLOUD_APPROVAL_MISMATCH: 14,
+  CLOUD_APPROVAL_EXPIRED: 14,
+  CLOUD_REQUOTE_REQUIRED: 14,
+  CLOUD_GUARD_UNAVAILABLE: 14,
+  CLOUD_WORKER_BUNDLE_UNCONFIGURED: 14,
+  CLOUD_WORKER_BUNDLE_INVALID: 14,
+  CLOUD_RUN_UNKNOWN: 2,
+  CLOUD_CACHE_IN_USE: 2,
 };
+
+/** Exit code for a cloud error code that is more specific than "run failed" (7), or undefined. */
+export function cloudExitCodeForCode(code: string | undefined): number | undefined {
+  return code !== undefined && code in CLOUD_EXIT_CODES && CLOUD_EXIT_CODES[code]! >= 11 ? CLOUD_EXIT_CODES[code] : undefined;
+}
 
 export function cloudExitCode(error: unknown): number {
   return error instanceof MoldeskError && error.code in CLOUD_EXIT_CODES ? CLOUD_EXIT_CODES[error.code]! : 10;
@@ -46,7 +77,15 @@ async function readKeyFromStdin(): Promise<string> {
   return data.replace(/\r?\n[\s\S]*$/, "");
 }
 
-export function registerCloudCommand(program: Command, deps: CloudAccountDeps = {}): void {
+export interface CloudCommandHooks {
+  /** Resolves provider/backend wiring for recover and cache commands; injected for tests. */
+  runDeps?: () => Promise<CloudRunDeps>;
+  confirm?: (question: string) => Promise<boolean>;
+}
+
+export function registerCloudCommand(program: Command, deps: CloudAccountDeps = {}, hooks: CloudCommandHooks = {}): void {
+  const resolveRunDeps = hooks.runDeps ?? (() => createRunpodCloudDeps({ paths: deps.paths, store: deps.store }));
+  const ask = hooks.confirm ?? ((question: string) => confirm(question));
   const cloud = program.command("cloud").description("Connect and inspect cloud compute accounts");
 
   cloud
@@ -153,6 +192,87 @@ export function registerCloudCommand(program: Command, deps: CloudAccountDeps = 
           console.log(`Journal reconciled: ${changed.adopted.length} adopted, ${changed.abandoned.length} never created, ${changed.vanished.length} already gone.`);
         }
         if (listing.orphaned.length > 0 || listing.cleanupOwed.length > 0) process.exitCode = 13;
+      } catch (error) {
+        report(error, options.json);
+      }
+    });
+
+  cloud
+    .command("recover <run-id>")
+    .description("Resume transfer and cleanup for an interrupted or failed cloud run (never restarts inference)")
+    .option("--terminate", "also terminate a machine whose job is still running (loses unfinished results)")
+    .option("--json", "print the result as JSON")
+    .action(async (runId: string, options: { terminate?: boolean; json?: boolean }) => {
+      try {
+        const runDeps = await resolveRunDeps();
+        const result = await recoverCloudRun(runId, runDeps, { terminateRunning: options.terminate });
+        if (options.json) console.log(JSON.stringify(result, null, 2));
+        else {
+          console.log(`Run ${result.runId}: ${result.status}${result.collected ? " (results downloaded and verified)" : ""}.`);
+          if (result.cleanup.confirmed) console.log("Cloud resources: confirmed deleted.");
+          else if (result.status === "running") console.log("The job is still running; its machine was left alone. Re-run with --terminate to stop it.");
+          else console.error(`Cleanup still pending: ${result.cleanup.pending.map((resource) => `${resource.role} ${resource.providerId}`).join(", ")}.`);
+        }
+        if (!result.cleanup.confirmed) process.exitCode = 13;
+      } catch (error) {
+        report(error, options.json);
+      }
+    });
+
+  const cache = cloud.command("cache").description("Inspect and delete retained model caches (billed network volumes)");
+
+  cache
+    .command("list")
+    .description("List retained caches and whether their volumes still exist")
+    .option("--json", "print the result as JSON")
+    .action(async (options: { json?: boolean }) => {
+      try {
+        const listing = await listCloudCaches(await resolveRunDeps());
+        if (options.json) return void console.log(JSON.stringify(listing, null, 2));
+        if (listing.length === 0) return void console.log("No retained caches.");
+        for (const entry of listing) {
+          const volume = entry.volumeExists === undefined ? "volume status unknown" : entry.volumeExists ? `volume ${entry.cache.volumeId}${entry.volumeSizeGb ? ` (${entry.volumeSizeGb} GB, billed)` : ""}` : "volume no longer exists";
+          console.log(`${entry.cache.model} ${entry.cache.modelVersion}  ${entry.cache.state}  ${entry.cache.datacenterId}  ${volume}`);
+        }
+      } catch (error) {
+        report(error, options.json);
+      }
+    });
+
+  cache
+    .command("delete <model>")
+    .description("Delete the retained volume(s) holding a model's cache (billing stops)")
+    .option("--yes", "skip the confirmation prompt")
+    .option("--json", "print the result as JSON")
+    .action(async (model: string, options: { yes?: boolean; json?: boolean }) => {
+      try {
+        const runDeps = await resolveRunDeps();
+        const plan = await planCloudCacheDeletion(model, runDeps);
+        if (plan.volumes.length === 0) {
+          if (options.json) console.log(JSON.stringify({ status: "nothing-to-delete", model }, null, 2));
+          else console.log(`No retained cache for ${model}.`);
+          return;
+        }
+        if (!options.json) {
+          console.error(`This permanently deletes ${plan.volumes.length} volume(s) and everything on them:`);
+          for (const volume of plan.volumes) console.error(`  ${volume.volumeId}  ${volume.datacenterId}${volume.sizeGb ? `  ${volume.sizeGb} GB` : ""}`);
+          for (const blocker of plan.blockers) console.error(`  Blocked: ${blocker}`);
+        }
+        if (plan.blockers.length === 0 && !options.yes) {
+          if (!(await ask("Delete these volumes?"))) {
+            if (options.json) console.log(JSON.stringify({ status: "declined", plan }, null, 2));
+            else console.error("Not deleted.");
+            process.exitCode = 2;
+            return;
+          }
+        }
+        const result = await executeCloudCacheDeletion(plan, runDeps);
+        if (options.json) console.log(JSON.stringify({ status: result.failed.length > 0 ? "partial" : "deleted", ...result }, null, 2));
+        else {
+          for (const item of result.deleted) console.log(`Deleted volume ${item.volumeId}.`);
+          for (const item of result.failed) console.error(`Could not delete ${item.volumeId}: ${item.reason}`);
+        }
+        if (result.failed.length > 0) process.exitCode = 12;
       } catch (error) {
         report(error, options.json);
       }
