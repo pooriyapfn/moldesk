@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MoldeskError } from "./errors.js";
 import { parseManifest } from "./loader.js";
-import { commandSpecSchema } from "./schema.js";
+import { commandSpecSchema, isCloudEligible } from "./schema.js";
 
 function baseManifest(): Record<string, unknown> {
   return {
@@ -357,5 +357,69 @@ describe("parseManifest", () => {
       expect(e.remediation).toBeTruthy();
       expect(e.details?.["manifestPath"]).toBe("models/bad/manifest.yaml");
     }
+  });
+});
+
+describe("cloud capability block", () => {
+  const DIGEST = "a".repeat(64);
+  const cloud = () => ({
+    schemaVersion: 1,
+    platform: "linux-x64",
+    images: {
+      gpu: `registry.example/moldesk/worker-gpu@sha256:${DIGEST}`,
+      cpu: `registry.example/moldesk/worker-cpu@sha256:${DIGEST}`,
+    },
+    minVramGb: 24,
+    minRamGb: 32,
+    ephemeralDiskGb: 40,
+    volumeGb: 40,
+    assetLayoutRevision: "1",
+    cpuAssetPreparation: true,
+  });
+  const withCloud = (block: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ ...baseManifest(), ...extra, cloud: block });
+
+  it("accepts a complete block and marks the model eligible; absence means ineligible", () => {
+    const eligible = parseManifest(withCloud(cloud()), "x/manifest.yaml");
+    expect(isCloudEligible(eligible)).toBe(true);
+    expect(eligible.cloud?.images.gpu).toContain("@sha256:");
+    expect(isCloudEligible(parseManifest(baseManifest(), "x/manifest.yaml"))).toBe(false);
+  });
+
+  it("rejects tag-only or malformed image references", () => {
+    for (const gpu of ["registry.example/moldesk/worker:latest", "worker@sha256:" + DIGEST, `Registry.Example/x@sha256:${DIGEST}`, `registry.example/x@sha256:${"a".repeat(63)}`]) {
+      expect(() => parseManifest(withCloud({ ...cloud(), images: { ...cloud().images, gpu } }), "x/manifest.yaml")).toThrow(/pinned by digest/);
+    }
+  });
+
+  it("is strict: unknown keys, other platforms and missing fields are rejected", () => {
+    expect(() => parseManifest(withCloud({ ...cloud(), command: "rm -rf /" }), "x/manifest.yaml")).toThrow();
+    expect(() => parseManifest(withCloud({ ...cloud(), platform: "darwin-arm64" }), "x/manifest.yaml")).toThrow();
+    const { volumeGb: _omit, ...missing } = cloud();
+    expect(() => parseManifest(withCloud(missing), "x/manifest.yaml")).toThrow();
+    expect(() => parseManifest(withCloud({ ...cloud(), minVramGb: 0 }), "x/manifest.yaml")).toThrow();
+    expect(() => parseManifest(withCloud({ ...cloud(), schemaVersion: 2 }), "x/manifest.yaml")).toThrow();
+  });
+
+  it("requires a python runtime entry that applies to linux-x64", () => {
+    const darwinOnly = {
+      runtimes: [{ kind: "python", python: "3.11", installer: "uv", platforms: ["darwin-arm64"], requirements: [{ name: "torch" }] }],
+    };
+    expect(() => parseManifest(withCloud(cloud(), darwinOnly), "x/manifest.yaml")).toThrow(/python runtime entry that applies to linux-x64/);
+  });
+
+  it("requires cloud.minVramGb to cover the linux runtime's own floor", () => {
+    const runtimes = [
+      { kind: "python", python: "3.11", installer: "uv", platforms: ["linux-x64"], nvidiaGpu: "required", minVramGb: 40, requirements: [{ name: "torch" }] },
+    ];
+    expect(() => parseManifest(withCloud(cloud(), { runtimes }), "x/manifest.yaml")).toThrow(/cloud\.minVramGb \(24\)/);
+    expect(parseManifest(withCloud({ ...cloud(), minVramGb: 40 }, { runtimes }), "x/manifest.yaml").cloud?.minVramGb).toBe(40);
+  });
+
+  it("rejects disk or volume sizes smaller than the declared asset bytes", () => {
+    const GIB = 1024 ** 3;
+    const assets = [{ id: "w", url: "https://example.com/w.bin", sha256: "b".repeat(64), target: "w.bin", sizeBytes: 50 * GIB }];
+    expect(() => parseManifest(withCloud({ ...cloud(), volumeGb: 60 }, { assets }), "x/manifest.yaml")).toThrow(/cloud\.ephemeralDiskGb \(40 GB\)/);
+    expect(() => parseManifest(withCloud({ ...cloud(), ephemeralDiskGb: 60 }, { assets }), "x/manifest.yaml")).toThrow(/cloud\.volumeGb \(40 GB\)/);
+    expect(parseManifest(withCloud({ ...cloud(), ephemeralDiskGb: 60, volumeGb: 60 }, { assets }), "x/manifest.yaml").cloud?.volumeGb).toBe(60);
   });
 });

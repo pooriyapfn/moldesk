@@ -204,6 +204,49 @@ const assetSchema = z
   })
   .strict();
 
+/** Registry/name reference pinned by digest (`ghcr.io/org/img@sha256:<64 hex>`); a bare tag is never accepted. */
+const digestPinnedImage = z
+  .string()
+  .regex(
+    /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::\d+)?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[0-9a-f]{64}$/,
+    "must be a lowercase image reference pinned by digest, e.g. registry.example/org/image@sha256:<64 hex>",
+  );
+
+const cloudAssetLayoutRevision = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/, "must be a short safe token, e.g. \"1\"");
+
+/**
+ * Opt-in remote execution capability. Versioned independently of the manifest so the cloud contract
+ * can evolve without a manifest schema bump. Every value here must come from a live validation of
+ * that model on that image; a manifest without this block is never run in the cloud. Reuses the
+ * manifest's own `assets`, `runtimes` and `source`; it adds only what the cloud path cannot derive.
+ */
+const cloudSpecSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    platform: z.literal("linux-x64"),
+    images: z
+      .object({
+        /** Generic CUDA worker image used for inference. */
+        gpu: digestPinnedImage,
+        /** Generic CPU worker image used only to prepare assets on a network volume. */
+        cpu: digestPinnedImage,
+      })
+      .strict(),
+    minVramGb: z.number().positive(),
+    minRamGb: z.number().positive(),
+    /** Container disk for one ephemeral job: runtime environment, inputs and outputs (and assets when ephemeral). */
+    ephemeralDiskGb: z.number().int().positive(),
+    /** Persistent network volume holding the raw object cache plus materialized assets. */
+    volumeGb: z.number().int().positive(),
+    /** Bump when the on-volume asset layout changes; invalidates persistent caches. */
+    assetLayoutRevision: cloudAssetLayoutRevision,
+    /** True when assets can be prepared on a CPU-only Pod without Python or CUDA. */
+    cpuAssetPreparation: z.boolean(),
+  })
+  .strict();
+
 const inputSpecSchema = z
   .object({
     formats: z.array(z.string().min(1)).min(1),
@@ -275,6 +318,7 @@ export const modelManifestV1Schema = z
     runtimes: z.array(runtimeSpecSchema).min(1),
     hardware: hardwareSchema,
     assets: z.array(assetSchema).optional(),
+    cloud: cloudSpecSchema.optional(),
     input: inputSpecSchema,
     outputs: z.array(outputSpecSchema).min(1),
   })
@@ -306,6 +350,42 @@ export const modelManifestV1Schema = z
               path: ["runtimes", runtimeIndex, "buildAfter"],
             });
           }
+        }
+      }
+    }
+    if (val.cloud) {
+      const cloud = val.cloud;
+      const remoteRuntimes = val.runtimes.filter(
+        (runtime): runtime is Extract<typeof runtime, { kind: "python" }> =>
+          runtime.kind === "python" && (runtime.platforms === undefined || runtime.platforms.includes(cloud.platform)),
+      );
+      if (remoteRuntimes.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `cloud requires a python runtime entry that applies to ${cloud.platform}`,
+          path: ["cloud", "platform"],
+        });
+      }
+      for (const runtime of remoteRuntimes) {
+        if (runtime.minVramGb !== undefined && cloud.minVramGb < runtime.minVramGb) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `cloud.minVramGb (${cloud.minVramGb}) must be at least the ${cloud.platform} runtime's minVramGb (${runtime.minVramGb})`,
+            path: ["cloud", "minVramGb"],
+          });
+        }
+      }
+      // Lower bound only: compressed asset bytes alone must fit. Extraction and runtime headroom
+      // come from live measurement, not from this check.
+      const assetBytes = (val.assets ?? []).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
+      const GIB = 1024 ** 3;
+      for (const field of ["ephemeralDiskGb", "volumeGb"] as const) {
+        if (cloud[field] * GIB < assetBytes) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `cloud.${field} (${cloud[field]} GB) is smaller than the manifest's declared asset bytes (${(assetBytes / GIB).toFixed(2)} GiB)`,
+            path: ["cloud", field],
+          });
         }
       }
     }
@@ -374,8 +454,14 @@ export type DockerRuntimeSpec = z.infer<typeof dockerRuntimeSchema>;
 export type RuntimeSpec = z.infer<typeof runtimeSpecSchema>;
 export type HardwareRequirements = z.infer<typeof hardwareSchema>;
 export type AssetSpec = z.infer<typeof assetSchema>;
+export type CloudSpec = z.infer<typeof cloudSpecSchema>;
 export type InputSpec = z.infer<typeof inputSpecSchema>;
 export type OutputSpec = z.infer<typeof outputSpecSchema>;
 export type SourceSpec = z.infer<typeof sourceSchema>;
 export type ModelManifestV1 = z.infer<typeof modelManifestV1Schema>;
 export type CommandSpec = z.infer<typeof commandSpecSchema>;
+
+/** A manifest is cloud-eligible only by declaring a `cloud` block; there is no implicit eligibility. */
+export function isCloudEligible(manifest: ModelManifestV1): manifest is ModelManifestV1 & { cloud: CloudSpec } {
+  return manifest.cloud !== undefined;
+}

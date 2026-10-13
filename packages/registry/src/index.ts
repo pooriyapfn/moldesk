@@ -3,10 +3,12 @@ export type { MoldeskErrorData } from "./errors.js";
 export {
   allowedCommandTokens,
   commandSpecSchema,
+  isCloudEligible,
   modelManifestV1Schema,
 } from "./schema.js";
 export type {
   AssetSpec,
+  CloudSpec,
   CommandSpec,
   HardwareRequirements,
   InputSpec,
