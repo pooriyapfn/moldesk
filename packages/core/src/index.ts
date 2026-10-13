@@ -4,7 +4,10 @@ export {
   isImageCachedLocally,
   pullDockerImage,
   probeDockerGpuAccess,
+  CredentialStore,
+  getMoldeskPaths,
 } from "@moldesk/runtime";
+export type { CloudPod, CloudProvider, CloudVolume, SecretBackend } from "@moldesk/runtime";
 export type {
   DiskInfo,
   DockerCapability,
@@ -77,6 +80,20 @@ export type {
   ProviderResourceView,
   ReconciliationReport,
 } from "./cloud/state.js";
+export {
+  connectCloudProvider,
+  defaultProviderFactory,
+  disconnectCloudProvider,
+  getCloudStatus,
+  listCloudResources,
+} from "./cloud/accounts.js";
+export type {
+  CloudAccountDeps,
+  CloudProviderFactory,
+  CloudResourceListing,
+  CloudStatus,
+  ConnectResult,
+} from "./cloud/accounts.js";
 export { runModel } from "./run.js";
 export type { RunArtifact, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
 

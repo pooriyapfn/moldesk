@@ -185,6 +185,12 @@ export class CredentialStore {
     return { source: resolved?.source ?? "none" };
   }
 
+  /** Shape-check a candidate key for a supported provider without storing it. */
+  async validate(provider: string, key: string): Promise<void> {
+    this.envVar(provider);
+    validateSecretShape(key);
+  }
+
   async set(provider: string, key: string, accountRef: string = DEFAULT_ACCOUNT_REF): Promise<void> {
     this.envVar(provider);
     validateSecretShape(key);

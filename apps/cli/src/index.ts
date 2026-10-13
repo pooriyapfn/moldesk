@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { VERSION } from "@moldesk/core";
+import { registerCloudCommand } from "./commands/cloud.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerListCommand } from "./commands/list.js";
 import { registerInstallCommand } from "./commands/install.js";
@@ -22,6 +23,7 @@ registerInstallCommand(program);
 registerUninstallCommand(program);
 registerRunCommand(program);
 registerViewCommand(program);
+registerCloudCommand(program);
 registerVisualizerCommand(program);
 
 program.parse();
