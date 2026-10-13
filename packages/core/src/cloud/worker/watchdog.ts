@@ -1,8 +1,9 @@
 /**
- * In-Pod deadline watchdog (layer 1 of the lifetime guard). It terminates the Pod it runs in at the
- * approved deadline using the Pod-scoped key Runpod injects (RUNPOD_API_KEY / RUNPOD_POD_ID). That
- * key was observed to terminate only its own Pod. It cannot help when the container never boots, so
- * an independent external scheduler remains required; see docs/runpod-spike-findings.md.
+ * In-Pod deadline watchdog. It terminates the Pod it runs in at the approved deadline using the
+ * Pod-scoped key Runpod injects (RUNPOD_API_KEY / RUNPOD_POD_ID), which was observed to terminate
+ * only its own Pod. Best effort only: it cannot help when the container never boots or the key is
+ * not injected, and its expiry behavior is unverified (docs/runpod-spike-findings.md). The user is
+ * told, before approving, that automatic shutdown is not guaranteed.
  */
 export interface WatchdogOptions {
   deadlineAt: string;

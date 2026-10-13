@@ -29,7 +29,6 @@ import {
   writeRunRecord,
 } from "../run-lifecycle.js";
 import type { RunCompute, RunModelResult, RunRecord } from "../run.js";
-import type { DeadlineGuard } from "./guard.js";
 import { assertApprovalValid, buildQuote, type CloudApproval, type CloudQuote } from "./quote.js";
 import { CloudJournal, type CloudCachePolicy, type CloudJobStage, type CloudResourceRecord, type ProviderResourceView } from "./state.js";
 
@@ -71,7 +70,6 @@ export interface CloudRunDeps {
   paths?: MoldeskPaths;
   /** Required by `runCloudModel`; `planCloudRun` does not provision. */
   backend?: ExecutionBackend;
-  guard?: DeadlineGuard;
   /** Non-secret scope identifying the provider account (credential fingerprint or account id). */
   accountScope?: string;
   journal?: CloudJournal;
@@ -328,8 +326,8 @@ export async function confirmRunResourcesGone(
  * verified before the report is generated, and cleanup failure never discards a valid result.
  */
 export async function runCloudModel(modelName: string, inputPath: string, options: CloudRunModelOptions, deps: CloudRunDeps): Promise<RunModelResult> {
-  const { backend, guard } = deps;
-  if (!backend || !guard) throw failure("CLOUD_BACKEND_MISSING", "Cloud execution is not configured.", "Provide an execution backend and deadline guard.");
+  const { backend } = deps;
+  if (!backend) throw failure("CLOUD_BACKEND_MISSING", "Cloud execution is not configured.", "Provide an execution backend.");
   const paths = deps.paths ?? getMoldeskPaths();
   const now = deps.now ?? (() => new Date());
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -388,6 +386,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       gpuId: quote.gpu.id,
       resources: [],
       cleanup: "confirmed",
+      acknowledgedRisks: [...options.cloud.approval.acknowledged],
     };
     record.compute = compute;
     const persist = (): void => writeRunRecord(runDirPath, record);
@@ -440,18 +439,6 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       deadlineAt,
       manifestDigest: digest(plan.manifest),
     });
-
-    // --- Deadline guard BEFORE any paid compute. Refusal here means nothing was provisioned. ---
-    let guardId: string | undefined;
-    try {
-      guardId = (await guard.register({ runId: dirs.runId, provider: deps.provider.name, clientId: journal.clientId, deadlineAt })).id;
-      journal.updateJob(dirs.runId, { guardId });
-    } catch (error) {
-      const info = toErrorInfo(error, "CLOUD_GUARD_UNAVAILABLE");
-      abort(info.code, info.message);
-      journal.updateJob(dirs.runId, { stage: "done", status: "failed", error: info });
-      return finish();
-    }
 
     const job: ApprovedJob = {
       version: 1,
@@ -601,7 +588,6 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       .filter((resource) => resource.providerId)
       .map((resource) => ({ role: resource.role, providerId: resource.providerId! }));
     compute.cleanup = cleanup.confirmed ? "confirmed" : "pending";
-    if (cleanup.confirmed && guardId) await guard.disarm(guardId).catch(() => undefined);
 
     journal.updateJob(dirs.runId, {
       stage: "done",

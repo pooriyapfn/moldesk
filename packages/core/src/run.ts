@@ -99,6 +99,8 @@ export interface RunCompute {
   dependencyFreeze?: string[];
   sourceRevision?: string;
   cleanup: "confirmed" | "pending";
+  /** Warnings the user explicitly acknowledged before approval, e.g. "lifetime-risk". */
+  acknowledgedRisks?: string[];
   workerLogCursor?: number;
   /** `complete: false` means the worker evicted log chunks before they could be fetched (bounded tail). */
   logs?: { complete: boolean; lostChunks: number };

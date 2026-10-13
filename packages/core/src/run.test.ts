@@ -240,7 +240,7 @@ describe("runModel", () => {
   it("dispatches remote runs before any local installation lookup and rejects mixed or incomplete options", async () => {
     const paths = tempPaths();
     const inputPath = writeInputFixture(paths.home);
-    const cloud = { cachePolicy: "ephemeral" as const, maxBudgetUsd: 1, maxLifetimeSeconds: 60, quote: {} as never, approval: { quoteId: "q", approvedAt: "t" } };
+    const cloud = { cachePolicy: "ephemeral" as const, maxBudgetUsd: 1, maxLifetimeSeconds: 60, quote: {} as never, approval: { quoteId: "q", approvedAt: "t", acknowledged: ["lifetime-risk" as const] } };
     await expect(runModel("proteinmpnn", inputPath, { paths, compute: "runpod" })).rejects.toMatchObject({ code: "CLOUD_OPTIONS_REQUIRED" });
     await expect(runModel("proteinmpnn", inputPath, { paths, compute: "runpod", cloud, runtime: "docker" })).rejects.toMatchObject({ code: "CLOUD_RUNTIME_UNSUPPORTED" });
     await expect(runModel("proteinmpnn", inputPath, { paths, cloud })).rejects.toMatchObject({ code: "CLOUD_OPTIONS_WITHOUT_CLOUD" });

@@ -5,7 +5,6 @@ import type { RunContext } from "@moldesk/adapters";
 import { MoldeskError } from "../errors.js";
 import { collectRunOutputs, finalizeRun, writeRunRecord } from "../run-lifecycle.js";
 import type { RunModelResult, RunRecord } from "../run.js";
-import type { DeadlineGuard } from "./guard.js";
 import { confirmRunResourcesGone, defaultResolveModelForRecovery, recordLostLogs, type CleanupOutcome, type CloudRunDeps } from "./run.js";
 import { CloudJournal, type CloudCacheRecord, type CloudResourceRecord } from "./state.js";
 
@@ -15,7 +14,6 @@ function failure(code: string, message: string, remediation: string, details?: R
 
 export type RecoverDeps = Pick<CloudRunDeps, "provider" | "paths" | "resolveModel" | "sleep" | "cleanupAttempts"> & {
   backend?: ExecutionBackend;
-  guard?: DeadlineGuard;
 };
 
 export interface RecoverOptions {
@@ -113,7 +111,6 @@ export async function recoverCloudRun(runId: string, deps: RecoverDeps, options:
     // --- Cleanup: terminate and verify only what the journal says this installation owns. ---
     const cleanup = await confirmRunResourcesGone(runId, deps, journal);
     if (record.compute) record.compute.cleanup = cleanup.confirmed ? "confirmed" : "pending";
-    if (cleanup.confirmed && job.guardId && deps.guard) await deps.guard.disarm(job.guardId).catch(() => undefined);
     journal.updateJob(runId, {
       stage: "done",
       status: cleanup.confirmed ? (record.status === "succeeded" ? "succeeded" : record.status === "cancelled" ? "cancelled" : "failed") : "cleanup_pending",

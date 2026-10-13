@@ -53,8 +53,10 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
     .option("--gpu <id>", "cloud: GPU type id (default: cheapest eligible)")
     .option("--datacenter <id>", "cloud: datacenter id")
     .option("--max-budget <usd>", "cloud: maximum budget in USD (a guard on the quote, not a provider cap)")
-    .option("--max-lifetime <seconds>", "cloud: hard lifetime limit for rented machines")
+    .option("--max-lifetime <seconds>", "cloud: lifetime limit in seconds, enforced by MoleculeDesk only while it is running and connected (shutdown is not guaranteed)")
     .option("--yes", "cloud: approve exactly the quote shown (required without a terminal)")
+    .option("--accept-lifetime-risk", "cloud: acknowledge that machines may keep running and charging if MoleculeDesk closes or disconnects")
+    .option("--accept-storage-charges", "cloud: acknowledge that a persistent cache keeps billing until you delete it")
     .option("--dry-run", "cloud: print the quote and exit without uploading or provisioning")
     .action(
       async (
@@ -74,6 +76,8 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
           maxLifetime?: string;
           yes?: boolean;
           dryRun?: boolean;
+          acceptLifetimeRisk?: boolean;
+          acceptStorageCharges?: boolean;
         },
       ) => {
         if (options.compute !== "local") {

@@ -104,15 +104,13 @@ export type {
   CloudRunOptions,
   ResolvedModel,
 } from "./cloud/run.js";
-export { assertApprovalValid, buildQuote, APPROVAL_MAX_AGE_MS, DEFAULT_MAX_LIFETIME_SECONDS } from "./cloud/quote.js";
-export type { CloudApproval, CloudQuote, QuoteInputs, QuoteRange } from "./cloud/quote.js";
+export { assertApprovalValid, buildQuote, APPROVAL_MAX_AGE_MS, DEFAULT_MAX_LIFETIME_SECONDS, LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING } from "./cloud/quote.js";
+export type { CloudAcknowledgment, CloudApproval, CloudQuote, QuoteInputs, QuoteRange, QuoteWarning } from "./cloud/quote.js";
 export { executeCloudCacheDeletion, listCloudCaches, planCloudCacheDeletion, recoverCloudRun } from "./cloud/manage.js";
 export type { CacheDeletionPlan, CacheDeletionResult, CloudCacheListing, RecoverDeps, RecoverResult } from "./cloud/manage.js";
 export { createRunpodCloudDeps } from "./cloud/deps.js";
 export type { RunpodDepsOptions } from "./cloud/deps.js";
 export { resolveWorkerBundle } from "./cloud/worker-release.js";
-export { resolveDeadlineGuard } from "./cloud/guard.js";
-export type { DeadlineGuard, DeadlineRegistration } from "./cloud/guard.js";
 export { runModel } from "./run.js";
 export type { RunArtifact, RunCompute, RunModelOptions, RunModelResult, RunRecord, RunWarning } from "./run.js";
 

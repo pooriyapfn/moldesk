@@ -174,9 +174,16 @@ Successful verification triggers Pod termination; failed runtime/preparation and
 
 Transfer failure preserves a bounded recovery window, never an unlimited running GPU. At deadline terminate with disclosed risk of losing Ephemeral outputs. Persistent outputs persist only if approved recovery policy authorizes storage in the volume. Never retain additional storage silently. GPU/CPU termination must not invoke volume deletion.
 
-**Release blocker:** validate a provider-enforced expiration/termination mechanism covering boot, installation and client offline time. Worker timeout alone cannot terminate a billable Pod without provider authorization and does not cover failed worker bootstrap. Spike evidence: container/process exit provides **no billing protection** (a Pod whose command exited stayed `RUNNING` at full rate), and Runpod has no lifetime field on Pod create. A local timer, worker exit or stopped Pod is not proof of stopped billing.
+**Lifetime enforcement: accepted, disclosed limitation (decision 2026-10-13; no independent scheduler).**
+Runpod has no lifetime field on Pod create, and spike evidence shows a Pod whose process exited stayed `RUNNING` at the full rate. A local timer, worker exit or stopped Pod is not proof of stopped billing. MoleculeDesk will **not** build or require an independent scheduler or any extra infrastructure. Enforcement is therefore best effort, and the user is told so before approving:
 
-**Chosen guard (pending verification):** Runpod injects a Pod-scoped `RUNPOD_API_KEY` into every Pod; spike showed it can terminate only its own Pod and is denied Pod listing, volumes, secrets and creation (billing reads are allowed; no documented expiry). A deadline watchdog inside the worker image uses it, never the account key. Because the watchdog cannot cover failures before the container boots (image pull, crash loop), an independent external scheduler is also required: the deadline is registered before paid compute starts, and it retries termination and verifies deletion independent of the client. A client-only deadline plus manual `cloud recover` (offline-unsafe) is not allowed in the released MVP. If API lacks independent deadline enforcement, choose and disclose another independently running cleanup mechanism with narrow authorization before release; do not claim acceptance criterion 8 is satisfied. No API key in worker, no fabricated lifetime field.
+- **Client-side deadline** while MoleculeDesk is running and connected: the approved lifetime is enforced by the client (cancel, terminate, verify gone).
+- **Automatic cleanup while connected** after success, failure, cancellation or transfer failure, with confirmation from the provider before the report is generated.
+- **In-Pod watchdog where supported:** the worker uses the Pod-scoped `RUNPOD_API_KEY` Runpod injects (observed to terminate only its own Pod; no account key in the Pod) to terminate its own Pod at the deadline. It cannot help if the container never boots or the key is not injected, and key expiry and GPU Pod injection are unverified.
+- **Cleanup journal and restart recovery:** intent is journaled before every create/delete; the next start reconciles with the provider, refuses new paid work while owed or orphaned resources exist, and `cloud recover` finishes cleanup without restarting inference.
+- **Explicit warning acknowledgment before approval.** The quote prominently shows, and the user must explicitly acknowledge (prompt, or `--accept-lifetime-risk` without a terminal; `--yes` alone does not count): "If MoleculeDesk closes or loses connection, your Runpod Pod may keep running and charging. Automatic shutdown is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod." Persistent caching also requires acknowledging that storage charges continue until the volume is deleted (`--accept-storage-charges`).
+
+**Spec acceptance criterion 8 (provider- or independently enforced termination covering client-offline time) is NOT satisfied and is not claimed.** It is replaced by the disclosed limitation and acknowledgment above. Do not describe cloud runs as guaranteed to stop. No API key in the worker, no fabricated lifetime field.
 
 Quote uses current catalog/billing data with retrieval time, GPU/CPU hourly rates, temporary storage and recurring volume rate. Show preparation/inference/transfer time ranges separately, unknown estimates explicitly. Hard budget rejection before provisioning; bind approval to quote/input/manifest/resource/cachePolicy hashes and reapprove material price/location changes. Max budget is an estimate guard, not a guaranteed provider spend cap unless supported/enforced. Track observed stage timings and actual billing where available.
 
@@ -203,7 +210,7 @@ Core exposes serializable plan, approve/start, observe/cancel/recover and resour
 
 ## 11. Delivery order and verification
 
-1. **Provider spike:** pin current API schema; prove account validation, quote/catalog lookup, GPU Pod create/delete, authenticated worker transfer, independent lifetime enforcement. Separately prove CPU Pod + network volume + GPU remount. Document observed behavior; no CLI launch until lifecycle guard works.
+1. **Provider spike:** pin current API schema; prove account validation, quote/catalog lookup, GPU Pod create/delete, authenticated worker transfer, and the behavior of the Pod-scoped key and in-Pod watchdog. Separately prove CPU Pod + network volume + GPU remount. Document observed behavior; no CLI launch until live validation passes.
 2. **Shared lifecycle extraction:** keep local tests green; add regression for post-allocation snapshot failure. No cloud behavior yet.
 3. **Ephemeral:** add credential store, journal, provider, worker, cloud commands, manifest block and quote approval. Real Boltz Linux/CUDA run retrieves existing report-compatible outputs and confirms Pod gone. Orphan discovery/recovery, budget/lifetime and cleanup failures included here.
 4. **Persistent:** add volume lifecycle/cache leases, CPU-only preparation, READY integrity, warm reuse and confirmed explicit deletion. Test two sequential real runs; second creates zero CPU Pods and downloads zero model assets.
@@ -218,7 +225,7 @@ Focused automated checks:
 - Download corruption/traversal/missing required output → no success; transfer retry does not repeat inference.
 - CPU asset stage invokes no Python/CUDA install/probe; extraction failure leaves no READY and terminates CPU.
 - Warm cache mismatch/deleted volume/concurrent preparers → fail safely or prepare once; ordinary cleanup never deletes volume.
-- Cancellation/client crash at every resource boundary → reconstruct IDs/intents, reconcile, bounded cleanup; independent deadline tested with client offline and worker startup failure.
+- Cancellation/client crash at every resource boundary → reconstruct IDs/intents, reconcile, bounded cleanup; client deadline, in-Pod watchdog and restart recovery tested; the client-offline and never-boots cases are documented as *not* guaranteed and covered by the acknowledged warning.
 - SQLite driver and worker bundle tested on supported Node versions; install archived release bundle in clean CPU/GPU environment.
 
 Run `pnpm typecheck`, affected package tests, `pnpm build`, `pnpm pack:verify` after implementation. Live runs require explicitly approved Runpod spending; this plan performs none. Unit mocks alone cannot establish CUDA compatibility, CPU volume capability, billing termination or GPU availability.
@@ -231,7 +238,7 @@ Checked official sources during planning:
 - [Create a Pod](https://docs.runpod.io/api-reference-v2/pods/create-a-pod): GPU/CPU provisioning; v2 examples use nested `gpu`, `image`, `dataCenterIds` and `disk`. Bind implementation to pinned OpenAPI rather than copying v1 field names.
 - [Enhanced CPU Pods](https://www.runpod.io/blog/enhanced-cpu-pods-docker-network): CPU Docker/network-volume support announced September 2026. Announcement does not prove selected API fields, regional capacity or lifetime enforcement.
 
-Still unverified: chosen CPU deployment/volume request shape; provider termination deadlines; secure worker endpoint behavior; exact image digests, CUDA/Python compatibility and VRAM; extracted asset size; billed cleanup semantics; live first/warm-run timings. Resolve in spike and store evidence before turning cloud eligibility on. Spec timing examples are not benchmarks.
+Still unverified: chosen CPU deployment/volume request shape; provider termination deadlines; secure worker endpoint behavior; exact image digests, CUDA/Python compatibility and VRAM; extracted asset size; billed cleanup semantics; live first/warm-run timings. Resolve in spike and store evidence before turning cloud eligibility on (release gate). Spec timing examples are not benchmarks.
 
 Explicit spec adaptations: replace Normal/Efficient modes with `cachePolicy: "ephemeral" | "persistent"` and CLI `--cache-policy`; positional CLI input retained; SQLite added only for cloud journal; no desktop implementation until shell exists; structured manifest installer reused instead of new command DSL; timeout/cost/orphan safeguards moved into initial Ephemeral release, not deferred to hardening.
 
@@ -248,6 +255,10 @@ quote/approval, orchestrator, worker server/client, manifest pipeline, persisten
 
 Deviations from the sections above:
 
+- **No independent scheduler (decision 2026-10-13).** Lifetime enforcement is best effort and disclosed: client
+  deadline while connected, in-Pod watchdog where supported, cleanup journal and restart recovery, and explicit
+  acknowledgment of the shutdown risk (and, for persistent caching, of continuing storage charges) before
+  approval. The scheduler design, `DeadlineGuard` interface and guard wiring were removed.
 - The worker lives in `packages/core/src/cloud/worker/` (not `packages/runtime`): it must import adapters, and
   adapters depend on runtime. Transfer client, provider and backend are in `packages/runtime/src/cloud/`.
 - `ExecutionBackend` gained `release` (terminate and confirm) and an optional `reconnect`; `collect` takes an
@@ -261,8 +272,10 @@ Deviations from the sections above:
 
 Still open (not claimed as done):
 
-1. **Lifetime guard (release blocker):** a concrete design exists ([cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md)) but no scheduler is implemented, deployed, authorized or validated; Pod-key
-   expiry and GPU Pod key injection are unverified. `resolveDeadlineGuard()` refuses by design.
+1. **Lifetime enforcement is best effort (accepted limitation, not a blocker):** there is no independent
+   scheduler. If MoleculeDesk closes or loses connection, a Pod may keep running and charging; the user must
+   acknowledge this before approving. Pod-key expiry and GPU Pod key injection for the in-Pod watchdog remain
+   unverified and must be validated and documented.
 2. **Live validation (release blocker):** no real Boltz Linux/CUDA run, no real image digests/sizes, no
    published worker bundle, no measured asset extraction size or timings; the Boltz manifest has no `cloud` block.
 3. **Untested against the real provider:** the container bootstrap script, the proxy path for uploads and large
@@ -272,3 +285,19 @@ Still open (not claimed as done):
 5. Cross-machine cache lock reclamation relies on the client confirming the previous owner is gone;
    multi-client contention is only covered by unit tests.
 6. SQLite driver (`better-sqlite3` ~12.11) and the keyring binding were verified on macOS/Node 22 only.
+
+### Release gates and acceptance criteria (current)
+
+Cloud execution stays disabled for users until every gate below passes. Items marked *shipped in code* are
+tested with fakes only.
+
+| Gate | Status |
+|---|---|
+| Risk acknowledgment: prominent exact warning before approval, explicit acknowledgment (prompt or `--accept-lifetime-risk`; `--yes` alone does not count); persistent caching also acknowledges continuing storage charges (`--accept-storage-charges`); acknowledgments recorded in `run.json` | Shipped in code |
+| Acknowledged limitation instead of a scheduler: documented in the plan, user docs and quote text; spec acceptance criterion 8 is **not** satisfied and must not be claimed | Documented |
+| Client deadline, cleanup while connected, cleanup journal, restart recovery, preflight refusal on unresolved resources | Shipped in code |
+| In-Pod watchdog verified on a real GPU Pod (terminates its own Pod at the deadline; behavior when the key is absent), results recorded in the spike findings | **Open** |
+| Live Boltz Linux/CUDA validation: real image digests and sizes in a `cloud` manifest block, measured extraction size and timings | **Open** |
+| Published, checksummed worker bundle validated on a clean generic worker image | **Open** |
+| Real-provider checks: container bootstrap, proxy upload/download and stall behavior, CPU Pod + volume then GPU remount in one datacenter, billing after terminate, real disk/volume costs | **Open** |
+| Docs and quote text never claim guaranteed shutdown or complete logs | Maintained |

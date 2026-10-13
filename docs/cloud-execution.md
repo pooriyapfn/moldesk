@@ -7,7 +7,7 @@ Read [runpod-execution-implementation-plan.md](./runpod-execution-implementation
 
 ## What is gated
 
-Cloud runs refuse to start until all of these exist:
+Cloud runs refuse to start until all of these exist (release gates; live validation has not been done):
 
 1. **A model that declares a validated `cloud` block** in its manifest (see [model-system.md](./model-system.md)).
    No shipped manifest declares one: image digests and sizes must come from a live validation.
@@ -15,10 +15,28 @@ Cloud runs refuse to start until all of these exist:
    SHA-256. Record the URL and checksum in `packages/core/src/cloud/worker-release.ts`
    (`RELEASED_WORKER_BUNDLE`), or set `MOLDESK_WORKER_BUNDLE_URL` and `MOLDESK_WORKER_BUNDLE_SHA256` for
    development. The generic worker images must provide Node 20+, curl, tar and sha256sum.
-3. **An independent lifetime guard** (design: [cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md)). `resolveDeadlineGuard()` currently refuses with
-   `CLOUD_GUARD_UNAVAILABLE`. Container exit does not stop billing, there is no lifetime field on Pod
-   creation, and Runpod's Pod-scoped key (used by the in-Pod watchdog) cannot cover failures before the
-   container boots. A verified external scheduler, authorized with narrow credentials, is a release blocker.
+3. **Passing live validation** of the items listed in the plan's release gates, including the in-Pod watchdog.
+
+## Shutdown is not guaranteed
+
+There is **no independent scheduler** and no provider-enforced lifetime. Runpod has no lifetime field on Pod
+creation, and a Pod whose process exits keeps billing. Shutdown is enforced on a best-effort basis by:
+
+- the **client-side deadline**, while MoleculeDesk is running and connected;
+- **automatic cleanup** after success, failure, cancellation or transfer failure, confirmed with the provider;
+- the **in-Pod watchdog** where the Pod-scoped key is injected (it cannot help if the container never boots;
+  key expiry and GPU Pod injection are unverified);
+- the **cleanup journal and restart recovery**: the next start refuses new paid work while owed or orphaned
+  resources exist, and `moldesk cloud recover <run-id>` finishes cleanup without restarting inference.
+
+Before you approve a run, MoleculeDesk shows this warning prominently and requires explicit acknowledgment:
+
+> If MoleculeDesk closes or loses connection, your Runpod Pod may keep running and charging. Automatic shutdown
+> is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod.
+
+Persistent caching additionally requires acknowledging that storage charges continue until the volume is
+deleted. Without a terminal, pass `--yes --accept-lifetime-risk` (and `--accept-storage-charges` for persistent);
+`--yes` alone is refused. Acknowledgments are recorded in `run.json` (`compute.acknowledgedRisks`).
 
 ## Using it (once enabled)
 
@@ -28,7 +46,10 @@ moldesk cloud status
 moldesk run boltz complex.yaml --compute runpod --cache-policy ephemeral \
   --max-budget 2 --max-lifetime 3600 --dry-run      # print the quote only
 moldesk run boltz complex.yaml --compute runpod --cache-policy persistent \
-  --max-budget 2 --max-lifetime 3600                 # prompts; --yes approves exactly the shown quote
+  --max-budget 2 --max-lifetime 3600                 # prompts for each acknowledgment, then approval
+# without a terminal, acknowledge explicitly (--yes alone is refused):
+moldesk run boltz complex.yaml --compute runpod --cache-policy ephemeral \
+  --max-budget 2 --max-lifetime 3600 --yes --accept-lifetime-risk
 moldesk cloud resources
 moldesk cloud recover <run-id>
 moldesk cloud cache list
@@ -44,7 +65,7 @@ plaintext fallback.
 `0` success, `2` usage, `3` unknown model, `4` unsupported, `5` not installed, `7` run failed, `8` cancelled,
 `10` internal, `11` credential/auth, `12` provider (payment, capacity, rate limit, unavailable),
 `13` cleanup pending or orphaned resources, `14` consent/safety refusal (approval mismatch or expiry,
-re-quote required, guard or worker bundle unavailable).
+re-quote required, acknowledgment missing, worker bundle unavailable).
 
 ## What the code enforces (tested with fakes only)
 
@@ -80,9 +101,8 @@ re-quote required, guard or worker bundle unavailable).
 
 ## Known gaps (do not treat cloud execution as complete)
 
-- Lifetime guard, live validation and real-provider behavior: see the list above and plan section 13.
+- Shutdown is best effort (see above); live validation and real-provider behavior are open: plan section 13.
 - Storage and egress costs are unknown for Runpod (no published rates); the budget does not cover them.
 - Worker log retention is a bounded tail; loss is detected and reported, not prevented. Only the cumulative
   evicted byte count is known, not the content, and the oldest output of a very chatty job can be gone.
-- The independent lifetime guard is **design only**: see [cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md).
 - Upload timeouts are a single overall limit (10 minutes), not idle-based.

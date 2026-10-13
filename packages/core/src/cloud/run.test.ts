@@ -16,7 +16,6 @@ import {
   type JobSnapshot,
 } from "@moldesk/runtime";
 import { MoldeskError } from "../errors.js";
-import type { DeadlineGuard } from "./guard.js";
 import { buildQuote } from "./quote.js";
 import { planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
 import { CloudJournal } from "./state.js";
@@ -201,25 +200,11 @@ function sandbox(script: Script = [runningSnap(), doneSnap], overrides: Partial<
   const provider = new FakeProvider();
   const events: string[] = [];
   const backend = new FakeBackend(provider, script, events);
-  const guardState = { registered: [] as string[], disarmed: [] as string[], refuse: false };
-  const guard: DeadlineGuard = {
-    async register(registration) {
-      events.push("guard.register");
-      if (guardState.refuse) throw new MoldeskError({ code: "CLOUD_GUARD_UNAVAILABLE", message: "no guard", remediation: "x" });
-      guardState.registered.push(registration.deadlineAt);
-      return { id: "g1" };
-    },
-    async disarm(id) {
-      events.push("guard.disarm");
-      guardState.disarmed.push(id);
-    },
-  };
   const clock = { ms: Date.parse("2026-10-13T12:00:00.000Z") };
   const deps: CloudRunDeps = {
     provider,
     paths,
     backend,
-    guard,
     accountScope: "acct",
     resolveModel: () => ({ manifest: manifest(), adapter: adapter() }),
     now: () => new Date(clock.ms),
@@ -233,9 +218,9 @@ function sandbox(script: Script = [runningSnap(), doneSnap], overrides: Partial<
   const quoteOptions = { cachePolicy: "ephemeral" as const, maxBudgetUsd: 5, maxLifetimeSeconds: 3600 };
   const optionsFor = async (extra: Partial<CloudRunModelOptions> = {}): Promise<CloudRunModelOptions> => {
     const plan = await planCloudRun("fake-model", inputPath, { cloud: quoteOptions }, deps);
-    return { cloud: { ...quoteOptions, quote: plan.quote, approval: { quoteId: plan.quote.id, approvedAt: new Date(clock.ms).toISOString() } }, ...extra };
+    return { cloud: { ...quoteOptions, quote: plan.quote, approval: { quoteId: plan.quote.id, approvedAt: new Date(clock.ms).toISOString(), acknowledged: plan.quote.warnings.map((w) => w.id) } }, ...extra };
   };
-  return { paths, inputPath, provider, backend, events, guardState, clock, deps, optionsFor };
+  return { paths, inputPath, provider, backend, events, clock, deps, optionsFor };
 }
 
 afterEach(() => {
@@ -243,7 +228,7 @@ afterEach(() => {
 });
 
 describe("runCloudModel", () => {
-  it("runs end to end: guard first, verified outputs, pod gone before the report, journal closed out", async () => {
+  it("runs end to end: verified outputs, pod gone before the report, risks acknowledged, journal closed out", async () => {
     const box = sandbox();
     const logs: string[] = [];
     const options = await box.optionsFor({ onLog: (_stream, chunk) => logs.push(chunk) });
@@ -251,7 +236,8 @@ describe("runCloudModel", () => {
 
     expect(result.status).toBe("succeeded");
     expect(result.cleanupPending).toBeUndefined();
-    expect(box.events).toEqual(["guard.register", "backend.start", "backend.release", "guard.disarm"]);
+    expect(box.events).toEqual(["backend.start", "backend.release"]);
+    expect(result.record.compute!.acknowledgedRisks).toEqual(["lifetime-risk"]);
     expect(box.provider.pods.size).toBe(0);
     expect(logs.join("")).toContain("predicting");
     expect(result.record.outputs).toHaveLength(1);
@@ -283,7 +269,7 @@ describe("runCloudModel", () => {
   it("rejects mismatched or expired approvals before any run directory, job or resource exists", async () => {
     const box = sandbox();
     const options = await box.optionsFor();
-    await expect(runCloudModel("fake-model", box.inputPath, { ...options, cloud: { ...options.cloud, approval: { quoteId: "other", approvedAt: new Date(box.clock.ms).toISOString() } } }, box.deps)).rejects.toMatchObject({ code: "CLOUD_APPROVAL_MISMATCH" });
+    await expect(runCloudModel("fake-model", box.inputPath, { ...options, cloud: { ...options.cloud, approval: { quoteId: "other", approvedAt: new Date(box.clock.ms).toISOString(), acknowledged: ["lifetime-risk" as const] } } }, box.deps)).rejects.toMatchObject({ code: "CLOUD_APPROVAL_MISMATCH" });
     box.clock.ms += 16 * 60 * 1000;
     await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_APPROVAL_EXPIRED" });
     expect(fs.existsSync(box.paths.runs)).toBe(false);
@@ -299,15 +285,13 @@ describe("runCloudModel", () => {
     expect(box.events).toEqual([]);
   });
 
-  it("finalizes a failed run and provisions nothing when the deadline guard refuses", async () => {
+  it("rejects a run whose approval did not acknowledge the shutdown risk, before anything exists", async () => {
     const box = sandbox();
-    box.guardState.refuse = true;
-    const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps);
-    expect(result.status).toBe("failed");
-    expect(result.record.error?.code).toBe("CLOUD_GUARD_UNAVAILABLE");
+    const options = await box.optionsFor();
+    await expect(runCloudModel("fake-model", box.inputPath, { ...options, cloud: { ...options.cloud, approval: { ...options.cloud.approval, acknowledged: [] } } }, box.deps)).rejects.toMatchObject({ code: "CLOUD_ACKNOWLEDGMENT_REQUIRED" });
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
     expect(box.backend.starts).toBe(0);
     expect(box.provider.nextId).toBe(1);
-    expect(fs.existsSync(path.join(result.record.command.cwd, "run.json"))).toBe(true);
   });
 
   it("fails on a nonzero worker exit and still terminates the machine", async () => {
@@ -404,7 +388,7 @@ describe("runCloudModel", () => {
     expect(box.provider.terminated).toEqual(["pod1"]);
   });
 
-  it("surfaces CLOUD_CLEANUP_PENDING without discarding a valid result, and keeps the guard armed", async () => {
+  it("surfaces CLOUD_CLEANUP_PENDING without discarding a valid result", async () => {
     const box = sandbox();
     box.provider.failTerminate = true;
     const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 2 });
@@ -412,7 +396,6 @@ describe("runCloudModel", () => {
     expect(result.record.outputs).toHaveLength(1);
     expect(result.cleanupPending).toEqual({ code: "CLOUD_CLEANUP_PENDING", resources: [{ role: "gpu", providerId: "pod1" }] });
     expect(result.record.compute!.cleanup).toBe("pending");
-    expect(box.guardState.disarmed).toEqual([]);
     const journal = CloudJournal.open(box.paths);
     expect(journal.getJob(result.record.id)).toMatchObject({ status: "cleanup_pending", error: { code: "CLOUD_CLEANUP_PENDING" } });
     expect(journal.listOpenJobs()).toHaveLength(1);
@@ -483,7 +466,7 @@ describe("incomplete worker logs", () => {
     box.backend.observes = 0;
     box.provider.failTerminate = false;
     box.backend.collectFailures = 0;
-    const recovered = await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+    const recovered = await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
     expect(recovered.result?.record.compute?.logs).toEqual({ complete: false, lostChunks: 9 });
     expect(recovered.result?.record.warnings?.some((w) => w.code === "CLOUD_LOGS_INCOMPLETE")).toBe(true);
     expect(fs.readFileSync(failed.record.logs.stdout, "utf8")).toContain("9 worker log chunk(s) were dropped");
@@ -531,7 +514,7 @@ describe("log persistence", () => {
     box.backend.observes = 0;
     box.provider.failTerminate = false;
     box.backend.collectFailures = 0;
-    await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+    await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
     expect(fs.readFileSync(failed.record.logs.stdout, "utf8")).toBe("a\nb\nc\n");
   });
 });
@@ -587,23 +570,21 @@ describe("planCloudRun", () => {
 });
 
 describe("recoverCloudRun", () => {
-  const recoverDeps = (box: ReturnType<typeof sandbox>) => ({ provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+  const recoverDeps = (box: ReturnType<typeof sandbox>) => ({ provider: box.provider, paths: box.paths, backend: box.backend, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
 
-  it("finishes owed cleanup after the provider recovers, disarms the guard and never restarts inference", async () => {
+  it("finishes owed cleanup after the provider recovers and never restarts inference", async () => {
     const box = sandbox();
     box.provider.failTerminate = true;
     const first = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
     expect(first.cleanupPending).toBeDefined();
-    expect(box.guardState.disarmed).toEqual([]);
     box.provider.failTerminate = false;
 
     const recovered = await recoverCloudRun(first.record.id, recoverDeps(box));
     expect(recovered.cleanup.confirmed).toBe(true);
     expect(box.provider.pods.size).toBe(0);
-    expect(box.guardState.disarmed).toEqual(["g1"]);
     expect(box.backend.starts).toBe(1);
     const journal = CloudJournal.open(box.paths);
-    expect(journal.getJob(first.record.id)).toMatchObject({ status: "succeeded", guardId: "g1" });
+    expect(journal.getJob(first.record.id)).toMatchObject({ status: "succeeded" });
     expect(journal.listOpenJobs()).toHaveLength(0);
     journal.close();
     const onDisk = JSON.parse(fs.readFileSync(path.join(first.record.command.cwd, "run.json"), "utf8"));

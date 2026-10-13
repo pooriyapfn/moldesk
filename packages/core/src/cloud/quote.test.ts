@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CloudCatalog } from "@moldesk/runtime";
 import { parseManifest, type ModelManifestV1 } from "@moldesk/registry";
-import { assertApprovalValid, buildQuote, type QuoteInputs } from "./quote.js";
+import { LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING, assertApprovalValid, buildQuote, type QuoteInputs } from "./quote.js";
 import type { CloudCatalog as Catalog } from "@moldesk/runtime";
 
 const DIGEST = "a".repeat(64);
@@ -168,7 +168,7 @@ describe("storage costs and budget coverage", () => {
 
 describe("assertApprovalValid", () => {
   const now = new Date("2026-10-13T12:05:00.000Z");
-  const approval = (quote: { id: string }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt });
+  const approval = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt, acknowledged: quote.warnings.map((w) => w.id) });
 
   it("accepts a matching, fresh approval", () => {
     const quote = buildQuote(inputs());
@@ -177,7 +177,7 @@ describe("assertApprovalValid", () => {
 
   it("rejects mismatched, expired and future-dated approvals", () => {
     const quote = buildQuote(inputs());
-    expect(() => assertApprovalValid(quote, { quoteId: "other", approvedAt: "2026-10-13T12:00:00.000Z" }, quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_MISMATCH" }));
+    expect(() => assertApprovalValid(quote, { quoteId: "other", approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_MISMATCH" }));
     expect(() => assertApprovalValid(quote, approval(quote, "2026-10-13T11:00:00.000Z"), quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_EXPIRED" }));
     expect(() => assertApprovalValid(quote, approval(quote, "2026-10-13T13:00:00.000Z"), quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_EXPIRED" }));
     expect(() => assertApprovalValid(quote, approval(quote, "garbage"), quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_EXPIRED" }));
@@ -208,7 +208,7 @@ describe("approval revalidation of storage cost and budget coverage", () => {
     ...catalog(),
     ...(disk !== undefined || volume !== undefined ? { storageRates: { ...(disk !== undefined ? { containerDiskUsdPerGbMonth: disk } : {}), ...(volume !== undefined ? { networkVolumeUsdPerGbMonth: volume } : {}) } } : {}),
   });
-  const approve = (quote: { id: string }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z" });
+  const approve = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: quote.warnings.map((w) => w.id) });
   const check = (approved: ReturnType<typeof buildQuote>, fresh: ReturnType<typeof buildQuote>) => assertApprovalValid(approved, approve(approved), fresh, now);
   const requote = expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" });
 
@@ -263,5 +263,46 @@ describe("approval revalidation of storage cost and budget coverage", () => {
     const eph = buildQuote(inputs());
     const per = buildQuote(inputs({ cachePolicy: "persistent" }));
     expect(() => check(eph, per)).toThrow(requote);
+  });
+});
+
+describe("explicit risk acknowledgment", () => {
+  const now = new Date("2026-10-13T12:05:00.000Z");
+  const base = { approvedAt: "2026-10-13T12:00:00.000Z" };
+  const needs = expect.objectContaining({ code: "CLOUD_ACKNOWLEDGMENT_REQUIRED" });
+
+  it("every quote carries the exact lifetime warning", () => {
+    const quote = buildQuote(inputs());
+    expect(quote.warnings).toEqual([{ id: "lifetime-risk", text: LIFETIME_RISK_WARNING }]);
+    expect(LIFETIME_RISK_WARNING).toBe(
+      "If MoleculeDesk closes or loses connection, your Runpod Pod may keep running and charging. Automatic shutdown is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod.",
+    );
+    expect(quote.disclosures.join(" ")).toMatch(/only while it is running and connected/);
+    expect(quote.disclosures.join(" ")).not.toMatch(/are terminated after the run or at the/);
+  });
+
+  it("persistent quotes also carry the storage-charges warning; ephemeral ones do not", () => {
+    expect(buildQuote(inputs({ cachePolicy: "persistent" })).warnings.map((w) => w.id)).toEqual(["lifetime-risk", "storage-charges"]);
+    expect(buildQuote(inputs({ cachePolicy: "persistent" })).warnings[1]!.text).toBe(STORAGE_CHARGES_WARNING);
+    expect(STORAGE_CHARGES_WARNING).toMatch(/Storage charges continue until you delete it/);
+    expect(buildQuote(inputs()).warnings.map((w) => w.id)).toEqual(["lifetime-risk"]);
+  });
+
+  it("an approval without the lifetime acknowledgment is refused", () => {
+    const quote = buildQuote(inputs());
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: [] }, quote, now)).toThrow(needs);
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).not.toThrow();
+  });
+
+  it("persistent approvals need both acknowledgments; acknowledging only one is refused", () => {
+    const quote = buildQuote(inputs({ cachePolicy: "persistent" }));
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(/Storage charges continue/);
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["storage-charges"] }, quote, now)).toThrow(needs);
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk", "storage-charges"] }, quote, now)).not.toThrow();
+  });
+
+  it("a missing acknowledgments field (old or hand-built approval) is refused, not assumed", () => {
+    const quote = buildQuote(inputs());
+    expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base } as never, quote, now)).toThrow(needs);
   });
 });

@@ -12,6 +12,19 @@ export const PRICE_TOLERANCE = 0.1;
 /** Storage amounts below these absolute rises are noise, not a material change (USD). */
 export const STORAGE_NOISE_FLOOR_USD = 0.01;
 export const RECURRING_NOISE_FLOOR_USD_PER_MONTH = 0.1;
+/** Shown prominently before approval and must be explicitly acknowledged: there is no independent shutdown service. */
+export const LIFETIME_RISK_WARNING =
+  "If MoleculeDesk closes or loses connection, your Runpod Pod may keep running and charging. Automatic shutdown is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod.";
+export const STORAGE_CHARGES_WARNING =
+  "Persistent caching keeps a network volume. Storage charges continue until you delete it (`moldesk cloud cache delete`, or in the Runpod dashboard).";
+
+export type CloudAcknowledgment = "lifetime-risk" | "storage-charges";
+
+export interface QuoteWarning {
+  id: CloudAcknowledgment;
+  text: string;
+}
+
 export const DEFAULT_MAX_LIFETIME_SECONDS = 3600;
 /** Billing months are 730 hours. */
 const HOURS_PER_MONTH = 730;
@@ -52,6 +65,8 @@ export interface CloudQuote {
   budgetCoverage: { counted: string[]; notCounted: string[]; unknown: string[] };
   /** `null` means no measured estimate exists; it is never guessed. */
   timing: { preparation: QuoteRange | null; inference: QuoteRange | null; transfer: QuoteRange | null };
+  /** Every warning here must be acknowledged by the user for the approval to be valid. */
+  warnings: QuoteWarning[];
   disclosures: string[];
   bindings: { manifestDigest: string; inputs: Array<{ role: string; sha256: string }> };
 }
@@ -116,6 +131,13 @@ function chooseGpuAndDatacenter(input: QuoteInputs): { gpu: CloudGpuType; datace
 function chooseCpu(catalog: CloudCatalog): { type: CloudCpuType; vcpuCount: number } | undefined {
   const type = catalog.cpus.find((cpu) => cpu.id === DEFAULT_PREP_CPU.id);
   return type ? { type, vcpuCount: Math.max(DEFAULT_PREP_CPU.vcpuCount, type.minVcpu) } : undefined;
+}
+
+function requiredWarnings(persistent: boolean): QuoteWarning[] {
+  return [
+    { id: "lifetime-risk", text: LIFETIME_RISK_WARNING },
+    ...(persistent ? [{ id: "storage-charges" as const, text: STORAGE_CHARGES_WARNING }] : []),
+  ];
 }
 
 const round = (value: number): number => Math.round(value * 10_000) / 10_000;
@@ -190,12 +212,13 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     images: input.cloud.images,
     maxLifetimeSeconds: input.maxLifetimeSeconds,
     maxBudgetUsd: input.maxBudgetUsd,
+    acknowledgments: requiredWarnings(persistent).map((warning) => warning.id),
     bindings,
   });
 
   const disclosures = [
     `Uploads ${input.inputs.length} input file(s) (${input.inputs.reduce((total, file) => total + file.sizeBytes, 0)} bytes) to ${input.provider} in ${datacenterId}.`,
-    `Rented machines are terminated after the run or at the ${input.maxLifetimeSeconds}s lifetime limit, whichever comes first; results may be lost if the limit is reached before download.`,
+    `MoleculeDesk enforces the ${input.maxLifetimeSeconds}s lifetime limit and terminates machines only while it is running and connected, plus a best-effort watchdog inside the machine; results may be lost if the limit is reached before download.`,
     "Capacity and price are not reserved by this quote.",
   ];
   if (persistent) {
@@ -227,6 +250,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     },
     budgetCoverage: { counted, notCounted, unknown },
     timing: { preparation: null, inference: null, transfer: null },
+    warnings: requiredWarnings(persistent),
     disclosures,
     bindings,
   };
@@ -235,6 +259,8 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
 export interface CloudApproval {
   quoteId: string;
   approvedAt: string;
+  /** Warning ids the user explicitly acknowledged; must include every `quote.warnings` id. */
+  acknowledged: CloudAcknowledgment[];
 }
 
 /**
@@ -244,6 +270,15 @@ export interface CloudApproval {
 export function assertApprovalValid(approved: CloudQuote, approval: CloudApproval, fresh: CloudQuote, now: Date = new Date()): void {
   if (approval.quoteId !== approved.id) {
     throw rejected("CLOUD_APPROVAL_MISMATCH", "The approval does not match the quote.", "Review and approve the quote again.");
+  }
+  const missing = approved.warnings.filter((warning) => !approval.acknowledged?.includes(warning.id));
+  if (missing.length > 0) {
+    throw rejected(
+      "CLOUD_ACKNOWLEDGMENT_REQUIRED",
+      `You must acknowledge: ${missing.map((warning) => warning.text).join(" ")}`,
+      "Re-run and explicitly accept the risk (--accept-lifetime-risk, and --accept-storage-charges for persistent caching), or answer the prompts.",
+      { missing: missing.map((warning) => warning.id) },
+    );
   }
   const approvedAt = Date.parse(approval.approvedAt);
   if (!Number.isFinite(approvedAt) || approvedAt > now.getTime() + 60_000 || now.getTime() - approvedAt > APPROVAL_MAX_AGE_MS) {

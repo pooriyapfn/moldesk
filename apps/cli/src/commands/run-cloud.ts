@@ -4,6 +4,7 @@ import {
   createRunpodCloudDeps,
   planCloudRun,
   runModel,
+  type CloudAcknowledgment,
   type CloudPlan,
   type CloudQuote,
   type CloudRunDeps,
@@ -21,6 +22,8 @@ export interface CloudRunFlags {
   maxLifetime?: string;
   yes?: boolean;
   dryRun?: boolean;
+  acceptLifetimeRisk?: boolean;
+  acceptStorageCharges?: boolean;
   output?: string;
   runtime?: string;
   param: Record<string, string>;
@@ -39,9 +42,17 @@ function usage(code: string, message: string, remediation: string): MoldeskError
   return new MoldeskError({ code, message, remediation });
 }
 
+/** Printed first and again at the prompt: there is no independent shutdown service. */
+export function formatWarnings(quote: CloudQuote): string {
+  const bar = "!".repeat(72);
+  return [bar, "WARNING: READ BEFORE APPROVING", ...quote.warnings.flatMap((warning) => ["", warning.text]), "", bar].join("\n");
+}
+
 export function formatQuote(quote: CloudQuote): string {
   const money = (value: number): string => `$${value.toFixed(value < 1 ? 4 : 2)}`.replace(/\.?0+$/, (zeros) => (zeros.includes(".") ? "" : zeros));
   const lines = [
+    formatWarnings(quote),
+    "",
     `Cloud quote (${quote.provider}, prices as of ${quote.retrievedAt})`,
     `  Model:        ${quote.model} ${quote.modelVersion}`,
     `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h`,
@@ -85,7 +96,7 @@ export function assertNoCloudFlagsForLocal(flags: Partial<CloudRunFlags>): void 
       ["--max-lifetime", flags.maxLifetime],
     ] as const
   ).filter(([, value]) => value !== undefined);
-  if (flags.yes || flags.dryRun) used.push(["--yes/--dry-run", "set"]);
+  if (flags.yes || flags.dryRun || flags.acceptLifetimeRisk || flags.acceptStorageCharges) used.push(["--yes/--dry-run/--accept-*", "set"]);
   if (used.length > 0) {
     throw usage("CLOUD_OPTIONS_WITHOUT_CLOUD", `${used.map(([name]) => name).join(", ")} only apply with --compute runpod.`, "Add --compute runpod, or remove those options.");
   }
@@ -119,12 +130,40 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
     }
 
     const interactive = hooks.interactive ?? (process.stdin.isTTY === true);
+    const ask = hooks.confirm ?? ((question: string) => confirm(question));
+    const canPrompt = interactive || hooks.confirm !== undefined;
+
+    // Each warning needs its own explicit acknowledgment: a flag, or an answered prompt. `--yes` alone never counts.
+    const acknowledged: CloudAcknowledgment[] = [];
+    for (const warning of plan.quote.warnings) {
+      const flagged = warning.id === "lifetime-risk" ? flags.acceptLifetimeRisk === true : flags.acceptStorageCharges === true;
+      if (flagged) {
+        acknowledged.push(warning.id);
+        continue;
+      }
+      if (!canPrompt) {
+        throw usage(
+          "CLOUD_ACKNOWLEDGMENT_REQUIRED",
+          `You must acknowledge: ${warning.text}`,
+          `Re-run with ${warning.id === "lifetime-risk" ? "--accept-lifetime-risk" : "--accept-storage-charges"} (and --yes) to accept this risk without a terminal.`,
+        );
+      }
+      console.error(`\n${warning.text}`);
+      if (!(await ask("Do you understand and accept this risk?"))) {
+        if (flags.json) out({ status: "declined", quoteId: plan.quote.id, reason: `warning not acknowledged: ${warning.id}` });
+        else console.error("Not acknowledged. Nothing was uploaded or provisioned.");
+        process.exitCode = 2;
+        return;
+      }
+      acknowledged.push(warning.id);
+    }
+
     let approved = flags.yes === true;
     if (!approved) {
-      if (!interactive && !hooks.confirm) {
+      if (!canPrompt) {
         throw usage("CLOUD_APPROVAL_MISMATCH", "This quote needs your approval, and no terminal is attached.", "Review it with --dry-run, then re-run with --yes to approve exactly this quote.");
       }
-      approved = await (hooks.confirm ?? ((question) => confirm(question)))("Approve this quote and start the cloud run?");
+      approved = await ask("Approve this quote and start the cloud run?");
       if (!approved) {
         if (flags.json) out({ status: "declined", quoteId: plan.quote.id });
         else console.error("Not approved. Nothing was uploaded or provisioned.");
@@ -146,7 +185,7 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
         visualize: flags.visualize,
         signal: controller.signal,
         cloudDeps: deps,
-        cloud: { ...quoteOptions, quote: plan.quote, approval: { quoteId: plan.quote.id, approvedAt: new Date().toISOString() } },
+        cloud: { ...quoteOptions, quote: plan.quote, approval: { quoteId: plan.quote.id, approvedAt: new Date().toISOString(), acknowledged } },
         onLog: flags.json ? undefined : (stream, chunk) => (stream === "stdout" ? process.stdout : process.stderr).write(chunk),
         onProgress: flags.json ? undefined : (event) => console.error(`[${event.stage}]${event.message ? ` ${event.message}` : ""}`),
       });

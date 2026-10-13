@@ -19,7 +19,7 @@ Date: 2026-10-13. Phase 1 of `runpod-execution-implementation-plan.md`. Total sp
 ## Not verified / risks
 
 0. **Container self-exit does NOT stop billing.** A Pod whose command exited after ~75 s was still `RUNNING` (`cost` 0.57/h, actions `stop/restart/terminate`) more than 5 minutes later. It is likely restarted by the platform. A process exiting inside the Pod is therefore not a lifetime guard; only an API terminate/stop is.
-1. **No lifetime/deadline field exists on Pod create** (fields: `image`, `disk`, `env`, `ports`, `gpu`, `cpu`, `dataCenterIds`, `mounts`, `args/cmd/entrypoint`, `templateId`, `cloud`, ...). The plan's release blocker stands. Self-exit was tested and fails (item 0). Remaining options: a Pod-side watchdog that calls the API (needs a credential in the Pod; check whether Runpod supports scoped, Pod-only or short-lived keys), or an independent external scheduler.
+1. **No lifetime/deadline field exists on Pod create** (fields: `image`, `disk`, `env`, `ports`, `gpu`, `cpu`, `dataCenterIds`, `mounts`, `args/cmd/entrypoint`, `templateId`, `cloud`, ...). Self-exit was tested and fails (item 0). Decision (2026-10-13): no independent scheduler; enforcement is the client deadline while connected, the Pod-scoped-key watchdog where it works, cleanup journal and restart recovery, plus an explicit warning acknowledgment that automatic shutdown is not guaranteed (see the plan, section 9).
 2. **GPU capacity is thin and volatile.** GPU Pod creation worked once and then returned 400 "no longer any instances available" on later attempts. At spike time the only datacenter offering a 24 GB+ GPU under $0.95 *and* network volumes was CA-MTL-1. Persistent mode requires the GPU in the volume's datacenter, so capacity failure after CPU preparation is a real, common case. The plan's "recheck GPU capacity before preparing" and clear failure path are mandatory.
 3. **CPU-prepared volume remounted on GPU is still untested end to end.** CPU Pod+volume was proven in AP-JP-1 and GPU remount in EU-RO-1 (different volumes). EU-RO-1 had GPU capacity on both attempts; a CPU Pod there was not tried.
 4. CPU capacity also varies by datacenter: all four CPU flavors failed in CA-MTL-1, while `cpu3c` worked in AP-JP-1.
@@ -29,12 +29,12 @@ Date: 2026-10-13. Phase 1 of `runpod-execution-implementation-plan.md`. Total sp
 
 ## Consequences for the plan
 
-- Lifetime enforcement still needs a design (decision required before phase 3 can ship).
+- Lifetime enforcement is best effort: client deadline while connected, in-Pod watchdog where supported, journal and restart recovery, and a mandatory risk acknowledgment before approval. There is no independent scheduler.
 - Quote/preflight must query `availability` per datacenter and filter on `networkVolumeTypes`; both can change between quote and create.
 - Worker transport through the Runpod HTTPS proxy is viable; add a User-Agent and treat 404 as "not up yet".
 - Idempotent terminate/delete handling confirmed (404 = already gone).
 
-## Pod-scoped key (lifetime-guard research)
+## Pod-scoped key (watchdog research)
 
 Docs ([environment variables](https://docs.runpod.io/pods/references/environment-variables)) say each Pod gets a `RUNPOD_API_KEY` described as "Pod-scoped". Account API keys offer only All / Restricted / Read Only, with per-endpoint scoping for Serverless only; no per-Pod scope and no automatic expiry ([api-keys](https://docs.runpod.io/get-started/api-keys)). The v2 OpenAPI has no key-management endpoints.
 
@@ -58,4 +58,4 @@ Assessment against required properties:
 - Cannot access other resources: **mostly**; Pod list/volumes/secrets/create denied, but billing reads are allowed.
 - Expires automatically: **unverified**. Not documented. Not tested whether it stops working after its Pod is terminated (it is then useless for termination anyway). Treat expiry as absent; the key's value is its narrow scope plus the Pod's own death.
 
-Implication: a Pod-side watchdog using `RUNPOD_API_KEY` is a viable lifetime guard that needs no account key in the Pod. Remaining gaps: (a) it only works after the container boots (image pull failure or crash loop before the watchdog starts leaves a billable Pod, so the external scheduler remains needed for boot-time failures), (b) the watchdog itself must be verified to terminate on deadline with the client offline, (c) billing read exposure should be disclosed.
+Implication: a Pod-side watchdog using `RUNPOD_API_KEY` is a best-effort deadline mechanism that needs no account key in the Pod. Known limits, which are disclosed to the user rather than engineered away: (a) it only works after the container boots (an image pull failure or crash loop leaves a billable Pod); (b) it still has to be verified on a real GPU Pod, with the client offline, before being relied on even as best effort; (c) key expiry is unverified; (d) billing read exposure should be disclosed.

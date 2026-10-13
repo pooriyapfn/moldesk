@@ -64,9 +64,9 @@ const adapter = {
   },
 };
 
-function fakeDeps(opts: { terminateFails?: boolean; guardRefuses?: boolean } = {}) {
+function fakeDeps(opts: { terminateFails?: boolean } = {}) {
   const pods = new Map<string, { id: string; name: string; status: "RUNNING" }>();
-  const calls = { guard: 0, start: 0, upload: 0 };
+  const calls = { start: 0, upload: 0 };
   const provider = {
     name: "runpod",
     getCatalog: async () => ({
@@ -101,15 +101,7 @@ function fakeDeps(opts: { terminateFails?: boolean; guardRefuses?: boolean } = {
     },
     async release() {},
   };
-  const guard = {
-    async register() {
-      calls.guard += 1;
-      if (opts.guardRefuses) throw Object.assign(new Error("No independent lifetime guard is configured."), { code: "CLOUD_GUARD_UNAVAILABLE", remediation: "x", name: "MoldeskError" });
-      return { id: "g" };
-    },
-    async disarm() {},
-  };
-  const deps = { provider, backend, guard, paths: getMoldeskPaths({ MOLDESK_HOME: home }), accountScope: "acct", resolveModel: () => ({ manifest: manifest(), adapter }), sleep: async () => undefined, pollIntervalMs: 1, cleanupAttempts: 1 } as unknown as CloudRunDeps;
+  const deps = { provider, backend, paths: getMoldeskPaths({ MOLDESK_HOME: home }), accountScope: "acct", resolveModel: () => ({ manifest: manifest(), adapter }), sleep: async () => undefined, pollIntervalMs: 1, cleanupAttempts: 1 } as unknown as CloudRunDeps;
   return { deps, calls, pods };
 }
 
@@ -125,6 +117,8 @@ function inputPath(): string {
   return file;
 }
 const base = ["--compute", "runpod", "--cache-policy", "ephemeral", "--max-budget", "5", "--max-lifetime", "3600"];
+const accept = ["--accept-lifetime-risk"];
+const WARNING = "If MoleculeDesk closes or loses connection, your Runpod Pod may keep running and charging. Automatic shutdown is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod.";
 
 describe("moldesk run --compute runpod", () => {
   it("rejects cloud-only flags on a local run", async () => {
@@ -156,7 +150,6 @@ describe("moldesk run --compute runpod", () => {
     await run({ deps: async () => unsupported }, ...base, "--json");
     expect(JSON.parse(out.join("\n"))).toMatchObject({ code: "CLOUD_MODEL_UNSUPPORTED" });
     expect(process.exitCode).toBe(4);
-    expect(f.calls.guard).toBe(0);
   });
 
   it("--dry-run prints the quote and provisions nothing", async () => {
@@ -164,7 +157,7 @@ describe("moldesk run --compute runpod", () => {
     await run({ deps: async () => f.deps }, ...base, "--dry-run");
     expect(err.join("\n")).toContain("Cloud quote (runpod");
     expect(err.join("\n")).toContain("Dry run: nothing was uploaded or provisioned.");
-    expect(f.calls).toEqual({ guard: 0, start: 0, upload: 0 });
+    expect(f.calls).toEqual({ start: 0, upload: 0 });
     expect(process.exitCode).toBeUndefined();
     expect(fs.existsSync(getMoldeskPaths({ MOLDESK_HOME: home }).runs)).toBe(false);
   });
@@ -180,16 +173,69 @@ describe("moldesk run --compute runpod", () => {
 
   it("needs --yes without a terminal, and a declined prompt provisions nothing", async () => {
     const f = fakeDeps();
-    await run({ deps: async () => f.deps, interactive: false }, ...base);
+    await run({ deps: async () => f.deps, interactive: false }, ...base, ...accept);
     expect(err.join("\n")).toMatch(/needs your approval, and no terminal is attached/);
     expect(process.exitCode).toBe(14);
     process.exitCode = undefined;
     err.length = 0;
-    await run({ deps: async () => f.deps, confirm: async () => false }, ...base);
+    await run({ deps: async () => f.deps, confirm: async (q) => !q.startsWith("Approve") }, ...base, ...accept);
     expect(err.join("\n")).toContain("Not approved");
     expect(process.exitCode).toBe(2);
     expect(f.calls.start).toBe(0);
-    expect(f.calls.guard).toBe(0);
+  });
+
+  it("shows the exact shutdown warning prominently, before the quote body and before any prompt", async () => {
+    const f = fakeDeps();
+    await run({ deps: async () => f.deps }, ...base, "--dry-run");
+    const lines = err.join("\n").split("\n");
+    expect(lines[0]).toMatch(/^!{40,}$/);
+    expect(lines[1]).toBe("WARNING: READ BEFORE APPROVING");
+    expect(err.join("\n")).toContain(WARNING);
+    expect(err.join("\n").indexOf(WARNING)).toBeLessThan(err.join("\n").indexOf("Cloud quote (runpod"));
+  });
+
+  it("does not accept --yes as acknowledgment of the shutdown risk", async () => {
+    const f = fakeDeps();
+    await run({ deps: async () => f.deps, interactive: false }, ...base, "--yes", "--json");
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ status: "error", code: "CLOUD_ACKNOWLEDGMENT_REQUIRED" });
+    expect(JSON.parse(out.join("\n")).message).toContain(WARNING);
+    expect(process.exitCode).toBe(14);
+    expect(f.calls.start).toBe(0);
+  });
+
+  it("asks for the risk acknowledgment explicitly in an interactive session, then for approval", async () => {
+    const f = fakeDeps();
+    const asked: string[] = [];
+    await run({ deps: async () => f.deps, confirm: async (q) => (asked.push(q), true) }, ...base);
+    expect(asked).toEqual(["Do you understand and accept this risk?", "Approve this quote and start the cloud run?"]);
+    expect(err.join("\n")).toContain(WARNING);
+    expect(out.join("\n")).toContain("fake-model: succeeded.");
+    expect(f.calls.start).toBe(1);
+  });
+
+  it("provisions nothing when the risk is not acknowledged", async () => {
+    const f = fakeDeps();
+    await run({ deps: async () => f.deps, confirm: async () => false }, ...base);
+    expect(err.join("\n")).toContain("Not acknowledged. Nothing was uploaded or provisioned.");
+    expect(process.exitCode).toBe(2);
+    expect(f.calls.start).toBe(0);
+  });
+
+  it("persistent caching also requires acknowledging that storage charges continue until deleted", async () => {
+    const f = fakeDeps();
+    const persistent = ["--compute", "runpod", "--cache-policy", "persistent", "--max-budget", "5", "--max-lifetime", "3600"];
+    await run({ deps: async () => f.deps, interactive: false }, ...persistent, "--yes", ...accept, "--json");
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ code: "CLOUD_ACKNOWLEDGMENT_REQUIRED" });
+    expect(JSON.parse(out.join("\n")).message).toMatch(/Storage charges continue until you delete it/);
+    expect(f.calls.start).toBe(0);
+    out.length = 0;
+    err.length = 0;
+    process.exitCode = undefined;
+    const asked: string[] = [];
+    await run({ deps: async () => f.deps, confirm: async (q) => (asked.push(q), false) }, ...persistent, "--dry-run");
+    expect(err.join("\n")).toMatch(/Storage charges continue until you delete it/);
+    await run({ deps: async () => f.deps, confirm: async (q) => (asked.push(q), q.startsWith("Do you understand")) }, ...persistent);
+    expect(asked.filter((q) => q.startsWith("Do you understand"))).toHaveLength(2);
   });
 
   it("runs end to end after approval and reports where it ran", async () => {
@@ -204,26 +250,18 @@ describe("moldesk run --compute runpod", () => {
 
   it("--yes approves exactly the quote shown, with JSON on stdout", async () => {
     const f = fakeDeps();
-    await run({ deps: async () => f.deps }, ...base, "--yes", "--json");
+    await run({ deps: async () => f.deps }, ...base, ...accept, "--yes", "--json");
     const parsed = JSON.parse(out.join("\n"));
-    expect(parsed).toMatchObject({ status: "succeeded", record: { compute: { provider: "runpod", cleanup: "confirmed" } } });
+    expect(parsed).toMatchObject({ status: "succeeded", record: { compute: { provider: "runpod", cleanup: "confirmed", acknowledgedRisks: ["lifetime-risk"] } } });
     // Logs are persisted for --json runs too, and survive the machine being terminated.
     expect(fs.readFileSync(parsed.record.logs.stdout, "utf8")).toBe("hello from the worker\n");
     expect(fs.readFileSync(parsed.record.logs.stderr, "utf8")).toBe("note\n");
     expect(f.pods.size).toBe(0);
   });
 
-  it("exits 14 and provisions nothing when the deadline guard refuses", async () => {
-    const f = fakeDeps({ guardRefuses: true });
-    await run({ deps: async () => f.deps }, ...base, "--yes");
-    expect(err.join("\n")).toContain("CLOUD_GUARD_UNAVAILABLE");
-    expect(f.calls.start).toBe(0);
-    expect(process.exitCode).toBe(14);
-  });
-
   it("exits 13 with exact resource ids and a recover hint when cleanup cannot be confirmed", async () => {
     const f = fakeDeps({ terminateFails: true });
-    await run({ deps: async () => f.deps }, ...base, "--yes");
+    await run({ deps: async () => f.deps }, ...base, ...accept, "--yes");
     expect(err.join("\n")).toMatch(/CLOUD_CLEANUP_PENDING: .*gpu pod1/);
     expect(err.join("\n")).toMatch(/moldesk cloud recover /);
     expect(process.exitCode).toBe(13);

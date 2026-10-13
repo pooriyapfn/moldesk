@@ -9,7 +9,6 @@ import {
   type TokenStore,
   type WorkerBundle,
 } from "@moldesk/runtime";
-import { resolveDeadlineGuard, type DeadlineGuard } from "./guard.js";
 import type { CloudRunDeps } from "./run.js";
 import { CloudJournal } from "./state.js";
 import { resolveWorkerBundle } from "./worker-release.js";
@@ -19,14 +18,13 @@ export interface RunpodDepsOptions {
   store?: CredentialStore;
   tokenStore?: TokenStore;
   workerBundle?: WorkerBundle;
-  guard?: DeadlineGuard;
   env?: NodeJS.ProcessEnv;
 }
 
 /**
  * Production wiring for Runpod: key from the credential store (read per request), account scope from
- * a keyed credential fingerprint, per-job tokens in the keyring, and the deadline guard resolver,
- * which refuses until a verified independent scheduler exists.
+ * a keyed credential fingerprint and per-job tokens in the keyring. There is no independent
+ * lifetime scheduler: shutdown is enforced by this client while connected and by the in-Pod watchdog.
  */
 export async function createRunpodCloudDeps(options: RunpodDepsOptions = {}): Promise<CloudRunDeps> {
   const paths = options.paths ?? getMoldeskPaths();
@@ -47,5 +45,5 @@ export async function createRunpodCloudDeps(options: RunpodDepsOptions = {}): Pr
     tokenStore: options.tokenStore ?? createKeyringTokenStore(),
     ...(bundle ? { workerBundle: bundle } : {}),
   });
-  return { provider, paths, backend, guard: options.guard ?? resolveDeadlineGuard(), accountScope };
+  return { provider, paths, backend, accountScope };
 }
