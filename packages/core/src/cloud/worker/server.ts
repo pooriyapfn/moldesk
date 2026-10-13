@@ -240,7 +240,13 @@ export function createWorkerServer(options: WorkerServerOptions): RunningWorker 
     if (action === "start" && method === "POST") {
       if (current) return sendJson(response, 409, { message: "job already started" });
       const body = (await readJson(request)) as WireJob;
-      if (body?.version !== EXECUTION_CONTRACT_VERSION || body.runId !== runId || !Array.isArray(body.inputs) || body.inputs.length === 0) {
+      if (
+        body?.version !== EXECUTION_CONTRACT_VERSION ||
+        body.runId !== runId ||
+        (body.mode !== "execute" && body.mode !== "prepare-assets") ||
+        !Array.isArray(body.inputs) ||
+        (body.mode === "execute" && body.inputs.length === 0)
+      ) {
         return sendJson(response, 400, { message: "invalid job" });
       }
       for (const input of body.inputs) {

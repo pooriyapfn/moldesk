@@ -7,6 +7,7 @@ import {
   type ApprovedJob,
   type ArtifactInventory,
   type CloudPod,
+  type CacheLedger,
   type CloudProvider,
   type ExecutionBackend,
   type JobHandle,
@@ -197,6 +198,48 @@ function ledgerFor(journal: CloudJournal, runId: string, deadlineAt: string): Re
   };
 }
 
+/** Bridges a backend's cache lifecycle onto the journal for one job. */
+export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: string; runId: string; manifest: ModelManifestV1; cloud: CloudSpec; cacheKey: string; manifestDigest: string }): CacheLedger {
+  let current: { accountScope: string; datacenterId: string; volumeId: string; cacheKey: string } | undefined;
+  const state = () => (current ? journal.getCache(current.accountScope, current.datacenterId, current.volumeId, current.cacheKey)?.state : undefined);
+  return {
+    lookup() {
+      const hit = journal.listCaches().find((cache) => cache.accountScope === params.accountScope && cache.cacheKey === params.cacheKey && cache.state === "READY");
+      if (hit) current = { accountScope: hit.accountScope, datacenterId: hit.datacenterId, volumeId: hit.volumeId, cacheKey: hit.cacheKey };
+      return hit ? { volumeId: hit.volumeId, datacenterId: hit.datacenterId } : undefined;
+    },
+    begin(volume) {
+      current = { accountScope: params.accountScope, datacenterId: volume.datacenterId, volumeId: volume.volumeId, cacheKey: params.cacheKey };
+      journal.upsertCache({
+        ...current,
+        model: params.manifest.name,
+        modelVersion: params.manifest.modelVersion,
+        layoutRevision: params.cloud.assetLayoutRevision,
+        manifestDigest: params.manifestDigest,
+        cachePath: `/workspace/moldesk-cache/${params.cacheKey}`,
+        sizeBytes: null,
+        checksumManifestDigest: null,
+      });
+      if (state() === "FAILED") journal.setCacheState(current, "PREPARING");
+    },
+    verifying() {
+      if (current && state() === "PREPARING") journal.setCacheState(current, "VERIFYING");
+    },
+    ready(details) {
+      if (current && state() === "VERIFYING") journal.setCacheState(current, "READY", details);
+    },
+    failed() {
+      if (current && state() !== undefined && state() !== "FAILED") journal.setCacheState(current, "FAILED");
+    },
+    acquireLease(ttlSeconds) {
+      return current ? journal.acquireCacheLease(current, params.runId, ttlSeconds) : true;
+    },
+    releaseLease() {
+      if (current) journal.releaseCacheLease(current, params.runId);
+    },
+  };
+}
+
 function toView(pod: CloudPod): ProviderResourceView {
   const match = /-(cpu|gpu)$/.exec(pod.name);
   return { providerId: pod.id, name: pod.name, role: (match?.[1] as "cpu" | "gpu" | undefined) ?? "gpu" };
@@ -381,7 +424,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     let snapshotLast: JobSnapshot | undefined;
     let cursor = 0;
     try {
-      handle = await backend.start(job, { ledger, signal: options.signal, onProgress: (event) => progress(event.stage, event.message) });
+      handle = await backend.start(job, { ledger, ...(quote.cachePolicy === "persistent" ? { cache: cacheLedgerFor(journal, { accountScope, runId: dirs.runId, manifest: plan.manifest, cloud: plan.cloud, cacheKey: job.cacheKey, manifestDigest: job.manifestDigest }) } : {}), signal: options.signal, onProgress: (event) => progress(event.stage, event.message) });
       record.status = "running";
       persist();
 

@@ -115,8 +115,23 @@ export interface ResourceLedger {
   deleted(intentId: string): void;
 }
 
+/** Journals persistent-cache state for a backend. Only used for the `persistent` policy. */
+export interface CacheLedger {
+  /** A cache the journal believes is READY for this job's key, if any. */
+  lookup(): { volumeId: string; datacenterId: string } | undefined;
+  /** Record the volume and a PREPARING cache row. */
+  begin(volume: { volumeId: string; datacenterId: string }): void;
+  verifying(): void;
+  ready(details: { sizeBytes: number; checksumManifestDigest: string }): void;
+  failed(): void;
+  /** Same-client lease around preparation; false when another process holds it. */
+  acquireLease(ttlSeconds: number): boolean;
+  releaseLease(): void;
+}
+
 export interface BackendContext {
   ledger: ResourceLedger;
+  cache?: CacheLedger;
   signal?: AbortSignal;
   onProgress?: (event: { stage: JobStage; message?: string }) => void;
 }
