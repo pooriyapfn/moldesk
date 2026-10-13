@@ -1,5 +1,5 @@
 import path from "node:path";
-import { getAdapter, validateParams, type RunContext } from "@moldesk/adapters";
+import { getAdapter, type RunContext } from "@moldesk/adapters";
 import { listAvailableModels, type RuntimeKind } from "@moldesk/registry";
 import {
   getMoldeskPaths,
@@ -11,7 +11,7 @@ import {
 } from "@moldesk/runtime";
 import { MoldeskError } from "./errors.js";
 import { listInstalledModels } from "./install-state.js";
-import { allocateRunDirectory, collectRunOutputs, createRunSnapshot, finalizeRun, toErrorInfo, writeRunRecord } from "./run-lifecycle.js";
+import { allocateRunDirectory, collectRunOutputs, createRunSnapshot, finalizeRun, prepareRunParams, toErrorInfo, writeRunRecord } from "./run-lifecycle.js";
 import type { RunArtifact, RunWarning } from "./run-report.js";
 
 /**
@@ -133,20 +133,7 @@ export async function runModel(
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
 
-  // Platform-dependent defaults (e.g. Boltz's `accelerator`) come from the adapter,
-  // not a static `ParamDescriptor.default`, since the right value depends on which
-  // platform-specific runtime entry was actually installed. Pre-seed `supplied` with
-  // them (as strings, since `validateParams` coerces from `--param` strings) for any
-  // key the caller didn't explicitly pass — an explicit `--param` always wins.
-  const dynamicDefaults = adapter.resolveParamDefaults?.({ manifestName: manifest.name, installed }) ?? {};
-  const suppliedParams = { ...(options.params ?? {}) };
-  for (const [key, value] of Object.entries(dynamicDefaults)) {
-    if (suppliedParams[key] === undefined) suppliedParams[key] = String(value);
-  }
-  const { effective: effectiveParams, errors: paramErrors } = validateParams(adapter.params ?? [], suppliedParams);
-  if (paramErrors.length > 0) {
-    throw runFailure("INVALID_RUN_PARAMS", paramErrors.join("; "), "Fix the listed --param values and retry.", { errors: paramErrors });
-  }
+  const { effectiveParams } = prepareRunParams(adapter, manifest.name, { runtime: installed.runtime }, options.params);
 
   // --- Step 4: allocate run ID and directory. From here on, every outcome resolves. ---
   const dirs = allocateRunDirectory(paths);

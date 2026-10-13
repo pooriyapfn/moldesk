@@ -69,6 +69,8 @@ export {
 export type { CredentialSource, CredentialStoreOptions, ResolvedCredential, SecretBackend } from "./cloud/credentials.js";
 export type { RunpodProviderOptions } from "./cloud/runpod.js";
 export type * from "./cloud/types.js";
+export { EXECUTION_CONTRACT_VERSION } from "./cloud/execution.js";
+export type * from "./cloud/execution.js";
 export { getHardwareInfo, getDiskInfo } from "./hardware/index.js";
 export { detectPython } from "./python/index.js";
 export {

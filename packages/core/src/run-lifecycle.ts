@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { ModelAdapterDefinition, RunContext } from "@moldesk/adapters";
+import { validateParams, type ModelAdapterDefinition, type ResolveParamDefaultsContext, type RunContext } from "@moldesk/adapters";
 import type { ModelManifestV1, RuntimeKind } from "@moldesk/registry";
 import {
   getSystemReport,
@@ -26,6 +26,43 @@ export function writeRunRecord(runDirPath: string, record: RunRecord): void {
   const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
   fs.writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   fs.renameSync(temporary, file);
+}
+
+export interface PreparedRunParams {
+  suppliedParams: Record<string, string>;
+  effectiveParams: Record<string, unknown>;
+}
+
+/**
+ * Step 3 shared by local and cloud runs: applies platform-dependent adapter defaults (an explicit
+ * `--param` always wins), then validates. Rejects with INVALID_RUN_PARAMS before any run directory exists.
+ */
+export function prepareRunParams(
+  adapter: ModelAdapterDefinition,
+  manifestName: string,
+  installed: ResolveParamDefaultsContext["installed"],
+  params: Record<string, string> | undefined,
+): PreparedRunParams {
+  // Platform-dependent defaults (e.g. Boltz's `accelerator`) come from the adapter,
+  // not a static `ParamDescriptor.default`, since the right value depends on which
+  // platform-specific runtime entry was actually installed. Pre-seed `supplied` with
+  // them (as strings, since `validateParams` coerces from `--param` strings) for any
+  // key the caller didn't explicitly pass — an explicit `--param` always wins.
+  const dynamicDefaults = adapter.resolveParamDefaults?.({ manifestName, installed }) ?? {};
+  const suppliedParams = { ...(params ?? {}) };
+  for (const [key, value] of Object.entries(dynamicDefaults)) {
+    if (suppliedParams[key] === undefined) suppliedParams[key] = String(value);
+  }
+  const { effective, errors } = validateParams(adapter.params ?? [], suppliedParams);
+  if (errors.length > 0) {
+    throw new MoldeskError({
+      code: "INVALID_RUN_PARAMS",
+      message: errors.join("; "),
+      remediation: "Fix the listed --param values and retry.",
+      details: { errors },
+    });
+  }
+  return { suppliedParams, effectiveParams: effective };
 }
 
 export interface RunDirectories {

@@ -117,3 +117,5 @@ export type CloudErrorCode =
   | "CLOUD_UNAVAILABLE"
   /** A create request may or may not have taken effect; discover candidates before retrying. */
   | "CLOUD_AMBIGUOUS_CREATE";
+
+export type CloudResourceRoleName = "cpu" | "gpu" | "volume";
