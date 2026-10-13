@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CloudCatalog } from "@moldesk/runtime";
 import { parseManifest, type ModelManifestV1 } from "@moldesk/registry";
 import { assertApprovalValid, buildQuote, type QuoteInputs } from "./quote.js";
+import type { CloudCatalog as Catalog } from "@moldesk/runtime";
 
 const DIGEST = "a".repeat(64);
 
@@ -198,5 +199,69 @@ describe("assertApprovalValid", () => {
     const slightly = catalog();
     slightly.gpus[1]!.priceUsdPerHour = 0.63;
     expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ catalog: slightly })), now)).not.toThrow();
+  });
+});
+
+describe("approval revalidation of storage cost and budget coverage", () => {
+  const now = new Date("2026-10-13T12:05:00.000Z");
+  const rates = (disk: number | undefined, volume: number | undefined): Catalog => ({
+    ...catalog(),
+    ...(disk !== undefined || volume !== undefined ? { storageRates: { ...(disk !== undefined ? { containerDiskUsdPerGbMonth: disk } : {}), ...(volume !== undefined ? { networkVolumeUsdPerGbMonth: volume } : {}) } } : {}),
+  });
+  const approve = (quote: { id: string }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z" });
+  const check = (approved: ReturnType<typeof buildQuote>, fresh: ReturnType<typeof buildQuote>) => assertApprovalValid(approved, approve(approved), fresh, now);
+  const requote = expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" });
+
+  it("passes when storage figures and coverage are identical", () => {
+    const a = buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(5, 0.07) }));
+    expect(() => check(a, buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(5, 0.07) })))).not.toThrow();
+    const unknown = buildQuote(inputs({ cachePolicy: "persistent" }));
+    expect(() => check(unknown, buildQuote(inputs({ cachePolicy: "persistent" })))).not.toThrow();
+  });
+
+  it("requires fresh approval when an unknown rate becomes known, even if the amount is tiny", () => {
+    const approved = buildQuote(inputs());
+    expect(approved.cost.temporaryStorage.worstCaseUsd).toBeNull();
+    const fresh = buildQuote(inputs({ catalog: rates(0.0001, undefined) }));
+    expect(fresh.cost.temporaryStorage.worstCaseUsd).not.toBeNull();
+    expect(fresh.id).toBe(approved.id);
+    expect(() => check(approved, fresh)).toThrow(requote);
+    expect(() => check(approved, fresh)).toThrow(/coverage changed.*diskCounted/);
+  });
+
+  it("requires fresh approval when a known rate becomes unknown (coverage shrinks)", () => {
+    const approved = buildQuote(inputs({ catalog: rates(0.1, undefined) }));
+    expect(() => check(approved, buildQuote(inputs()))).toThrow(requote);
+  });
+
+  it("requires fresh approval when the recurring volume rate becomes known or unknown", () => {
+    const unknownVolume = buildQuote(inputs({ cachePolicy: "persistent" }));
+    const knownVolume = buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(undefined, 0.07) }));
+    expect(() => check(unknownVolume, knownVolume)).toThrow(/volumeRateKnown/);
+    expect(() => check(knownVolume, unknownVolume)).toThrow(requote);
+  });
+
+  it("requires fresh approval for a material rise in container disk, recurring storage or the counted total, but not for noise or drops", () => {
+    const a = buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(10, 0.07), maxBudgetUsd: 50 }));
+    // Disk rate doubles: temporary disk cost rises well past tolerance and the noise floor.
+    expect(() => check(a, buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(20, 0.07), maxBudgetUsd: 50 })))).toThrow(/Container disk cost rose/);
+    // Volume rate doubles: recurring cost rises 2.8 -> 5.6 per month.
+    expect(() => check(a, buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(10, 0.14), maxBudgetUsd: 50 })))).toThrow(/Recurring volume storage rose/);
+    // Within tolerance: allowed.
+    expect(() => check(a, buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(10.5, 0.074), maxBudgetUsd: 50 })))).not.toThrow();
+    // Cheaper with the same coverage: allowed.
+    expect(() => check(a, buildQuote(inputs({ cachePolicy: "persistent", catalog: rates(5, 0.03), maxBudgetUsd: 50 })))).not.toThrow();
+  });
+
+  it("ignores sub-floor absolute changes so rounding noise never forces re-approval", () => {
+    const a = buildQuote(inputs({ catalog: rates(0.1, undefined) })); // ~ $0.0055 disk
+    const tiny = buildQuote(inputs({ catalog: rates(0.15, undefined) })); // ~ $0.0082: +50% but only ~$0.003
+    expect(() => check(a, tiny)).not.toThrow();
+  });
+
+  it("a changed disk size or machine count (persistent vs not) is a coverage change and already a different quote id", () => {
+    const eph = buildQuote(inputs());
+    const per = buildQuote(inputs({ cachePolicy: "persistent" }));
+    expect(() => check(eph, per)).toThrow(requote);
   });
 });

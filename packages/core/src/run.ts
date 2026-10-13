@@ -100,6 +100,8 @@ export interface RunCompute {
   sourceRevision?: string;
   cleanup: "confirmed" | "pending";
   workerLogCursor?: number;
+  /** `complete: false` means the worker evicted log chunks before they could be fetched (bounded tail). */
+  logs?: { complete: boolean; lostChunks: number };
 }
 
 export type { RunArtifact, RunWarning };

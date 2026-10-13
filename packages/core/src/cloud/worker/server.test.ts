@@ -24,9 +24,9 @@ afterEach(async () => {
 
 const sha = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 
-async function boot(pipeline: WorkerPipeline, token = TOKEN) {
+async function boot(pipeline: WorkerPipeline, token = TOKEN, maxLogBytes?: number) {
   const rootDir = tmp();
-  const worker = createWorkerServer({ token, rootDir, pipeline });
+  const worker = createWorkerServer({ token, rootDir, pipeline, ...(maxLogBytes ? { maxLogBytes } : {}) });
   workers.push(worker);
   const port = await worker.listen(0, "127.0.0.1");
   const endpoint = `http://127.0.0.1:${port}`;
@@ -353,6 +353,58 @@ describe("timeouts and cancellation while streaming", () => {
     const c = client({ signal: controller.signal, requestTimeoutMs: 60_000, fetch: async (_input, init) => new Response(stalledBody(new TextEncoder().encode("{"), init?.signal), { status: 200 }) });
     setTimeout(() => controller.abort(), 20);
     await expect(c.status(RUN)).rejects.toMatchObject({ code: "RUN_CANCELLED" });
+  });
+});
+
+describe("bounded log tail", () => {
+  const chatty: WorkerPipeline = async ({ log }) => {
+    for (let i = 1; i <= 20; i += 1) log("stdout", `line-${String(i).padStart(2, "0")}-${"x".repeat(90)}\n`); // ~100 bytes each
+    return { exitCode: 0 };
+  };
+
+  it("reports exactly how many chunks a late reader missed, and keeps the newest", async () => {
+    const { client } = await boot(chatty, TOKEN, 450);
+    const c = client();
+    const input = inputFile();
+    await c.uploadInput(RUN, input);
+    await c.start(wire(input));
+    await untilDone(c);
+
+    const all = await c.status(RUN, 0);
+    const retained = all.logs.stdout.split("\n").filter(Boolean);
+    expect(retained.length).toBeGreaterThan(0);
+    expect(retained.length).toBeLessThan(20);
+    expect(retained.at(-1)).toContain("line-20");
+    expect(all.logs.lostEntries).toBe(20 - retained.length);
+    expect(all.logs.evictedBytes).toBeGreaterThanOrEqual((20 - retained.length) * 99);
+    expect(all.logs.cursor).toBe(20);
+  });
+
+  it("reports nothing lost to a reader that kept up, or one that is partly behind", async () => {
+    const { client } = await boot(chatty, TOKEN, 450);
+    const c = client();
+    const input = inputFile();
+    await c.uploadInput(RUN, input);
+    await c.start(wire(input));
+    await untilDone(c);
+    const retainedCount = (await c.status(RUN, 0)).logs.stdout.split("\n").filter(Boolean).length;
+    expect((await c.status(RUN, 20)).logs.lostEntries).toBeUndefined();
+    // A reader positioned exactly at the oldest retained chunk lost nothing.
+    expect((await c.status(RUN, 20 - retainedCount)).logs.lostEntries).toBeUndefined();
+    // One chunk earlier and exactly one chunk was missed.
+    expect((await c.status(RUN, 20 - retainedCount - 1)).logs.lostEntries).toBe(1);
+  });
+
+  it("never reports loss when the buffer was not exceeded", async () => {
+    const { client } = await boot(chatty, TOKEN, 1_000_000);
+    const c = client();
+    const input = inputFile();
+    await c.uploadInput(RUN, input);
+    await c.start(wire(input));
+    await untilDone(c);
+    const all = await c.status(RUN, 0);
+    expect(all.logs.lostEntries).toBeUndefined();
+    expect(all.logs.stdout.split("\n").filter(Boolean)).toHaveLength(20);
   });
 });
 

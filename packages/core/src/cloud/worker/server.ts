@@ -19,7 +19,7 @@ export const WORKER_VERSION = "1";
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_JSON_BYTES = 1024 * 1024;
 const MAX_INPUT_BYTES = 2 * 1024 ** 3;
-const MAX_LOG_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_MAX_LOG_BYTES = 4 * 1024 * 1024;
 
 export interface PipelineContext {
   job: WireJob;
@@ -47,6 +47,8 @@ export interface WorkerServerOptions {
   pipeline: WorkerPipeline;
   /** Extra secrets to scrub from logs (the token itself is always scrubbed). */
   secrets?: string[];
+  /** In-memory log tail limit; older chunks are evicted and reported as lost to clients that missed them. */
+  maxLogBytes?: number;
 }
 
 interface JobState {
@@ -59,6 +61,9 @@ interface JobState {
   logs: Array<{ seq: number; stream: "stdout" | "stderr"; text: string; bytes: number }>;
   logBytes: number;
   seq: number;
+  /** Highest chunk number evicted from the buffer, and the cumulative bytes evicted. */
+  evictedSeq: number;
+  evictedBytes: number;
   controller: AbortController;
 }
 
@@ -130,6 +135,7 @@ export interface RunningWorker {
 
 export function createWorkerServer(options: WorkerServerOptions): RunningWorker {
   const secrets = [options.token, ...(options.secrets ?? [])];
+  const maxLogBytes = options.maxLogBytes ?? DEFAULT_MAX_LOG_BYTES;
   let current: { runId: string; state: JobState } | undefined;
 
   const pushLog = (state: JobState, stream: "stdout" | "stderr", raw: string): void => {
@@ -138,7 +144,12 @@ export function createWorkerServer(options: WorkerServerOptions): RunningWorker 
     state.seq += 1;
     state.logs.push({ seq: state.seq, stream, text, bytes });
     state.logBytes += bytes;
-    while (state.logBytes > MAX_LOG_BYTES && state.logs.length > 1) state.logBytes -= state.logs.shift()!.bytes;
+    while (state.logBytes > maxLogBytes && state.logs.length > 1) {
+      const evicted = state.logs.shift()!;
+      state.logBytes -= evicted.bytes;
+      state.evictedSeq = evicted.seq;
+      state.evictedBytes += evicted.bytes;
+    }
   };
 
   const snapshot = (state: JobState, after: number): JobSnapshot => {
@@ -150,6 +161,8 @@ export function createWorkerServer(options: WorkerServerOptions): RunningWorker 
       ...(state.error ? { error: state.error } : {}),
       logs: {
         cursor: state.seq,
+        // Chunks the caller never saw and the buffer no longer holds.
+        ...(state.evictedSeq > after ? { lostEntries: state.evictedSeq - after, evictedBytes: state.evictedBytes } : {}),
         stdout: fresh.filter((entry) => entry.stream === "stdout").map((entry) => entry.text).join(""),
         stderr: fresh.filter((entry) => entry.stream === "stderr").map((entry) => entry.text).join(""),
       },
@@ -159,7 +172,7 @@ export function createWorkerServer(options: WorkerServerOptions): RunningWorker 
 
   const startJob = (job: WireJob): void => {
     const jobDir = path.join(options.rootDir, job.runId);
-    const state: JobState = { job, stage: "booting", state: "running", logs: [], logBytes: 0, seq: 0, controller: new AbortController() };
+    const state: JobState = { job, stage: "booting", state: "running", logs: [], logBytes: 0, seq: 0, evictedSeq: 0, evictedBytes: 0, controller: new AbortController() };
     current = { runId: job.runId, state };
     fs.mkdirSync(path.join(jobDir, "output"), { recursive: true });
     void (async () => {

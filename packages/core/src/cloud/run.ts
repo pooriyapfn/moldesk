@@ -202,6 +202,30 @@ function ledgerFor(journal: CloudJournal, runId: string, deadlineAt: string): Re
   };
 }
 
+/**
+ * The worker keeps a bounded log tail. When it reports chunks evicted before we fetched them, say so
+ * plainly: a marker in the local log, a warning on the run, and `compute.logs.complete = false`.
+ */
+export const LOGS_INCOMPLETE_CODE = "CLOUD_LOGS_INCOMPLETE";
+export function recordLostLogs(
+  snapshot: JobSnapshot,
+  target: { stdoutPath: string; stderrPath: string; compute: RunCompute; record: RunRecord; onLost?: (n: number) => void },
+): void {
+  const lost = snapshot.logs.lostEntries ?? 0;
+  if (lost <= 0) return;
+  target.onLost?.(lost);
+  const marker = `\n[moldesk: ${lost} worker log chunk(s) were dropped before they could be fetched; the worker retains only a bounded tail, so this log is incomplete here]\n`;
+  fs.appendFileSync(target.stdoutPath, marker);
+  fs.appendFileSync(target.stderrPath, marker);
+  const total = (target.compute.logs?.lostChunks ?? 0) + lost;
+  target.compute.logs = { complete: false, lostChunks: total };
+  const warning = {
+    code: LOGS_INCOMPLETE_CODE,
+    message: `${total} worker log chunk(s) were dropped before they could be fetched (the worker keeps a bounded tail); the local logs are incomplete.`,
+  };
+  target.record.warnings = [...(target.record.warnings ?? []).filter((entry) => entry.code !== LOGS_INCOMPLETE_CODE), warning];
+}
+
 /** Bridges a backend's cache lifecycle onto the journal for one job. */
 export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: string; runId: string; manifest: ModelManifestV1; cloud: CloudSpec; cacheKey: string; manifestDigest: string }): CacheLedger {
   let current: { accountScope: string; datacenterId: string; volumeId: string; cacheKey: string } | undefined;
@@ -375,7 +399,9 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     fs.writeFileSync(stdoutPath, "", { flag: "a", mode: 0o600 });
     fs.writeFileSync(stderrPath, "", { flag: "a", mode: 0o600 });
     record.logs = { stdout: stdoutPath, stderr: stderrPath };
+    let lostChunks = 0;
     const saveLogs = (snapshot: JobSnapshot): void => {
+      recordLostLogs(snapshot, { stdoutPath, stderrPath, compute, record, onLost: (n) => (lostChunks += n) });
       if (snapshot.logs.stdout) fs.appendFileSync(stdoutPath, snapshot.logs.stdout);
       if (snapshot.logs.stderr) fs.appendFileSync(stderrPath, snapshot.logs.stderr);
     };

@@ -86,8 +86,12 @@ export interface JobSnapshot {
   state: JobState;
   exitCode?: number;
   error?: { code: string; message: string };
-  /** Resumable log window: pass `cursor` back as `after` to continue. */
-  logs: { cursor: number; stdout: string; stderr: string };
+  /**
+   * Resumable log window: pass `cursor` back as `after` to continue. The worker keeps only a bounded
+   * tail, so `lostEntries` counts chunks after `after` that were evicted before they could be fetched
+   * (exact: chunks are numbered contiguously). `evictedBytes` is the worker's cumulative evicted size.
+   */
+  logs: { cursor: number; stdout: string; stderr: string; lostEntries?: number; evictedBytes?: number };
   runtime?: RemoteRuntimeReport;
 }
 

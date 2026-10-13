@@ -6,7 +6,7 @@ import { MoldeskError } from "../errors.js";
 import { collectRunOutputs, finalizeRun, writeRunRecord } from "../run-lifecycle.js";
 import type { RunModelResult, RunRecord } from "../run.js";
 import type { DeadlineGuard } from "./guard.js";
-import { confirmRunResourcesGone, defaultResolveModelForRecovery, type CleanupOutcome, type CloudRunDeps } from "./run.js";
+import { confirmRunResourcesGone, defaultResolveModelForRecovery, recordLostLogs, type CleanupOutcome, type CloudRunDeps } from "./run.js";
 import { CloudJournal, type CloudCacheRecord, type CloudResourceRecord } from "./state.js";
 
 function failure(code: string, message: string, remediation: string, details?: Record<string, unknown>): MoldeskError {
@@ -63,6 +63,7 @@ export async function recoverCloudRun(runId: string, deps: RecoverDeps, options:
       try {
         const snapshot = await deps.backend.observe(handle, record.compute?.workerLogCursor ?? 0);
         // Keep the local logs complete: append whatever the worker produced since the last saved cursor.
+        if (record.compute) recordLostLogs(snapshot, { stdoutPath: record.logs.stdout, stderrPath: record.logs.stderr, compute: record.compute, record });
         if (snapshot.logs.stdout) fs.appendFileSync(record.logs.stdout, snapshot.logs.stdout);
         if (snapshot.logs.stderr) fs.appendFileSync(record.logs.stderr, snapshot.logs.stderr);
         if (record.compute) record.compute.workerLogCursor = snapshot.logs.cursor;

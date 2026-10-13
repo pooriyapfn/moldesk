@@ -87,6 +87,7 @@ const catalog = (): CloudCatalog => ({
 
 class FakeProvider implements CloudProvider {
   readonly name = "runpod";
+  storageRates: CloudCatalog["storageRates"];
   pods = new Map<string, CloudPod>();
   nextId = 1;
   failTerminate = false;
@@ -95,7 +96,7 @@ class FakeProvider implements CloudProvider {
     return { ok: true as const, checkedAt: "t" };
   }
   async getCatalog() {
-    return catalog();
+    return { ...catalog(), ...(this.storageRates ? { storageRates: this.storageRates } : {}) };
   }
   async createPod(request: { name: string }): Promise<CloudPod> {
     const pod: CloudPod = { id: `pod${this.nextId++}`, name: request.name, status: "RUNNING", dataCenterId: "DC-1", costUsdPerHour: 0.6, createdAt: null };
@@ -416,6 +417,76 @@ describe("runCloudModel", () => {
     expect(journal.getJob(result.record.id)).toMatchObject({ status: "cleanup_pending", error: { code: "CLOUD_CLEANUP_PENDING" } });
     expect(journal.listOpenJobs()).toHaveLength(1);
     journal.close();
+  });
+});
+
+describe("approval revalidation against the live catalog", () => {
+  it("rejects before allocating anything when an unknown storage rate has become known since approval", async () => {
+    const box = sandbox();
+    const options = await box.optionsFor(); // approved while disk rates were unknown
+    box.provider.storageRates = { containerDiskUsdPerGbMonth: 0.1 };
+    await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_REQUOTE_REQUIRED" });
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
+    expect(box.events).toEqual([]);
+    expect(box.backend.starts).toBe(0);
+  });
+
+  it("proceeds when the fresh quote has the same storage coverage", async () => {
+    const box = sandbox();
+    box.provider.storageRates = { containerDiskUsdPerGbMonth: 0.1 };
+    const options = await box.optionsFor();
+    const result = await runCloudModel("fake-model", box.inputPath, options, box.deps);
+    expect(result.status).toBe("succeeded");
+  });
+});
+
+describe("incomplete worker logs", () => {
+  const snap = (stdout: string, state: JobSnapshot["state"], cursor: number, lost?: number): JobSnapshot => ({
+    stage: "running",
+    state,
+    ...(state === "succeeded" ? { exitCode: 0 } : {}),
+    logs: { cursor, stdout, stderr: "", ...(lost ? { lostEntries: lost, evictedBytes: lost * 100 } : {}) },
+  });
+
+  it("marks the local logs, warns on the run and records incompleteness, without failing a valid result", async () => {
+    const box = sandbox([snap("tail-1\n", "running", 5, 4), snap("tail-2\n", "succeeded", 7, 2)]);
+    const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps);
+    expect(result.status).toBe("succeeded");
+    expect(result.record.compute!.logs).toEqual({ complete: false, lostChunks: 6 });
+    const warnings = result.record.warnings!.filter((w) => w.code === "CLOUD_LOGS_INCOMPLETE");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.message).toMatch(/6 worker log chunk\(s\) were dropped/);
+    const stdout = fs.readFileSync(result.record.logs.stdout, "utf8");
+    expect(stdout).toMatch(/\[moldesk: 4 worker log chunk\(s\) were dropped.*incomplete here\]/);
+    expect(stdout).toContain("tail-1");
+    expect(stdout).toContain("tail-2");
+    expect(fs.readFileSync(result.record.logs.stderr, "utf8")).toMatch(/\[moldesk: 2 worker log chunk/);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(result.record.command.cwd, "run.json"), "utf8"));
+    expect(onDisk.compute.logs).toEqual({ complete: false, lostChunks: 6 });
+    expect(onDisk.warnings.map((w: { code: string }) => w.code)).toContain("CLOUD_LOGS_INCOMPLETE");
+  });
+
+  it("leaves complete logs unmarked", async () => {
+    const box = sandbox([snap("a\n", "running", 1), snap("b\n", "succeeded", 2)]);
+    const result = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), box.deps);
+    expect(result.record.compute!.logs).toBeUndefined();
+    expect((result.record.warnings ?? []).some((w) => w.code === "CLOUD_LOGS_INCOMPLETE")).toBe(false);
+    expect(fs.readFileSync(result.record.logs.stdout, "utf8")).toBe("a\nb\n");
+  });
+
+  it("recovery reports logs lost while the client was away", async () => {
+    const box = sandbox([snap("a\n", "running", 1), snap("b\n", "succeeded", 2)]);
+    box.provider.failTerminate = true;
+    box.backend.collectFailures = 1000;
+    const failed = await runCloudModel("fake-model", box.inputPath, await box.optionsFor(), { ...box.deps, cleanupAttempts: 1 });
+    box.backend.script.splice(0, box.backend.script.length, snap("later\n", "succeeded", 12, 9));
+    box.backend.observes = 0;
+    box.provider.failTerminate = false;
+    box.backend.collectFailures = 0;
+    const recovered = await recoverCloudRun(failed.record.id, { provider: box.provider, paths: box.paths, backend: box.backend, guard: box.deps.guard, resolveModel: box.deps.resolveModel, sleep: box.deps.sleep, cleanupAttempts: 1 });
+    expect(recovered.result?.record.compute?.logs).toEqual({ complete: false, lostChunks: 9 });
+    expect(recovered.result?.record.warnings?.some((w) => w.code === "CLOUD_LOGS_INCOMPLETE")).toBe(true);
+    expect(fs.readFileSync(failed.record.logs.stdout, "utf8")).toContain("9 worker log chunk(s) were dropped");
   });
 });
 

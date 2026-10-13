@@ -223,7 +223,7 @@ export async function finalizeRun(params: FinalizeRunParams): Promise<RunModelRe
   if (record.status === "succeeded" && visualize !== false) {
     const report = await generateRunReport({ adapter, context, runDirPath, record, signal });
     if (report.artifact) record.artifacts = [report.artifact];
-    if (report.warning) record.warnings = [report.warning];
+    if (report.warning) record.warnings = [...(record.warnings ?? []), report.warning];
   }
 
   // --- Step 13: write the final record atomically. ---

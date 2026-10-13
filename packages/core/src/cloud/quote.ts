@@ -9,6 +9,9 @@ export const QUOTE_VERSION = 1;
 export const APPROVAL_MAX_AGE_MS = 15 * 60 * 1000;
 /** A price rise above this fraction since approval requires a new approval. */
 export const PRICE_TOLERANCE = 0.1;
+/** Storage amounts below these absolute rises are noise, not a material change (USD). */
+export const STORAGE_NOISE_FLOOR_USD = 0.01;
+export const RECURRING_NOISE_FLOOR_USD_PER_MONTH = 0.1;
 export const DEFAULT_MAX_LIFETIME_SECONDS = 3600;
 /** Billing months are 730 hours. */
 const HOURS_PER_MONTH = 730;
@@ -261,6 +264,65 @@ export function assertApprovalValid(approved: CloudQuote, approval: CloudApprova
       `The hourly price rose from $${round(rate(approved))} to $${round(rate(fresh))} since approval.`,
       "Review and approve the new quote.",
       { approvedRate: rate(approved), freshRate: rate(fresh) },
+    );
+  }
+
+  assertStorageAndCoverageUnchanged(approved, fresh);
+}
+
+/** What the budget does and does not cover, independent of the wording of the disclosures. */
+function coverageShape(quote: CloudQuote) {
+  return {
+    diskGb: quote.cost.temporaryStorage.diskGb,
+    machines: quote.cost.temporaryStorage.machines,
+    diskCounted: quote.cost.temporaryStorage.worstCaseUsd !== null,
+    recurring: quote.cost.recurringStorage.recurring,
+    volumeGb: quote.cost.recurringStorage.volumeGb,
+    volumeRateKnown: quote.cost.recurringStorage.usdPerMonth !== null,
+    unknownCount: quote.budgetCoverage.unknown.length,
+  };
+}
+
+/**
+ * Approval covers what the user saw: the same costs counted, the same costs unknown, and storage
+ * amounts no more than a tolerance higher. An unknown rate becoming known (or the reverse) changes
+ * what the budget covers, so it needs a fresh approval even if the new figure looks small.
+ */
+function assertStorageAndCoverageUnchanged(approved: CloudQuote, fresh: CloudQuote): void {
+  const before = coverageShape(approved);
+  const after = coverageShape(fresh);
+  const changed = (Object.keys(before) as Array<keyof typeof before>).filter((key) => before[key] !== after[key]);
+  if (changed.length > 0) {
+    throw rejected(
+      "CLOUD_REQUOTE_REQUIRED",
+      `Storage cost coverage changed since approval (${changed.join(", ")}): costs that were ${before.diskCounted && after.diskCounted ? "" : "unknown or "}uncounted may now be known, or the reverse.`,
+      "Review the new quote, including what the budget covers, and approve it again.",
+      { changed, approved: before, fresh: after },
+    );
+  }
+  const risen = (from: number | null, to: number | null, floor: number): boolean => from !== null && to !== null && to > from * (1 + PRICE_TOLERANCE) && to - from >= floor;
+  if (risen(approved.cost.temporaryStorage.worstCaseUsd, fresh.cost.temporaryStorage.worstCaseUsd, STORAGE_NOISE_FLOOR_USD)) {
+    throw rejected(
+      "CLOUD_REQUOTE_REQUIRED",
+      `Container disk cost rose from $${approved.cost.temporaryStorage.worstCaseUsd} to $${fresh.cost.temporaryStorage.worstCaseUsd} since approval.`,
+      "Review and approve the new quote.",
+      { approved: approved.cost.temporaryStorage.worstCaseUsd, fresh: fresh.cost.temporaryStorage.worstCaseUsd },
+    );
+  }
+  if (risen(approved.cost.recurringStorage.usdPerMonth, fresh.cost.recurringStorage.usdPerMonth, RECURRING_NOISE_FLOOR_USD_PER_MONTH)) {
+    throw rejected(
+      "CLOUD_REQUOTE_REQUIRED",
+      `Recurring volume storage rose from $${approved.cost.recurringStorage.usdPerMonth}/month to $${fresh.cost.recurringStorage.usdPerMonth}/month since approval.`,
+      "Review and approve the new quote.",
+      { approved: approved.cost.recurringStorage.usdPerMonth, fresh: fresh.cost.recurringStorage.usdPerMonth },
+    );
+  }
+  if (risen(approved.cost.worstCaseBudgetedUsd, fresh.cost.worstCaseBudgetedUsd, STORAGE_NOISE_FLOOR_USD)) {
+    throw rejected(
+      "CLOUD_REQUOTE_REQUIRED",
+      `The worst-case cost counted against the budget rose from $${approved.cost.worstCaseBudgetedUsd} to $${fresh.cost.worstCaseBudgetedUsd} since approval.`,
+      "Review and approve the new quote.",
+      { approved: approved.cost.worstCaseBudgetedUsd, fresh: fresh.cost.worstCaseBudgetedUsd },
     );
   }
 }
