@@ -261,14 +261,14 @@ Deviations from the sections above:
 
 Still open (not claimed as done):
 
-1. **Lifetime guard (release blocker):** no independent scheduler exists or has been authorized; Pod-key
+1. **Lifetime guard (release blocker):** a concrete design exists ([cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md)) but no scheduler is implemented, deployed, authorized or validated; Pod-key
    expiry and GPU Pod key injection are unverified. `resolveDeadlineGuard()` refuses by design.
 2. **Live validation (release blocker):** no real Boltz Linux/CUDA run, no real image digests/sizes, no
    published worker bundle, no measured asset extraction size or timings; the Boltz manifest has no `cloud` block.
 3. **Untested against the real provider:** the container bootstrap script, the proxy path for uploads and large
    downloads (including real stall/timeout behavior), CPU Pod + volume then GPU remount in one datacenter,
    billing after terminate, and the actual cost of container disk and volumes.
-4. Worker logs are a bounded in-memory tail (4 MiB); upload has an overall rather than idle timeout.
+4. Worker logs are a bounded in-memory tail (4 MiB): loss is detected and reported (`CLOUD_LOGS_INCOMPLETE`) but not prevented; upload has an overall rather than idle timeout.
 5. Cross-machine cache lock reclamation relies on the client confirming the previous owner is gone;
    multi-client contention is only covered by unit tests.
 6. SQLite driver (`better-sqlite3` ~12.11) and the keyring binding were verified on macOS/Node 22 only.

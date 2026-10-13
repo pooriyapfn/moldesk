@@ -15,7 +15,7 @@ Cloud runs refuse to start until all of these exist:
    SHA-256. Record the URL and checksum in `packages/core/src/cloud/worker-release.ts`
    (`RELEASED_WORKER_BUNDLE`), or set `MOLDESK_WORKER_BUNDLE_URL` and `MOLDESK_WORKER_BUNDLE_SHA256` for
    development. The generic worker images must provide Node 20+, curl, tar and sha256sum.
-3. **An independent lifetime guard.** `resolveDeadlineGuard()` currently refuses with
+3. **An independent lifetime guard** (design: [cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md)). `resolveDeadlineGuard()` currently refuses with
    `CLOUD_GUARD_UNAVAILABLE`. Container exit does not stop billing, there is no lifetime field on Pod
    creation, and Runpod's Pod-scoped key (used by the in-Pod watchdog) cannot cover failures before the
    container boots. A verified external scheduler, authorized with narrow credentials, is a release blocker.
@@ -54,16 +54,23 @@ re-quote required, guard or worker bundle unavailable).
   (billed monthly) is shown separately and never folded into the one-run budget; transfer and other provider
   fees are not counted. Runpod's catalog API publishes **no disk or volume rates**, so those costs are shown
   as *unknown* rather than estimated. The budget is a guard on an estimate, not a provider-enforced cap.
-- Approval is bound to the quote id (inputs, model, GPU, datacenter, cache policy, images, limits), expires
-  after 15 minutes, and a price rise above 10% or any location change requires a new approval.
+- Approval is bound to the quote id (inputs, model, GPU, datacenter, cache policy, images, limits) and expires
+  after 15 minutes. It is re-checked against a fresh quote before provisioning: a location change, a price rise
+  above 10%, any change in **what the budget covers** (an unknown storage rate becoming known, or the reverse,
+  different disk/volume sizes or machine counts), or a material rise in container-disk, recurring-storage or
+  counted-total cost (above 10% and above a small absolute floor) requires a new approval. Decreases and
+  in-tolerance moves with the same coverage do not.
 - Intent is journaled before every create and delete; ambiguous creates are never blindly retried.
 - Paid machines are terminated and independently verified gone before the report is generated;
   cleanup failure is reported as `CLOUD_CLEANUP_PENDING` without discarding a valid result.
 - New paid work is refused while orphaned or owed resources exist or the provider cannot be listed.
 - **Logs are saved locally.** Worker stdout/stderr are appended to `stdout.log` / `stderr.log` in the run
   directory as they arrive (also with `--json`), referenced by `run.json`, and drained once more before
-  cleanup, so they survive Pod termination. The worker keeps only a bounded in-memory tail (4 MiB), so a very
-  chatty job can lose its oldest output.
+  cleanup, so they survive Pod termination. **Complete logs are not guaranteed:** the worker keeps only a
+  bounded in-memory tail (4 MiB). It numbers chunks and reports exactly how many a reader missed; the client then
+  writes a marker into both local logs, adds a `CLOUD_LOGS_INCOMPLETE` warning to the run and records
+  `compute.logs = { complete: false, lostChunks }` (also during `cloud recover`). The run itself still succeeds
+  or fails on its own merits.
 - **Transfers are bounded and cancellable.** Timeouts and cancellation stay active while response bodies
   stream: a stalled download is aborted after the idle timeout and resumed by byte range, cancellation aborts
   immediately, and a JSON response that never finishes times out. Downloads are verified per file (size and
@@ -75,5 +82,7 @@ re-quote required, guard or worker bundle unavailable).
 
 - Lifetime guard, live validation and real-provider behavior: see the list above and plan section 13.
 - Storage and egress costs are unknown for Runpod (no published rates); the budget does not cover them.
-- Worker log retention is a bounded tail; the full stream is not guaranteed for very large outputs.
+- Worker log retention is a bounded tail; loss is detected and reported, not prevented. Only the cumulative
+  evicted byte count is known, not the content, and the oldest output of a very chatty job can be gone.
+- The independent lifetime guard is **design only**: see [cloud-lifetime-guard-design.md](./cloud-lifetime-guard-design.md).
 - Upload timeouts are a single overall limit (10 minutes), not idle-based.
