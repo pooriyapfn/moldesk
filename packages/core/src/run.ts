@@ -1,24 +1,18 @@
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { getAdapter, validateParams, type RunContext } from "@moldesk/adapters";
 import { listAvailableModels, type RuntimeKind } from "@moldesk/registry";
 import {
   getMoldeskPaths,
-  getSystemReport,
   redactEnv,
-  runDir,
-  stageCompanionInputs,
   PythonRuntimeProvider,
   type MoldeskPaths,
   type RuntimeProvider,
   type SystemReport,
 } from "@moldesk/runtime";
 import { MoldeskError } from "./errors.js";
-import { digest, sha256File } from "./hash.js";
 import { listInstalledModels } from "./install-state.js";
-import { generateRunReport, type RunArtifact, type RunWarning } from "./run-report.js";
-import { VERSION } from "./version.js";
+import { allocateRunDirectory, collectRunOutputs, createRunSnapshot, finalizeRun, toErrorInfo, writeRunRecord } from "./run-lifecycle.js";
+import type { RunArtifact, RunWarning } from "./run-report.js";
 
 /**
  * `runModel` only rejects for usage errors discovered before a run directory
@@ -90,18 +84,6 @@ function runFailure(code: string, message: string, remediation: string, details?
   return new MoldeskError({ code, message, remediation, details });
 }
 
-function toErrorInfo(error: unknown, fallbackCode: string): { code: string; message: string } {
-  if (error instanceof MoldeskError) return { code: error.code, message: error.message };
-  return { code: fallbackCode, message: error instanceof Error ? error.message : String(error) };
-}
-
-function writeRunRecord(runDirPath: string, record: RunRecord): void {
-  const file = path.join(runDirPath, "run.json");
-  const temporary = `${file}.tmp-${process.pid}-${randomUUID()}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, file);
-}
-
 export async function runModel(
   modelName: string,
   inputPath: string,
@@ -167,63 +149,23 @@ export async function runModel(
   }
 
   // --- Step 4: allocate run ID and directory. From here on, every outcome resolves. ---
-  const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
-  const runDirPath = runDir(runId, { MOLDESK_HOME: paths.home });
-  const inputDir = path.join(runDirPath, "input");
-  const outputDir = path.join(runDirPath, "output");
-  fs.mkdirSync(inputDir, { recursive: true });
-  fs.mkdirSync(outputDir, { recursive: true });
+  const dirs = allocateRunDirectory(paths);
+  const { runDirPath, outputDir } = dirs;
 
-  // --- Step 5: copy/snapshot the original input. ---
-  const storedInputPath = path.join(inputDir, path.basename(resolvedInputPath));
-  fs.copyFileSync(resolvedInputPath, storedInputPath);
-  const inputSha256 = await sha256File(storedInputPath);
-  const inputRecords: RunRecord["input"] = [
-    { originalPath: resolvedInputPath, storedPath: storedInputPath, sha256: inputSha256, role: "job" },
-  ];
-
-  // Models whose job file references separate companion files (e.g. DiffDock-L's
-  // protein PDB + ligand file) declare them via `resolveCompanionInputs`, given the
-  // *original* (pre-copy) resolved job path so relative references resolve against
-  // where the job file actually lives. Absent means unchanged single-file behavior.
-  const companionRefs = await adapter.resolveCompanionInputs?.(resolvedInputPath) ?? [];
-  const stagedCompanions = companionRefs.length > 0
-    ? stageCompanionInputs({ jobFilePath: resolvedInputPath, refs: companionRefs, inputDir })
-    : [];
-  for (const staged of stagedCompanions) {
-    inputRecords.push({
-      originalPath: staged.originalPath,
-      storedPath: staged.storedPath,
-      sha256: await sha256File(staged.storedPath),
-      role: staged.id,
-    });
-  }
-  const companionInputs = stagedCompanions.map((staged) => ({ id: staged.id, path: staged.storedPath }));
-
-  const hardware = await getSystemReport();
-  const startedAt = new Date().toISOString();
-  const record: RunRecord = {
-    schemaVersion: 1,
-    id: runId,
-    status: "preparing",
-    model: manifest.name,
-    modelVersion: manifest.modelVersion,
-    adapterVersion: manifest.adapterVersion,
-    moldeskVersion: VERSION,
+  // --- Steps 5-6: snapshot inputs and write the initial record. ---
+  const snapshot = await createRunSnapshot({
+    dirs,
+    manifest,
+    adapter,
     runtime: installed.runtime.kind,
     installationFingerprint: installed.runtime.fingerprint,
-    manifestSha256: digest(manifest),
-    hardware,
-    input: inputRecords,
-    parameters: { supplied: options.params ?? {}, effective: effectiveParams },
-    command: { executable: "", args: [], cwd: runDirPath },
-    startedAt,
-    outputs: [],
-    logs: { stdout: path.join(runDirPath, "stdout.log"), stderr: path.join(runDirPath, "stderr.log") },
-  };
-
-  // --- Step 6: write the initial record. From this point, every path below finalizes run.json. ---
-  writeRunRecord(runDirPath, record);
+    resolvedInputPath,
+    suppliedParams: options.params ?? {},
+    effectiveParams,
+    signal: options.signal,
+  });
+  if (!snapshot.ok) return { status: snapshot.record.status as RunModelResult["status"], record: snapshot.record };
+  const { record, startedAt, storedInputPath, companionInputs } = snapshot;
 
   const runContext: RunContext = {
     manifestName: manifest.name,
@@ -280,16 +222,8 @@ export async function runModel(
         message: `${modelName} exited with code ${execution.exitCode}.`,
       };
     } else {
-      const collected = await adapter.collectOutputs(runContext);
       // --- Step 12: checksum + size each output. ---
-      record.outputs = await Promise.all(
-        collected.map(async (output) => ({
-          id: output.id,
-          path: output.path,
-          sha256: await sha256File(output.path),
-          sizeBytes: fs.statSync(output.path).size,
-        })),
-      );
+      record.outputs = await collectRunOutputs(adapter, runContext);
       record.status = "succeeded";
     }
   } catch (error) {
@@ -297,39 +231,14 @@ export async function runModel(
     record.error = toErrorInfo(error, "RUN_EXECUTION_FAILED");
   }
 
-  // --- Derived report. Deliberately outside the try/catch above: describing or exporting a
-  // report can only ever add a warning, never change the model's outcome or error. ---
-  if (record.status === "succeeded" && options.visualize !== false) {
-    const report = await generateRunReport({ adapter, context: runContext, runDirPath, record, signal: options.signal });
-    if (report.artifact) record.artifacts = [report.artifact];
-    if (report.warning) record.warnings = [report.warning];
-  }
-
-  // --- Step 13: write the final record atomically. ---
-  const finishedAt = new Date().toISOString();
-  record.finishedAt = finishedAt;
-  record.durationMs = Date.parse(finishedAt) - Date.parse(startedAt);
-  writeRunRecord(runDirPath, record);
-
-  const result: RunModelResult = { status: record.status as RunModelResult["status"], record };
-
-  // --- --output: a distinct, post-finalization copy step; never changes the run's own status. ---
-  if (result.status === "succeeded" && options.outputDir) {
-    try {
-      fs.mkdirSync(options.outputDir, { recursive: true });
-      for (const output of record.outputs) {
-        const target = path.join(options.outputDir, path.basename(output.path));
-        fs.copyFileSync(output.path, target, fs.constants.COPYFILE_EXCL);
-      }
-      // The report is self-contained; copy it under a name that cannot collide with outputs.
-      for (const artifact of record.artifacts ?? []) {
-        fs.copyFileSync(artifact.path, path.join(options.outputDir, `moldesk-report-${record.id}.html`), fs.constants.COPYFILE_EXCL);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.exportError = { code: "OUTPUT_COLLISION", message };
-    }
-  }
-
-  return result;
+  return finalizeRun({
+    adapter,
+    context: runContext,
+    runDirPath,
+    record,
+    startedAt,
+    signal: options.signal,
+    visualize: options.visualize,
+    outputDir: options.outputDir,
+  });
 }

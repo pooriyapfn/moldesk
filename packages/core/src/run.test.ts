@@ -1,11 +1,24 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getMoldeskPaths, type InstallCommandRunner, type ExecuteRequest, type ExecutionResult, type RuntimeProvider } from "@moldesk/runtime";
 import { listAvailableModels } from "@moldesk/registry";
 import { createInstallationPlan, installModel } from "./installation.js";
 import { runModel } from "./run.js";
+
+const hashFailure = vi.hoisted(() => ({ message: undefined as string | undefined }));
+
+vi.mock("./hash.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./hash.js")>();
+  return {
+    ...actual,
+    sha256File: async (file: string) => {
+      if (hashFailure.message) throw new Error(hashFailure.message);
+      return actual.sha256File(file);
+    },
+  };
+});
 
 const homes: string[] = [];
 
@@ -17,6 +30,7 @@ function tempPaths() {
 }
 
 afterEach(() => {
+  hashFailure.message = undefined;
   for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
 });
 
@@ -196,6 +210,31 @@ describe("runModel", () => {
     expect(result.status).toBe("failed");
     expect(result.record.error?.message).toContain("simulated runtime crash");
     expect(result.record.finishedAt).toBeDefined();
+  });
+
+  it("finalizes run.json as failed when input snapshotting throws after the run directory is allocated", async () => {
+    const paths = tempPaths();
+    await installFixture(paths);
+    const inputPath = writeInputFixture(paths.home);
+    let executed = false;
+    hashFailure.message = "simulated hashing failure";
+
+    const result = await runModel("proteinmpnn", inputPath, {
+      paths,
+      runtimeProvider: fakeProvider(() => {
+        executed = true;
+        throw new Error("must not execute");
+      }),
+    });
+
+    expect(executed).toBe(false);
+    expect(result.status).toBe("failed");
+    expect(result.record.error).toEqual({ code: "RUN_SNAPSHOT_FAILED", message: "simulated hashing failure" });
+    expect(result.record.finishedAt).toBeDefined();
+    const onDisk = JSON.parse(fs.readFileSync(path.join(result.record.command.cwd, "run.json"), "utf8"));
+    expect(onDisk.status).toBe("failed");
+    expect(onDisk.error.code).toBe("RUN_SNAPSHOT_FAILED");
+    expect(onDisk.finishedAt).toBeDefined();
   });
 
   it("writes status:running with the real pid before execute() resolves", async () => {
