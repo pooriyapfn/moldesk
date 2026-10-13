@@ -69,7 +69,9 @@ export {
 export type { CredentialSource, CredentialStoreOptions, ResolvedCredential, SecretBackend } from "./cloud/credentials.js";
 export type { RunpodProviderOptions } from "./cloud/runpod.js";
 export type * from "./cloud/types.js";
-export { EXECUTION_CONTRACT_VERSION } from "./cloud/execution.js";
+export { EXECUTION_CONTRACT_VERSION, WORKER_PORT, toWireJob } from "./cloud/execution.js";
+export { WorkerClient, WORKER_USER_AGENT, isSafeRelativePath, validateInventory } from "./cloud/worker-client.js";
+export type { WorkerClientOptions } from "./cloud/worker-client.js";
 export type * from "./cloud/execution.js";
 export { getHardwareInfo, getDiskInfo } from "./hardware/index.js";
 export { detectPython } from "./python/index.js";

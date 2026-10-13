@@ -130,3 +130,13 @@ export interface ExecutionBackend {
    */
   release(handle: JobHandle | { runId: string }, context: Pick<BackendContext, "ledger">): Promise<void>;
 }
+
+/** Job description sent to the worker: the approved job without client-local paths. */
+export type WireJob = Omit<ApprovedJob, "inputs"> & { inputs: Array<Omit<JobInputFile, "sourcePath">> };
+
+export function toWireJob(job: ApprovedJob): WireJob {
+  return { ...job, inputs: job.inputs.map(({ sourcePath: _sourcePath, ...rest }) => rest) };
+}
+
+/** Port the worker listens on inside the Pod; the provider proxy exposes it over HTTPS. */
+export const WORKER_PORT = 8000;
