@@ -18,6 +18,7 @@ export const docsNav: DocNavSection[] = [
       { title: "Overview", slug: "" },
       { title: "Installation", slug: "installation" },
       { title: "CLI usage", slug: "cli-usage" },
+      { title: "Agent skills", slug: "agent-skills" },
     ],
   },
   {
