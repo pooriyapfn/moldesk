@@ -456,7 +456,9 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       datacenterId: quote.datacenterId,
       gpuPolicy: {
         minVramGb: quote.gpuRange.minVramGb,
-        maxUsdPerHour: quote.gpuRange.maxUsdPerHour,
+        // The ceiling the user approved, not the re-quote's: the default range tracks the live cheapest
+        // price, so a momentary dip would otherwise shrink the range below what was consented to.
+        maxUsdPerHour: options.cloud.quote.gpuRange.maxUsdPerHour,
         ...(quote.gpuRange.pinnedGpuId ? { pinnedGpuId: quote.gpuRange.pinnedGpuId } : {}),
         lockDatacenter: quote.gpuRange.lockDatacenter,
       },

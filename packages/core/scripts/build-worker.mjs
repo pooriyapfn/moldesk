@@ -7,6 +7,7 @@
 //
 // The bundle is a release artifact: publish it, record its URL and checksum in
 // src/cloud/worker-release.ts, and validate it on a clean worker image before enabling cloud runs.
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -36,6 +37,11 @@ await build({
   legalComments: "none",
   logLevel: "warning",
 });
+
+// main.js is an ES module; without this marker Node treats it as CommonJS and dies on the first import.
+fs.writeFileSync(path.join(stage, "worker", "package.json"), '{ "private": true, "type": "module" }\n');
+// Loadable as the worker will load it: a syntax or module-type error must fail the build, not a paid Pod.
+execFileSync(process.execPath, ["--check", path.join(stage, "worker", "main.js")], { stdio: "inherit" });
 
 for (const entry of fs.readdirSync(modelsSource, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;

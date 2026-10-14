@@ -55,6 +55,7 @@ class Fleet implements CloudProvider {
   extraGpus: CloudCatalog["gpus"] = [];
   /** GPU ids whose create is rejected for capacity even though the catalog lists them. */
   rejectGpuIds = new Set<string>();
+  cpuDiskGbSeen: number[] = [];
   /** Make the next volume claim `cacheReady` (a warm cache) or not. */
   podStatus: CloudPod["status"] = "RUNNING";
   terminateFails = false;
@@ -83,6 +84,7 @@ class Fleet implements CloudProvider {
     if (request.gpu && !this.gpuAvailable) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     const id = `pod${this.nextId++}`;
     const role = request.gpu ? "gpu" : "cpu";
+    if (!request.gpu) this.cpuDiskGbSeen.push(request.containerDiskGb);
     this.log.push(`createPod ${role} ${id}`);
     const volumeId = request.volume?.id;
     const pipeline: WorkerPipeline = async ({ job, outputDir, log, setStage }) => {
@@ -268,6 +270,16 @@ describe("RunpodExecutionBackend (ephemeral)", () => {
     box.fleet.extraGpus = [gpu("l40", 0.9)];
     box.fleet.rejectGpuIds.add("a40");
     await expect(box.backend.start(box.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, pinnedGpuId: "a40", lockDatacenter: false } }), box.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+  });
+
+  it("keeps the CPU preparation pod's container disk within Runpod's 20 GB limit", async () => {
+    const box = setup();
+    const handle = await box.backend.start(box.job(1, { cachePolicy: "persistent", containerDiskGb: 60 }), box.ctx(1, true));
+    const requests = [...box.fleet.pods.values()].map((entry) => entry.request);
+    await box.backend.release(handle, box.ctx(1, true));
+    expect(box.fleet.log.filter((line) => line.startsWith("createPod cpu"))).toHaveLength(1);
+    expect(box.fleet.cpuDiskGbSeen).toEqual([20]);
+    expect(requests.find((request) => request.gpu)!.containerDiskGb).toBe(60);
   });
 
   it("refuses to start without a configured worker bundle and creates nothing", async () => {

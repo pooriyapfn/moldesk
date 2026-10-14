@@ -16,6 +16,8 @@ import type { CloudPod, CloudProvider } from "./types.js";
 import { WorkerClient } from "./worker-client.js";
 
 export const MIN_WORKER_READY_TIMEOUT_MS = 5 * 60_000;
+/** Runpod rejects CPU Pods with a container disk above this (live-verified: "Container Disk must be less than or equal to 20"). */
+export const CPU_POD_MAX_CONTAINER_DISK_GB = 20;
 export const VOLUME_MOUNT = "/workspace";
 const TOKEN_SERVICE = "moldesk-worker";
 
@@ -285,7 +287,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     return this.options.provider.createPod({
       name,
       image: params.role === "gpu" ? job.images.gpu : job.images.cpu,
-      containerDiskGb: job.containerDiskGb,
+      containerDiskGb: params.role === "cpu" ? Math.min(job.containerDiskGb, CPU_POD_MAX_CONTAINER_DISK_GB) : job.containerDiskGb,
       dataCenterId,
       ...(params.role === "gpu" ? { gpu: { id: gpuId, count: 1 } } : { cpu: { id: "cpu3c", vcpuCount: 2 } }),
       ...(params.volumeId ? { volume: { id: params.volumeId, mountPath: VOLUME_MOUNT } } : {}),
