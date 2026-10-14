@@ -12,12 +12,10 @@ import {
   type JobHandle,
   type JobSnapshot,
 } from "./execution.js";
-import type { CloudPod, CloudProvider } from "./types.js";
+import { CPU_POD_MAX_CONTAINER_DISK_GB, CPU_PREP_TYPE_IDS, type CloudPod, type CloudProvider } from "./types.js";
 import { WorkerClient } from "./worker-client.js";
 
 export const MIN_WORKER_READY_TIMEOUT_MS = 5 * 60_000;
-/** Runpod rejects CPU Pods with a container disk above this (live-verified: "Container Disk must be less than or equal to 20"). */
-export const CPU_POD_MAX_CONTAINER_DISK_GB = 20;
 export const VOLUME_MOUNT = "/workspace";
 const TOKEN_SERVICE = "moldesk-worker";
 
@@ -195,7 +193,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
       const token = randomBytes(32).toString("hex");
       const runId = `${job.runId}-prep`;
       await this.options.tokenStore.set(runId, token);
-      const pod = await this.createWorkerPod(job, context, { role: "cpu", volumeId, token });
+      const pod = await this.createCpuPod(job, context, volumeId, token);
       cpuPodId = pod.pod.id;
       cpuIntent = pod.intentId;
       const client = this.client(this.endpoint(pod.pod.id), token);
@@ -229,6 +227,40 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     }
   }
 
+  /** Available CPU types for asset preparation in the job's datacenter within the approved rate, cheapest first. */
+  private async cpuCandidates(job: ApprovedJob): Promise<Array<{ id: string; vcpuCount: number; priceUsdPerHour: number }>> {
+    const catalog = await this.options.provider.getCatalog();
+    const ceiling = job.cpuPolicy?.maxUsdPerHour ?? Number.POSITIVE_INFINITY;
+    return catalog.cpus
+      .filter((cpu) => (CPU_PREP_TYPE_IDS as readonly string[]).includes(cpu.id))
+      .filter((cpu) => cpu.dataCenters === undefined || cpu.dataCenters.some((dc) => dc.id === job.datacenterId && dc.availability !== "NONE"))
+      .map((cpu) => {
+        const vcpuCount = Math.max(2, cpu.minVcpu);
+        return { id: cpu.id, vcpuCount, priceUsdPerHour: Math.round(cpu.priceUsdPerVcpuHour * vcpuCount * 10_000) / 10_000 };
+      })
+      .filter((cpu) => cpu.priceUsdPerHour <= ceiling)
+      .sort((a, b) => a.priceUsdPerHour - b.priceUsdPerHour);
+  }
+
+  /** Tries each available CPU type in range until one accepts the create; a capacity rejection moves on. */
+  private async createCpuPod(job: ApprovedJob, context: BackendContext, volumeId: string, token: string): Promise<{ pod: CloudPod; intentId: string }> {
+    const candidates = await this.cpuCandidates(job);
+    if (candidates.length === 0) {
+      throw backendError("CLOUD_CAPACITY_UNAVAILABLE", `No CPU type for asset preparation currently has capacity in ${job.datacenterId}.`, "Retry later; the volume is retained and the next run reuses it.");
+    }
+    let last: unknown;
+    for (const cpu of candidates) {
+      try {
+        context.onProgress?.({ stage: "provisioning", message: `Trying ${cpu.id} x${cpu.vcpuCount} in ${job.datacenterId} ($${cpu.priceUsdPerHour}/h)` });
+        return await this.createWorkerPod(job, context, { role: "cpu", volumeId, token, cpu: { id: cpu.id, vcpuCount: cpu.vcpuCount } });
+      } catch (error) {
+        if (!isCapacityError(error)) throw error;
+        last = error;
+      }
+    }
+    throw backendError("CLOUD_CAPACITY_UNAVAILABLE", `All ${candidates.length} CPU type(s) available for asset preparation rejected the request for capacity in ${job.datacenterId}.`, "Retry later; the volume is retained and the next run reuses it.", { candidates: candidates.length }, last);
+  }
+
   /**
    * Currently available (GPU, datacenter) pairs the approved quote allows, cheapest first, then by
    * reported availability. Re-read from the catalog on every call: capacity is never reserved.
@@ -256,7 +288,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
   private async createWorkerPod(
     job: ApprovedJob,
     context: BackendContext,
-    params: { role: "cpu" | "gpu"; volumeId?: string; token: string; placement?: { gpuId: string; datacenterId: string } },
+    params: { role: "cpu" | "gpu"; volumeId?: string; token: string; placement?: { gpuId: string; datacenterId: string }; cpu?: { id: string; vcpuCount: number } },
   ): Promise<{ pod: CloudPod; intentId: string }> {
     const intent = context.ledger.beginCreate(params.role);
     const tracked = this.tracked.get(job.runId) ?? [];
@@ -267,7 +299,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     const dataCenterId = params.placement?.datacenterId ?? job.datacenterId;
     let pod: CloudPod;
     try {
-      pod = await this.createPodRequest(job, params, intent.name, gpuId, dataCenterId);
+      pod = await this.createPodRequest(job, params, intent.name, gpuId, dataCenterId, params.cpu);
     } catch (error) {
       // A definite capacity rejection means nothing was created: close the intent so it is not an orphan.
       if (isCapacityError(error)) {
@@ -282,14 +314,14 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     return { pod, intentId: intent.intentId };
   }
 
-  private createPodRequest(job: ApprovedJob, params: { role: "cpu" | "gpu"; volumeId?: string; token: string }, name: string, gpuId: string, dataCenterId: string): Promise<CloudPod> {
+  private createPodRequest(job: ApprovedJob, params: { role: "cpu" | "gpu"; volumeId?: string; token: string }, name: string, gpuId: string, dataCenterId: string, cpu: { id: string; vcpuCount: number } = { id: "cpu3c", vcpuCount: 2 }): Promise<CloudPod> {
     const bundle = this.options.workerBundle!;
     return this.options.provider.createPod({
       name,
       image: params.role === "gpu" ? job.images.gpu : job.images.cpu,
       containerDiskGb: params.role === "cpu" ? Math.min(job.containerDiskGb, CPU_POD_MAX_CONTAINER_DISK_GB) : job.containerDiskGb,
       dataCenterId,
-      ...(params.role === "gpu" ? { gpu: { id: gpuId, count: 1 } } : { cpu: { id: "cpu3c", vcpuCount: 2 } }),
+      ...(params.role === "gpu" ? { gpu: { id: gpuId, count: 1 } } : { cpu }),
       ...(params.volumeId ? { volume: { id: params.volumeId, mountPath: VOLUME_MOUNT } } : {}),
       ports: [`${WORKER_PORT}/http`],
       env: {

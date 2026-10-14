@@ -119,7 +119,7 @@ export class RunpodProvider implements CloudProvider {
   async getCatalog(): Promise<CloudCatalog> {
     const [gpus, cpus, dataCenters] = await Promise.all([
       this.request("GET", "/catalog/gpus?include=AVAILABILITY&product=POD", undefined, { retry: true }),
-      this.request("GET", "/catalog/cpus", undefined, { retry: true }),
+      this.request("GET", "/catalog/cpus?include=AVAILABILITY&product=POD", undefined, { retry: true }),
       this.request("GET", "/catalog/datacenters", undefined, { retry: true }),
     ]);
     return {
@@ -152,6 +152,9 @@ export class RunpodProvider implements CloudProvider {
           ramGbPerVcpu: asNumber(cpu.ramGbPerVcpu, "cpu.ramGbPerVcpu"),
           minVcpu: asNumber(vcpu.min, "cpu.vcpu.min"),
           maxVcpu: asNumber(vcpu.max, "cpu.vcpu.max"),
+          ...(Array.isArray(cpu.dataCenters)
+            ? { dataCenters: cpu.dataCenters.filter(isRecord).map((dc) => ({ id: asString(dc.id, "cpu.dataCenters.id"), availability: String(dc.availability ?? "UNKNOWN") })) }
+            : {}),
         };
       }),
       dataCenters: asArray(asRecord(dataCenters.body, "datacenters").dataCenters, "dataCenters").map((raw): CloudDataCenter => {

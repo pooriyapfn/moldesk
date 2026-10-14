@@ -462,6 +462,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
         ...(quote.gpuRange.pinnedGpuId ? { pinnedGpuId: quote.gpuRange.pinnedGpuId } : {}),
         lockDatacenter: quote.gpuRange.lockDatacenter,
       },
+      ...(quote.cpu ? { cpuPolicy: { maxUsdPerHour: options.cloud.quote.cpu?.maxUsdPerHour ?? quote.cpu.maxUsdPerHour } } : {}),
       images: quote.images,
       containerDiskGb: plan.cloud.ephemeralDiskGb,
       volumeGb: plan.cloud.volumeGb,

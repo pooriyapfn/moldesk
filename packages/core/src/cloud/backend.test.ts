@@ -56,6 +56,9 @@ class Fleet implements CloudProvider {
   /** GPU ids whose create is rejected for capacity even though the catalog lists them. */
   rejectGpuIds = new Set<string>();
   cpuDiskGbSeen: number[] = [];
+  rejectCpuIds = new Set<string>();
+  cpuRequests: CreatePodRequest[] = [];
+  extraCpus: CloudCatalog["cpus"] = [];
   /** Make the next volume claim `cacheReady` (a warm cache) or not. */
   podStatus: CloudPod["status"] = "RUNNING";
   terminateFails = false;
@@ -69,7 +72,7 @@ class Fleet implements CloudProvider {
     return {
       retrievedAt: "t",
       gpus: [{ id: "a40", name: "A40", memoryGb: 48, priceUsdPerHour: 0.6, availability: this.gpuAvailable ? "LOW" : "NONE", dataCenters: [{ id: "DC-1", availability: this.gpuAvailable ? "LOW" : "NONE" }], cudaVersions: [] }, ...this.extraGpus],
-      cpus: [],
+      cpus: [{ id: "cpu3c", name: "c", priceUsdPerVcpuHour: 0.03, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32 }, ...this.extraCpus],
       dataCenters: [{ id: "DC-1", region: "EU", networkVolumeTypes: ["STANDARD"] }],
     };
   }
@@ -80,11 +83,15 @@ class Fleet implements CloudProvider {
     return volume;
   }
   async createPod(request: CreatePodRequest): Promise<CloudPod> {
+    if (request.cpu && this.rejectCpuIds.has(request.cpu.id)) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     if (request.gpu && this.rejectGpuIds.has(request.gpu.id)) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     if (request.gpu && !this.gpuAvailable) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     const id = `pod${this.nextId++}`;
     const role = request.gpu ? "gpu" : "cpu";
-    if (!request.gpu) this.cpuDiskGbSeen.push(request.containerDiskGb);
+    if (!request.gpu) {
+      this.cpuDiskGbSeen.push(request.containerDiskGb);
+      this.cpuRequests.push(request);
+    }
     this.log.push(`createPod ${role} ${id}`);
     const volumeId = request.volume?.id;
     const pipeline: WorkerPipeline = async ({ job, outputDir, log, setStage }) => {
@@ -280,6 +287,17 @@ describe("RunpodExecutionBackend (ephemeral)", () => {
     expect(box.fleet.log.filter((line) => line.startsWith("createPod cpu"))).toHaveLength(1);
     expect(box.fleet.cpuDiskGbSeen).toEqual([20]);
     expect(requests.find((request) => request.gpu)!.containerDiskGb).toBe(60);
+  });
+
+  it("prepares on the next available CPU type when the first rejects for capacity", async () => {
+    const box = setup();
+    box.fleet.extraCpus = [{ id: "cpu5c", name: "c5", priceUsdPerVcpuHour: 0.035, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32 }, { id: "cpu5m", name: "mem", priceUsdPerVcpuHour: 0.065, ramGbPerVcpu: 8, minVcpu: 2, maxVcpu: 32 }];
+    box.fleet.rejectCpuIds.add("cpu3c");
+    const handle = await box.backend.start(box.job(1, { cachePolicy: "persistent", cpuPolicy: { maxUsdPerHour: 0.2 } }), box.ctx(1, true));
+    const cpuRequests = box.fleet.cpuRequests;
+    await box.backend.release(handle, box.ctx(1, true));
+    // cpu5c is used (cheaper than the rejected cpu3c's fallback and never the memory-optimized type).
+    expect(cpuRequests.map((request) => request.cpu!.id)).toEqual(["cpu5c"]);
   });
 
   it("refuses to start without a configured worker bundle and creates nothing", async () => {

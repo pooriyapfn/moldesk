@@ -1,4 +1,4 @@
-import type { CloudCatalog, CloudCpuType, CloudGpuType, CloudDataCenter } from "@moldesk/runtime";
+import { CPU_PREP_TYPE_IDS, type CloudCatalog, type CloudCpuType, type CloudGpuType, type CloudDataCenter } from "@moldesk/runtime";
 import type { CloudSpec, ModelManifestV1 } from "@moldesk/registry";
 import { MoldeskError } from "../errors.js";
 import { digest } from "../hash.js";
@@ -30,7 +30,7 @@ export const DEFAULT_MAX_LIFETIME_SECONDS = 3600;
 export const DEFAULT_GPU_PRICE_RANGE_FACTOR = 2;
 /** Billing months are 730 hours. */
 const HOURS_PER_MONTH = 730;
-export const DEFAULT_PREP_CPU = { id: "cpu3c", vcpuCount: 2 } as const;
+export const PREP_CPU_VCPU = 2;
 
 export interface QuoteRange {
   minSeconds: number;
@@ -59,7 +59,8 @@ export interface CloudQuote {
     /** Available now within the range, cheapest first (informational; availability changes). */
     candidates: Array<{ id: string; name: string; memoryGb: number; priceUsdPerHour: number; datacenterIds: string[] }>;
   };
-  cpu?: { id: string; vcpuCount: number; priceUsdPerHour: number };
+  /** Asset-preparation machine (persistent runs). Any available type up to `maxUsdPerHour` may be used. */
+  cpu?: { id: string; vcpuCount: number; priceUsdPerHour: number; maxUsdPerHour: number };
   images: { gpu: string; cpu: string };
   upload: { files: number; bytes: number };
   maxLifetimeSeconds: number;
@@ -143,7 +144,7 @@ interface GpuPlacement {
  * silently replaced. For persistent runs the datacenter must host volumes and is chosen to keep the
  * most GPU options open, because the Pod has to land in the volume's datacenter.
  */
-function chooseGpuPlacement(input: QuoteInputs): GpuPlacement {
+function chooseGpuPlacement(input: QuoteInputs, priceLimit: number): GpuPlacement {
   const persistent = input.cachePolicy === "persistent";
   const dcById = new Map(input.catalog.dataCenters.map((dc) => [dc.id, dc]));
   const eligible = input.catalog.gpus.filter(
@@ -158,6 +159,9 @@ function chooseGpuPlacement(input: QuoteInputs): GpuPlacement {
     }
   }
 
+  // A persistent cold run prepares assets on a CPU Pod in the same datacenter as the volume and the GPU.
+  const needsCpu = persistent && input.cloud.cpuAssetPreparation;
+  const cpuDatacenterOk = (id: string): boolean => !needsCpu || cpuOptions(input.catalog, id).length > 0;
   const lockedDatacenterId = input.existingVolumeDatacenterId ?? input.datacenterId;
   const usable = (input.gpuId ? eligible.filter((gpu) => gpu.id === input.gpuId) : eligible).sort((a, b) => a.priceUsdPerHour - b.priceUsdPerHour);
   const options = usable
@@ -167,6 +171,7 @@ function chooseGpuPlacement(input: QuoteInputs): GpuPlacement {
         .filter((dc) => dc.availability !== "NONE")
         .map((dc) => dc.id)
         .filter((id) => datacenterSupports(dcById.get(id), persistent))
+        .filter(cpuDatacenterOk)
         .filter((id) => !input.datacenterId || id === input.datacenterId)
         .filter((id) => !input.existingVolumeDatacenterId || id === input.existingVolumeDatacenterId),
     }))
@@ -184,17 +189,33 @@ function chooseGpuPlacement(input: QuoteInputs): GpuPlacement {
   if (!persistent || lockedDatacenterId) {
     return { gpu: cheapest.gpu, datacenterId: lockedDatacenterId ?? cheapest.datacenterIds[0]!, lockDatacenter: lockedDatacenterId !== undefined, options };
   }
-  // A new persistent volume pins the datacenter: take the one with the most GPU options (cheapest first on ties).
-  const counts = new Map<string, number>();
-  for (const option of options) for (const id of option.datacenterIds) counts.set(id, (counts.get(id) ?? 0) + 1);
-  const best = [...counts.entries()].sort((a, b) => b[1] - a[1] || options.findIndex((o) => o.datacenterIds.includes(a[0])) - options.findIndex((o) => o.datacenterIds.includes(b[0])))[0]![0];
-  const first = options.find((option) => option.datacenterIds.includes(best))!;
-  return { gpu: first.gpu, datacenterId: best, lockDatacenter: true, options };
+  // A new persistent volume pins the datacenter, so choose it where a GPU is actually affordable and
+  // the most alternatives sit near the cheapest one: a datacenter full of GPUs far above the budget is
+  // no use. Falls back to every option when nothing is affordable, so the budget error names the real
+  // cheapest GPU.
+  const affordable = options.filter((option) => option.gpu.priceUsdPerHour <= priceLimit);
+  const pool = affordable.length > 0 ? affordable : options;
+  const scored = [...new Set(pool.flatMap((option) => option.datacenterIds))].map((id) => {
+    const inDc = pool.filter((option) => option.datacenterIds.includes(id));
+    const cheapestInDc = inDc[0]!;
+    const rangeTop = Math.min(priceLimit, cheapestInDc.gpu.priceUsdPerHour * DEFAULT_GPU_PRICE_RANGE_FACTOR);
+    return { id, first: cheapestInDc, count: inDc.filter((option) => option.gpu.priceUsdPerHour <= rangeTop).length };
+  });
+  scored.sort((a, b) => b.count - a.count || a.first.gpu.priceUsdPerHour - b.first.gpu.priceUsdPerHour || (a.id < b.id ? -1 : 1));
+  const best = scored[0]!;
+  return { gpu: best.first.gpu, datacenterId: best.id, lockDatacenter: true, options };
 }
 
-function chooseCpu(catalog: CloudCatalog): { type: CloudCpuType; vcpuCount: number } | undefined {
-  const type = catalog.cpus.find((cpu) => cpu.id === DEFAULT_PREP_CPU.id);
-  return type ? { type, vcpuCount: Math.max(DEFAULT_PREP_CPU.vcpuCount, type.minVcpu) } : undefined;
+/** CPU types that can prepare assets in a datacenter, cheapest first; availability unknown counts as available. */
+function cpuOptions(catalog: CloudCatalog, datacenterId?: string): Array<{ type: CloudCpuType; vcpuCount: number; priceUsdPerHour: number }> {
+  return catalog.cpus
+    .filter((type) => (CPU_PREP_TYPE_IDS as readonly string[]).includes(type.id))
+    .filter((type) => datacenterId === undefined || type.dataCenters === undefined || type.dataCenters.some((dc) => dc.id === datacenterId && dc.availability !== "NONE"))
+    .map((type) => {
+      const vcpuCount = Math.max(PREP_CPU_VCPU, type.minVcpu);
+      return { type, vcpuCount, priceUsdPerHour: round(type.priceUsdPerVcpuHour * vcpuCount) };
+    })
+    .sort((a, b) => a.priceUsdPerHour - b.priceUsdPerHour);
 }
 
 function requiredWarnings(persistent: boolean): QuoteWarning[] {
@@ -215,27 +236,37 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     throw rejected("CLOUD_LIFETIME_REQUIRED", "A positive maximum lifetime in seconds is required.", "Pass --max-lifetime <seconds>.");
   }
   const { images, unpinned } = resolveImages(input);
-  const { gpu, datacenterId, lockDatacenter, options } = chooseGpuPlacement(input);
   const persistent = input.cachePolicy === "persistent";
   const hours = input.maxLifetimeSeconds / 3600;
 
-  let cpu: CloudQuote["cpu"];
-  if (persistent && input.cloud.cpuAssetPreparation) {
-    const chosen = chooseCpu(input.catalog);
-    if (!chosen) throw rejected("CLOUD_CPU_UNAVAILABLE", `CPU type ${DEFAULT_PREP_CPU.id} is not in the provider catalog.`, "Retry later or use an ephemeral cache policy.");
-    cpu = { id: chosen.type.id, vcpuCount: chosen.vcpuCount, priceUsdPerHour: round(chosen.type.priceUsdPerVcpuHour * chosen.vcpuCount) };
+  const needsCpu = persistent && input.cloud.cpuAssetPreparation;
+  if (needsCpu && cpuOptions(input.catalog).length === 0) {
+    throw rejected("CLOUD_CPU_UNAVAILABLE", `None of the CPU types ${CPU_PREP_TYPE_IDS.join(", ")} is in the provider catalog.`, "Retry later or use an ephemeral cache policy.");
   }
+  // The datacenter is not known yet: size the budget with the cheapest CPU, then re-cost with the real one.
+  const prelimCpuRate = needsCpu ? cpuOptions(input.catalog)[0]!.priceUsdPerHour : 0;
 
   // Storage: only rates the provider actually publishes are used; everything else is stated as unknown.
   const rates = input.catalog.storageRates;
-  const machines = cpu ? 2 : 1;
+  const machines = needsCpu ? 2 : 1;
   const diskGb = input.cloud.ephemeralDiskGb;
   const diskRate = rates?.containerDiskUsdPerGbMonth;
   const temporaryUsd = diskRate !== undefined ? round(diskGb * machines * diskRate * (hours / HOURS_PER_MONTH)) : null;
   const volumeRate = rates?.networkVolumeUsdPerGbMonth;
   const volumeGb = persistent ? input.cloud.volumeGb : null;
   const volumeMonthlyUsd = persistent && volumeRate !== undefined ? round(input.cloud.volumeGb * volumeRate) : null;
-  const cpuRate = cpu?.priceUsdPerHour ?? 0;
+  const ceilingFor = (cpuRate: number): number => Math.floor((((input.maxBudgetUsd - (temporaryUsd ?? 0)) / hours) - cpuRate) * 10_000) / 10_000;
+  const { gpu, datacenterId, lockDatacenter, options } = chooseGpuPlacement(input, Math.min(ceilingFor(prelimCpuRate), input.maxGpuUsdPerHour ?? Number.POSITIVE_INFINITY));
+
+  // The CPU Pod lands in the chosen datacenter. Cost the worst case at the dearest type allowed there,
+  // since a capacity rejection can move the preparation to another type.
+  let cpu: CloudQuote["cpu"];
+  if (needsCpu) {
+    const here = cpuOptions(input.catalog, datacenterId);
+    cpu = { id: here[0]!.type.id, vcpuCount: here[0]!.vcpuCount, priceUsdPerHour: here[0]!.priceUsdPerHour, maxUsdPerHour: here[here.length - 1]!.priceUsdPerHour };
+  }
+  const cpuRate = cpu?.maxUsdPerHour ?? 0;
+  const budgetCeiling = ceilingFor(cpuRate);
 
   // The first choice must fit the budget on its own; otherwise nothing can.
   const firstChoiceBudgetedUsd = round((gpu.priceUsdPerHour + cpuRate) * hours + (temporaryUsd ?? 0));
@@ -259,7 +290,6 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
       { cheapestUsdPerHour: gpu.priceUsdPerHour },
     );
   }
-  const budgetCeiling = Math.floor((((input.maxBudgetUsd - (temporaryUsd ?? 0)) / hours) - cpuRate) * 10_000) / 10_000;
   const maxGpuUsdPerHour = Math.floor(Math.min(requestedMax, budgetCeiling) * 10_000) / 10_000;
   const candidates = options
     .filter((option) => option.gpu.priceUsdPerHour <= maxGpuUsdPerHour)

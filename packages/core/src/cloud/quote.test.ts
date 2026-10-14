@@ -86,7 +86,7 @@ describe("buildQuote", () => {
   it("persistent policy needs a volume-capable datacenter, adds the CPU preparer and discloses recurring storage", () => {
     const quote = buildQuote(inputs({ cachePolicy: "persistent" }));
     expect(quote.datacenterId).toBe("DC-VOL");
-    expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06 });
+    expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06, maxUsdPerHour: 0.06 });
     expect(quote.cost.worstCaseComputeUsd).toBe(1.26);
     expect(quote.gpuRange.lockDatacenter).toBe(true);
     expect(quote.gpuRange.candidates.every((c) => c.datacenterIds.every((id) => id === "DC-VOL"))).toBe(true);
@@ -150,6 +150,32 @@ describe("buildQuote", () => {
     expect(custom.id).not.toBe(base.id);
     expect(custom.disclosures.join(" ")).toMatch(/Not pinned by digest.*gpu image runpod\/pytorch:1\.0\.2/);
     expect(() => buildQuote(inputs({ gpuImage: "bad image;rm -rf /" }))).toThrow(expect.objectContaining({ code: "CLOUD_IMAGE_INVALID" }));
+  });
+
+  it("puts a new persistent volume where a GPU is affordable, not where the most expensive options are", () => {
+    const crowded = catalog();
+    const pricey = (id: string, price: number) => ({ id, name: id, memoryGb: 80, priceUsdPerHour: price, availability: "LOW" as const, dataCenters: [{ id: "DC-EXP", availability: "LOW" }], cudaVersions: [] });
+    crowded.gpus.push(pricey("h100", 3.19), pricey("h200", 5.29), pricey("b200", 7.99));
+    crowded.dataCenters.push({ id: "DC-EXP", region: "US", networkVolumeTypes: ["STANDARD"] });
+    const quote = buildQuote(inputs({ cachePolicy: "persistent", catalog: crowded, maxBudgetUsd: 2 }));
+    expect(quote.datacenterId).toBe("DC-VOL");
+    expect(quote.gpu.id).toBe("a40");
+    // With nothing affordable anywhere, the error names the real cheapest GPU rather than hiding it.
+    expect(() => buildQuote(inputs({ cachePolicy: "persistent", catalog: crowded, maxBudgetUsd: 0.3 }))).toThrow(expect.objectContaining({ code: "CLOUD_BUDGET_EXCEEDED" }));
+  });
+
+  it("only offers persistent datacenters where a CPU preparation machine is available", () => {
+    const noCpu = catalog();
+    noCpu.cpus[0]!.dataCenters = [{ id: "DC-A", availability: "HIGH" }, { id: "DC-VOL", availability: "NONE" }];
+    expect(() => buildQuote(inputs({ cachePolicy: "persistent", catalog: noCpu }))).toThrow(expect.objectContaining({ code: "CLOUD_CAPACITY_UNAVAILABLE" }));
+    // Ephemeral runs have no CPU step and are unaffected.
+    expect(buildQuote(inputs({ catalog: noCpu })).gpu.id).toBe("a40");
+    const other = catalog();
+    other.cpus.push({ id: "cpu5c", name: "c5", priceUsdPerVcpuHour: 0.05, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32, dataCenters: [{ id: "DC-VOL", availability: "HIGH" }] });
+    other.cpus[0]!.dataCenters = [{ id: "DC-A", availability: "HIGH" }];
+    const quote = buildQuote(inputs({ cachePolicy: "persistent", catalog: other }));
+    expect(quote.datacenterId).toBe("DC-VOL");
+    expect(quote.cpu).toMatchObject({ id: "cpu5c", priceUsdPerHour: 0.1, maxUsdPerHour: 0.1 });
   });
 
   it("substitutes nothing when the user pinned a GPU", () => {

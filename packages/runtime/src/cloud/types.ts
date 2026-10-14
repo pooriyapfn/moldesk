@@ -18,9 +18,16 @@ export interface CloudGpuType {
   cudaVersions: string[];
 }
 
+/** CPU types usable for asset preparation (general and compute-optimized; memory-optimized is wasted money here). */
+export const CPU_PREP_TYPE_IDS = ["cpu3c", "cpu3g", "cpu5c", "cpu5g"] as const;
+/** Runpod rejects CPU Pods with a container disk above this. */
+export const CPU_POD_MAX_CONTAINER_DISK_GB = 20;
+
 export interface CloudCpuType {
   id: string;
   name: string;
+  /** Availability by datacenter; absent when the provider does not report it (treated as available). */
+  dataCenters?: Array<{ id: string; availability: string }>;
   priceUsdPerVcpuHour: number;
   ramGbPerVcpu: number;
   minVcpu: number;

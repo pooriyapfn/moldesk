@@ -35,6 +35,8 @@ export interface ApprovedJob {
    * currently available GPU within these limits, cheapest first, instead of waiting on one model.
    */
   gpuPolicy: GpuPolicy;
+  /** Asset-preparation machine limits for persistent runs: any available CPU type up to this hourly rate. */
+  cpuPolicy?: { maxUsdPerHour: number };
   /** Digest-pinned worker images from the manifest's `cloud` block. */
   images: { gpu: string; cpu: string };
   containerDiskGb: number;
@@ -178,7 +180,7 @@ export interface ExecutionBackend {
 export type WorkerMode = "execute" | "prepare-assets";
 
 /** Job description sent to the worker: the approved job without client-local paths. */
-export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId" | "gpuPolicy"> & {
+export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId" | "gpuPolicy" | "cpuPolicy"> & {
   inputs: Array<Omit<JobInputFile, "sourcePath">>;
   /** `prepare-assets` runs only asset preparation (CPU Pod); `execute` runs the model. */
   mode: WorkerMode;
@@ -189,7 +191,7 @@ export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId" | "gpuPolicy"
 };
 
 export function toWireJob(job: ApprovedJob, extra: { mode?: WorkerMode; volumeMount?: string; reclaimStaleLock?: boolean } = {}): WireJob {
-  const { inputs, reuseVolumeId: _reuse, gpuPolicy: _policy, ...rest } = job;
+  const { inputs, reuseVolumeId: _reuse, gpuPolicy: _policy, cpuPolicy: _cpuPolicy, ...rest } = job;
   return {
     ...rest,
     inputs: inputs.map(({ sourcePath: _sourcePath, ...file }) => file),
