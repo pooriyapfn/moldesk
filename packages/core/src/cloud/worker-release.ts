@@ -2,9 +2,11 @@ import type { WorkerBundle } from "@moldesk/runtime";
 import { MoldeskError } from "../errors.js";
 
 /**
- * The published, checksummed worker bundle matching this release. Intentionally unset until a
- * release bundle has been built, published and validated on a clean machine; cloud runs refuse to
- * start without one. See packages/core/scripts/build-worker.mjs.
+ * The published, checksummed worker bundle (worker.tar) matching this release. Unset until a release
+ * bundle has been built, published and validated; cloud runs refuse to start without one. Do not edit
+ * by hand: `node scripts/worker-release.mjs update --tag vX.Y.Z` rewrites it, CI fails when its
+ * checksum no longer matches the sources, and the release workflow publishes the asset.
+ * See packages/core/scripts/build-worker.mjs.
  */
 export const RELEASED_WORKER_BUNDLE: WorkerBundle | undefined = undefined;
 

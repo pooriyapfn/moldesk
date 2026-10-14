@@ -11,11 +11,30 @@ Cloud runs refuse to start until all of these exist (release gates; live validat
 
 1. **A model that declares a validated `cloud` block** in its manifest (see [model-system.md](./model-system.md)).
    No shipped manifest declares one: image digests and sizes must come from a live validation.
-2. **A published worker bundle.** `pnpm --filter @moldesk/core build:worker` produces `worker.tgz` and its
-   SHA-256. Record the URL and checksum in `packages/core/src/cloud/worker-release.ts`
-   (`RELEASED_WORKER_BUNDLE`), or set `MOLDESK_WORKER_BUNDLE_URL` and `MOLDESK_WORKER_BUNDLE_SHA256` for
-   development. The generic worker images must provide Node 20+, curl, tar and sha256sum.
+2. **A published worker bundle.** The worker is a small Node program that runs inside the Pod: it serves an
+   authenticated endpoint, runs the manifest install/run pipeline and the in-Pod watchdog. `pnpm --filter
+   @moldesk/core build:worker` builds `worker.tar` deterministically (same sources, same SHA-256). The CLI
+   records the release asset URL and checksum in `packages/core/src/cloud/worker-release.ts`
+   (`RELEASED_WORKER_BUNDLE`) and refuses to run a bundle that does not match. Maintain it with
+   `node scripts/worker-release.mjs update --tag vX.Y.Z`; CI fails when the recorded checksum no longer matches
+   the sources, and the release workflow attaches `worker.tar` to the GitHub Release before publishing to npm.
+   For development, set `MOLDESK_WORKER_BUNDLE_URL` and `MOLDESK_WORKER_BUNDLE_SHA256`. End users do nothing:
+   the URL and checksum ship inside the CLI they installed.
 3. **Passing live validation** of the items listed in the plan's release gates, including the in-Pod watchdog.
+
+## Images and GPU selection
+
+- **Images.** A Pod boots from a container image. The manifest names a digest-pinned default per role (stock
+  Runpod images, e.g. `runpod/pytorch`), and the worker installs a pinned Node.js at boot when the image has
+  none. Override with `--gpu-image <ref>` / `--cpu-image <ref>`; the quote shows the exact images and flags any
+  that are not digest-pinned. The bootstrap fails fast, before downloading anything, if the image lacks curl,
+  tar, sha256sum or (for the GPU role) `nvidia-smi`.
+- **GPU range, not one GPU.** The quote covers every eligible GPU up to a price ceiling (`--max-gpu-price`,
+  default twice the cheapest eligible GPU, capped by `--max-budget`). At provisioning time the backend re-reads the
+  catalog and tries each available GPU in range, cheapest first, moving on when one rejects for capacity; the
+  GPU actually used is recorded in `run.json`. Pin one with `--gpu` and nothing else is substituted. Persistent
+  runs stay in the volume's datacenter; an unpinned ephemeral run may upload to any datacenter with capacity
+  (pin with `--datacenter`), which the quote says.
 
 ## Shutdown is not guaranteed
 
@@ -44,7 +63,7 @@ deleted. Without a terminal, pass `--yes --accept-lifetime-risk` (and `--accept-
 moldesk cloud connect runpod           # hidden prompt, or --key-stdin
 moldesk cloud status
 moldesk run boltz complex.yaml --compute runpod --cache-policy ephemeral \
-  --max-budget 2 --max-lifetime 3600 --dry-run      # print the quote only
+  --max-budget 2 --max-lifetime 3600 --dry-run      # print the quote only (add --max-gpu-price, --gpu-image to tune)
 moldesk run boltz complex.yaml --compute runpod --cache-policy persistent \
   --max-budget 2 --max-lifetime 3600                 # prompts for each acknowledgment, then approval
 # without a terminal, acknowledge explicitly (--yes alone is refused):

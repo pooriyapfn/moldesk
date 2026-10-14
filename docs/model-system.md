@@ -52,8 +52,8 @@ cloud:
   schemaVersion: 1
   platform: linux-x64
   images:
-    gpu: registry.example/moldesk/worker-gpu@sha256:<64 hex>   # inference
-    cpu: registry.example/moldesk/worker-cpu@sha256:<64 hex>   # asset preparation only
+    gpu: runpod/pytorch@sha256:<64 hex>   # inference (CUDA)
+    cpu: runpod/base@sha256:<64 hex>      # asset preparation only
   minVramGb: 24
   minRamGb: 32
   ephemeralDiskGb: 40     # one job's container disk
@@ -62,7 +62,9 @@ cloud:
   cpuAssetPreparation: true
 ```
 
-Images must be pinned by digest, never a tag. The block reuses the manifest's
+Images must be pinned by digest, never a tag. They can be stock public images (for example
+`runpod/pytorch@sha256:…`): the worker bootstraps its own Node.js, so nothing custom needs publishing.
+Users may override them per run with `--gpu-image` / `--cpu-image`. The block reuses the manifest's
 own `assets`, `runtimes` and `source`; it adds no commands. Validation requires
 a Python runtime entry that applies to `linux-x64`, `minVramGb` at least that
 runtime's own floor, and disk/volume sizes no smaller than the declared asset
