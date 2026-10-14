@@ -27,8 +27,14 @@ export interface ApprovedJob {
   modelVersion: string;
   manifestDigest: string;
   cachePolicy: CachePolicy;
+  /** The quote's preferred GPU and datacenter; the first choice, not a promise (capacity is never reserved). */
   gpuId: string;
   datacenterId: string;
+  /**
+   * Capacity-tolerant selection. At provisioning time the backend re-reads the catalog and may use any
+   * currently available GPU within these limits, cheapest first, instead of waiting on one model.
+   */
+  gpuPolicy: GpuPolicy;
   /** Digest-pinned worker images from the manifest's `cloud` block. */
   images: { gpu: string; cpu: string };
   containerDiskGb: number;
@@ -46,12 +52,25 @@ export interface ApprovedJob {
   reuseVolumeId?: string;
 }
 
+export interface GpuPolicy {
+  minVramGb: number;
+  /** Highest GPU hourly rate the approved quote covers. */
+  maxUsdPerHour: number;
+  /** Set only when the user asked for one specific GPU; nothing else is substituted. */
+  pinnedGpuId?: string;
+  /** True when the Pod must stay in `datacenterId` (a retained volume, a pinned datacenter, or a volume just created). */
+  lockDatacenter: boolean;
+}
+
 /** What a backend returns once the worker is executing; JSON-serializable. */
 export interface JobHandle {
   version: typeof EXECUTION_CONTRACT_VERSION;
   runId: string;
   podId: string;
   volumeId?: string;
+  /** The GPU and datacenter actually obtained, which can differ from the quote's first choice. */
+  gpuId?: string;
+  datacenterId?: string;
   /** Verified HTTPS worker endpoint. The per-job token is held in the credential store, not here. */
   endpoint: string;
 }
@@ -159,7 +178,7 @@ export interface ExecutionBackend {
 export type WorkerMode = "execute" | "prepare-assets";
 
 /** Job description sent to the worker: the approved job without client-local paths. */
-export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId"> & {
+export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId" | "gpuPolicy"> & {
   inputs: Array<Omit<JobInputFile, "sourcePath">>;
   /** `prepare-assets` runs only asset preparation (CPU Pod); `execute` runs the model. */
   mode: WorkerMode;
@@ -170,7 +189,7 @@ export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId"> & {
 };
 
 export function toWireJob(job: ApprovedJob, extra: { mode?: WorkerMode; volumeMount?: string; reclaimStaleLock?: boolean } = {}): WireJob {
-  const { inputs, reuseVolumeId: _reuse, ...rest } = job;
+  const { inputs, reuseVolumeId: _reuse, gpuPolicy: _policy, ...rest } = job;
   return {
     ...rest,
     inputs: inputs.map(({ sourcePath: _sourcePath, ...file }) => file),

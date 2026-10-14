@@ -44,9 +44,27 @@ export function createKeyringTokenStore(backend: SecretBackend = createKeyringBa
  * Container start command: fetch the pinned bundle, verify its checksum, and run it. The image must
  * provide Node 20+, curl, tar and sha256sum. Nothing here comes from the user's input.
  */
+/** Pinned Node.js used when the worker image has none (stock CUDA/PyTorch images are Python images). */
+export const BOOTSTRAP_NODE = {
+  version: "20.18.1",
+  url: "https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.gz",
+  sha256: "259e5a8bf2e15ecece65bd2a47153262eda71c0b2c9700d5e703ce4951572784",
+} as const;
+
 export const WORKER_BOOTSTRAP_SCRIPT = [
   "set -euo pipefail",
-  'command -v node >/dev/null || { echo "node is required in the worker image" >&2; exit 127; }',
+  'need() { command -v "$1" >/dev/null 2>&1; }',
+  // Preflight: fail fast, before any download, with a message that names what the image lacks.
+  'if ! need curl; then (apt-get update -qq && apt-get install -y -qq curl ca-certificates) >&2 || { echo "curl is required in the worker image" >&2; exit 127; }; fi',
+  'for tool in tar sha256sum; do need "$tool" || { echo "$tool is required in the worker image" >&2; exit 127; }; done',
+  'if [ "${MOLDESK_WORKER_ROLE:-}" = gpu ] && ! need nvidia-smi; then echo "nvidia-smi not found: the GPU image must provide the NVIDIA driver tools and CUDA" >&2; exit 127; fi',
+  `if ! need node || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then`,
+  "  mkdir -p /opt/node",
+  `  curl -fsSL "${BOOTSTRAP_NODE.url}" -o /opt/node/node.tgz`,
+  `  echo "${BOOTSTRAP_NODE.sha256}  /opt/node/node.tgz" | sha256sum -c -`,
+  "  tar -xzf /opt/node/node.tgz -C /opt/node --strip-components=1",
+  '  export PATH="/opt/node/bin:$PATH"',
+  "fi",
   "mkdir -p /opt/moldesk && cd /opt/moldesk",
   'curl -fsSL "$MOLDESK_WORKER_BUNDLE_URL" -o worker.tgz',
   'echo "$MOLDESK_WORKER_BUNDLE_SHA256  worker.tgz" | sha256sum -c -',
@@ -79,6 +97,10 @@ interface TrackedPod {
 
 function backendError(code: string, message: string, remediation: string, details?: Record<string, unknown>, cause?: unknown): MoldeskError {
   return new MoldeskError({ code, message, remediation, details, cause });
+}
+
+function isCapacityError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "CLOUD_CAPACITY_UNAVAILABLE";
 }
 
 export class RunpodExecutionBackend implements ExecutionBackend {
@@ -128,6 +150,14 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     let warm = known !== undefined;
 
     if (!volumeId) {
+      // Do not create (and bill for) a volume in a datacenter where no GPU in range can be had.
+      if ((await this.gpuCandidates(job)).length === 0) {
+        throw backendError(
+          "CLOUD_CAPACITY_UNAVAILABLE",
+          `No GPU within the approved price range currently has capacity in ${job.datacenterId}; nothing was created.`,
+          "Retry later or raise --max-gpu-price. Capacity is never reserved by a quote.",
+        );
+      }
       const intent = context.ledger.beginCreate("volume");
       const volume = await this.options.provider.createVolume({ name: intent.name, sizeGb: job.volumeGb, dataCenterId: job.datacenterId });
       context.ledger.created(intent.intentId, volume.id);
@@ -186,40 +216,83 @@ export class RunpodExecutionBackend implements ExecutionBackend {
       cache.releaseLease();
     }
 
-    // No capacity is reserved by the quote: re-check before renting the GPU.
-    const catalog = await this.options.provider.getCatalog();
-    const gpu = catalog.gpus.find((candidate) => candidate.id === job.gpuId);
-    const available = gpu && gpu.availability !== "NONE" && gpu.dataCenters.some((dc) => dc.id === job.datacenterId && dc.availability !== "NONE");
-    if (!available) {
+    // No capacity is reserved by the quote: re-check before renting the GPU. Any GPU in range counts.
+    const candidates = await this.gpuCandidates(job);
+    if (candidates.length === 0) {
       throw backendError(
         "CLOUD_CAPACITY_UNAVAILABLE",
-        `${job.gpuId} no longer has capacity in ${job.datacenterId}. The prepared volume is retained.`,
+        `No GPU within the approved price range currently has capacity in ${job.datacenterId}. The prepared volume is retained.`,
         "Retry later; the cache is ready and the next run will skip preparation. Delete the volume with `moldesk cloud cache delete` if you no longer want it.",
       );
     }
   }
 
+  /**
+   * Currently available (GPU, datacenter) pairs the approved quote allows, cheapest first, then by
+   * reported availability. Re-read from the catalog on every call: capacity is never reserved.
+   */
+  private async gpuCandidates(job: ApprovedJob): Promise<Array<{ gpuId: string; datacenterId: string; priceUsdPerHour: number }>> {
+    const catalog = await this.options.provider.getCatalog();
+    const dcById = new Map(catalog.dataCenters.map((dc) => [dc.id, dc]));
+    const persistent = job.cachePolicy === "persistent";
+    const rank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, UNKNOWN: 3 };
+    const pairs: Array<{ gpuId: string; datacenterId: string; priceUsdPerHour: number; availability: string }> = [];
+    for (const gpu of catalog.gpus) {
+      if (job.gpuPolicy.pinnedGpuId && gpu.id !== job.gpuPolicy.pinnedGpuId) continue;
+      if (gpu.memoryGb < job.gpuPolicy.minVramGb || gpu.priceUsdPerHour <= 0 || gpu.priceUsdPerHour > job.gpuPolicy.maxUsdPerHour) continue;
+      for (const dc of gpu.dataCenters) {
+        if (dc.availability === "NONE") continue;
+        if (job.gpuPolicy.lockDatacenter && dc.id !== job.datacenterId) continue;
+        if (persistent && (dcById.get(dc.id)?.networkVolumeTypes.length ?? 0) === 0) continue;
+        pairs.push({ gpuId: gpu.id, datacenterId: dc.id, priceUsdPerHour: gpu.priceUsdPerHour, availability: dc.availability });
+      }
+    }
+    pairs.sort((a, b) => a.priceUsdPerHour - b.priceUsdPerHour || (rank[a.availability] ?? 3) - (rank[b.availability] ?? 3));
+    return pairs.map(({ gpuId, datacenterId, priceUsdPerHour }) => ({ gpuId, datacenterId, priceUsdPerHour }));
+  }
+
   private async createWorkerPod(
     job: ApprovedJob,
     context: BackendContext,
-    params: { role: "cpu" | "gpu"; volumeId?: string; token: string },
+    params: { role: "cpu" | "gpu"; volumeId?: string; token: string; placement?: { gpuId: string; datacenterId: string } },
   ): Promise<{ pod: CloudPod; intentId: string }> {
-    const bundle = this.options.workerBundle!;
     const intent = context.ledger.beginCreate(params.role);
     const tracked = this.tracked.get(job.runId) ?? [];
     const entry: TrackedPod = { intentId: intent.intentId };
     tracked.push(entry);
     this.tracked.set(job.runId, tracked);
-    const pod = await this.options.provider.createPod({
-      name: intent.name,
+    const gpuId = params.placement?.gpuId ?? job.gpuId;
+    const dataCenterId = params.placement?.datacenterId ?? job.datacenterId;
+    let pod: CloudPod;
+    try {
+      pod = await this.createPodRequest(job, params, intent.name, gpuId, dataCenterId);
+    } catch (error) {
+      // A definite capacity rejection means nothing was created: close the intent so it is not an orphan.
+      if (isCapacityError(error)) {
+        context.ledger.beginDelete(intent.intentId);
+        context.ledger.deleted(intent.intentId);
+        tracked.splice(tracked.indexOf(entry), 1);
+      }
+      throw error;
+    }
+    context.ledger.created(intent.intentId, pod.id);
+    entry.podId = pod.id;
+    return { pod, intentId: intent.intentId };
+  }
+
+  private createPodRequest(job: ApprovedJob, params: { role: "cpu" | "gpu"; volumeId?: string; token: string }, name: string, gpuId: string, dataCenterId: string): Promise<CloudPod> {
+    const bundle = this.options.workerBundle!;
+    return this.options.provider.createPod({
+      name,
       image: params.role === "gpu" ? job.images.gpu : job.images.cpu,
       containerDiskGb: job.containerDiskGb,
-      dataCenterId: job.datacenterId,
-      ...(params.role === "gpu" ? { gpu: { id: job.gpuId, count: 1 } } : { cpu: { id: "cpu3c", vcpuCount: 2 } }),
+      dataCenterId,
+      ...(params.role === "gpu" ? { gpu: { id: gpuId, count: 1 } } : { cpu: { id: "cpu3c", vcpuCount: 2 } }),
       ...(params.volumeId ? { volume: { id: params.volumeId, mountPath: VOLUME_MOUNT } } : {}),
       ports: [`${WORKER_PORT}/http`],
       env: {
         MOLDESK_WORKER_TOKEN: params.token,
+        MOLDESK_WORKER_ROLE: params.role,
         MOLDESK_WORKER_DEADLINE_AT: job.deadlineAt,
         MOLDESK_WORKER_PORT: String(WORKER_PORT),
         MOLDESK_WORKER_ROOT: "/job",
@@ -229,9 +302,6 @@ export class RunpodExecutionBackend implements ExecutionBackend {
       entrypoint: ["/bin/bash", "-c"],
       cmd: [WORKER_BOOTSTRAP_SCRIPT],
     });
-    context.ledger.created(intent.intentId, pod.id);
-    entry.podId = pod.id;
-    return { pod, intentId: intent.intentId };
   }
 
   /** Returns a reason string when the Pod can never serve (so booting should stop waiting). */
@@ -256,6 +326,45 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     }
   }
 
+  /**
+   * Tries every currently available GPU within the approved range, cheapest first, until one accepts
+   * the create. A capacity rejection moves on to the next candidate; any other failure stops.
+   */
+  private async createGpuPod(
+    job: ApprovedJob,
+    context: BackendContext,
+    volumeId: string | undefined,
+    token: string,
+  ): Promise<{ pod: CloudPod; intentId: string; placement: { gpuId: string; datacenterId: string } }> {
+    const candidates = await this.gpuCandidates(job);
+    if (candidates.length === 0) {
+      throw backendError(
+        "CLOUD_CAPACITY_UNAVAILABLE",
+        `No GPU with at least ${job.gpuPolicy.minVramGb} GB VRAM within $${job.gpuPolicy.maxUsdPerHour}/h currently has capacity${job.gpuPolicy.lockDatacenter ? ` in ${job.datacenterId}` : ""}.`,
+        "Retry later, raise --max-gpu-price, or relax --gpu/--datacenter. Capacity is never reserved by a quote.",
+      );
+    }
+    let last: unknown;
+    for (const candidate of candidates) {
+      const placement = { gpuId: candidate.gpuId, datacenterId: candidate.datacenterId };
+      try {
+        context.onProgress?.({ stage: "provisioning", message: `Trying ${candidate.gpuId} in ${candidate.datacenterId} ($${candidate.priceUsdPerHour}/h)` });
+        const created = await this.createWorkerPod(job, context, { role: "gpu", volumeId, token, placement });
+        return { ...created, placement };
+      } catch (error) {
+        if (!isCapacityError(error)) throw error;
+        last = error;
+      }
+    }
+    throw backendError(
+      "CLOUD_CAPACITY_UNAVAILABLE",
+      `All ${candidates.length} candidate GPU placement(s) within range rejected the request for capacity.`,
+      "Retry later or raise --max-gpu-price. Capacity is never reserved by a quote.",
+      { candidates: candidates.length },
+      last,
+    );
+  }
+
   /** Starts a GPU worker. With `watchCacheFailure`, a cache-missing/invalid failure returns no handle so the caller can rebuild. */
   private async startGpu(
     job: ApprovedJob,
@@ -266,7 +375,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     const token = randomBytes(32).toString("hex");
     await this.options.tokenStore.set(job.runId, token);
     context.onProgress?.({ stage: "provisioning" });
-    const { pod, intentId } = await this.createWorkerPod(job, context, { role: "gpu", volumeId, token });
+    const { pod, intentId, placement } = await this.createGpuPod(job, context, volumeId, token);
     const endpoint = this.endpoint(pod.id);
     const client = this.client(endpoint, token);
     this.clients.set(job.runId, client);
@@ -290,7 +399,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
         await this.sleep(this.options.pollIntervalMs ?? 2000);
       }
     }
-    return { handle: { version: EXECUTION_CONTRACT_VERSION, runId: job.runId, podId: pod.id, ...(volumeId ? { volumeId } : {}), endpoint } };
+    return { handle: { version: EXECUTION_CONTRACT_VERSION, runId: job.runId, podId: pod.id, ...(volumeId ? { volumeId } : {}), gpuId: placement.gpuId, datacenterId: placement.datacenterId, endpoint } };
   }
 
   /** Terminate through the provider, then require the provider to show the Pod gone before marking it deleted. */

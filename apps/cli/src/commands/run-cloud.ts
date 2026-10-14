@@ -17,6 +17,9 @@ export interface CloudRunFlags {
   compute: string;
   cachePolicy?: string;
   gpu?: string;
+  maxGpuPrice?: string;
+  gpuImage?: string;
+  cpuImage?: string;
   datacenter?: string;
   maxBudget?: string;
   maxLifetime?: string;
@@ -55,8 +58,12 @@ export function formatQuote(quote: CloudQuote): string {
     "",
     `Cloud quote (${quote.provider}, prices as of ${quote.retrievedAt})`,
     `  Model:        ${quote.model} ${quote.modelVersion}`,
-    `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h`,
+    `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h (first choice)`,
+    quote.gpuRange.pinnedGpuId
+      ? `  GPU range:    only ${quote.gpuRange.pinnedGpuId} (pinned with --gpu); no substitute is used`
+      : `  GPU range:    if unavailable, any available GPU >= ${quote.gpuRange.minVramGb} GB up to ${money(quote.gpuRange.maxUsdPerHour)}/h${quote.gpuRange.lockDatacenter ? ` in ${quote.datacenterId}` : ""}: ${quote.gpuRange.candidates.map((c) => `${c.name} ${money(c.priceUsdPerHour)}`).join(", ")}`,
     ...(quote.cpu ? [`  Prep CPU:     ${quote.cpu.id} x${quote.cpu.vcpuCount} at ${money(quote.cpu.priceUsdPerHour)}/h (asset preparation only)`] : []),
+    `  Images:       gpu ${quote.images.gpu}${quote.cpu ? `; cpu ${quote.images.cpu}` : ""}`,
     `  Cache policy: ${quote.cachePolicy}`,
     `  Limits:       lifetime ${quote.maxLifetimeSeconds}s, budget ${money(quote.maxBudgetUsd)}`,
     `  Compute:      worst case ${money(quote.cost.worstCaseComputeUsd)} (hourly rate x lifetime limit; a ceiling for this estimate, not a provider-enforced spend cap)`,
@@ -79,6 +86,12 @@ function parseBudget(raw: string | undefined): number {
   return value;
 }
 
+function parseGpuPrice(raw: string): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) throw usage("CLOUD_GPU_PRICE_RANGE_INVALID", "--max-gpu-price must be a positive USD amount per hour.", "Pass --max-gpu-price <usd-per-hour>.");
+  return value;
+}
+
 function parseLifetime(raw: string | undefined): number {
   const value = Number(raw);
   if (raw === undefined || !Number.isInteger(value) || value <= 0) throw usage("CLOUD_LIFETIME_REQUIRED", "A positive integer --max-lifetime (seconds) is required.", "Pass --max-lifetime <seconds>.");
@@ -91,6 +104,9 @@ export function assertNoCloudFlagsForLocal(flags: Partial<CloudRunFlags>): void 
     [
       ["--cache-policy", flags.cachePolicy],
       ["--gpu", flags.gpu],
+      ["--max-gpu-price", flags.maxGpuPrice],
+      ["--gpu-image", flags.gpuImage],
+      ["--cpu-image", flags.cpuImage],
       ["--datacenter", flags.datacenter],
       ["--max-budget", flags.maxBudget],
       ["--max-lifetime", flags.maxLifetime],
@@ -115,6 +131,9 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
       cachePolicy,
       ...(flags.gpu ? { gpuId: flags.gpu } : {}),
       ...(flags.datacenter ? { datacenterId: flags.datacenter } : {}),
+      ...(flags.maxGpuPrice !== undefined ? { maxGpuUsdPerHour: parseGpuPrice(flags.maxGpuPrice) } : {}),
+      ...(flags.gpuImage ? { gpuImage: flags.gpuImage } : {}),
+      ...(flags.cpuImage ? { cpuImage: flags.cpuImage } : {}),
       maxBudgetUsd: parseBudget(flags.maxBudget),
       maxLifetimeSeconds: parseLifetime(flags.maxLifetime),
     };

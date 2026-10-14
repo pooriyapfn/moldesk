@@ -75,7 +75,9 @@ describe("buildQuote", () => {
     const quote = buildQuote(inputs());
     expect(quote.gpu.id).toBe("a40");
     expect(quote.datacenterId).toBe("DC-NOVOL");
-    expect(quote.cost.worstCaseComputeUsd).toBe(0.6);
+    // Compute is costed at the top of the default price range (twice the cheapest eligible GPU).
+    expect(quote.gpuRange).toMatchObject({ minVramGb: 24, maxUsdPerHour: 1.2, pinnedGpuId: null, lockDatacenter: false });
+    expect(quote.cost.worstCaseComputeUsd).toBe(1.2);
     expect(quote.timing).toEqual({ preparation: null, inference: null, transfer: null });
     expect(quote.cost.recurringStorage).toEqual({ recurring: false, volumeGb: null, usdPerMonth: null });
     expect(quote.cpu).toBeUndefined();
@@ -85,7 +87,9 @@ describe("buildQuote", () => {
     const quote = buildQuote(inputs({ cachePolicy: "persistent" }));
     expect(quote.datacenterId).toBe("DC-VOL");
     expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06 });
-    expect(quote.cost.worstCaseComputeUsd).toBe(0.66);
+    expect(quote.cost.worstCaseComputeUsd).toBe(1.26);
+    expect(quote.gpuRange.lockDatacenter).toBe(true);
+    expect(quote.gpuRange.candidates.every((c) => c.datacenterIds.every((id) => id === "DC-VOL"))).toBe(true);
     expect(quote.cost.recurringStorage).toEqual({ recurring: true, volumeGb: 40, usdPerMonth: null });
     expect(quote.disclosures.join(" ")).toMatch(/billed until you delete/);
   });
@@ -108,6 +112,11 @@ describe("buildQuote", () => {
     expect(() => buildQuote(inputs({ maxBudgetUsd: 0 }))).toThrow(expect.objectContaining({ code: "CLOUD_BUDGET_REQUIRED" }));
     expect(() => buildQuote(inputs({ maxLifetimeSeconds: 0 }))).toThrow(expect.objectContaining({ code: "CLOUD_LIFETIME_REQUIRED" }));
     expect(buildQuote(inputs({ maxBudgetUsd: 0.3, maxLifetimeSeconds: 1800 })).cost.worstCaseComputeUsd).toBe(0.3);
+    // The budget caps the GPU price range, so the worst case holds whichever GPU is obtained.
+    const capped = buildQuote(inputs({ maxBudgetUsd: 0.7 }));
+    expect(capped.gpuRange.maxUsdPerHour).toBe(0.7);
+    expect(capped.gpuRange.candidates.map((c) => c.id)).toEqual(["a40"]);
+    expect(capped.cost.worstCaseBudgetedUsd).toBeLessThanOrEqual(0.7);
   });
 
   it("derives a stable id bound to inputs, policy, location and limits but not to price", () => {
@@ -120,6 +129,33 @@ describe("buildQuote", () => {
     expect(buildQuote(inputs({ cachePolicy: "persistent" })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ maxLifetimeSeconds: 1800 })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ gpuId: "l40" })).id).not.toBe(base.id);
+    expect(buildQuote(inputs({ maxGpuUsdPerHour: 1 })).id).not.toBe(base.id);
+  });
+
+  it("offers every available GPU in the price range, cheapest first, and never one over it", () => {
+    const quote = buildQuote(inputs({ maxGpuUsdPerHour: 0.95 }));
+    expect(quote.gpuRange.candidates.map((c) => [c.id, c.priceUsdPerHour, c.datacenterIds])).toEqual([
+      ["a40", 0.6, ["DC-NOVOL", "DC-VOL"]],
+      ["l40", 0.9, ["DC-VOL"]],
+    ]);
+    expect(buildQuote(inputs({ maxGpuUsdPerHour: 0.7 })).gpuRange.candidates.map((c) => c.id)).toEqual(["a40"]);
+    expect(() => buildQuote(inputs({ maxGpuUsdPerHour: 0.5 }))).toThrow(expect.objectContaining({ code: "CLOUD_GPU_PRICE_RANGE_INVALID" }));
+  });
+
+  it("lets the user override the worker images, binds them to the id and discloses unpinned ones", () => {
+    const base = buildQuote(inputs());
+    expect(base.disclosures.join(" ")).not.toMatch(/Not pinned by digest/);
+    const custom = buildQuote(inputs({ gpuImage: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404" }));
+    expect(custom.images).toEqual({ gpu: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404", cpu: base.images.cpu });
+    expect(custom.id).not.toBe(base.id);
+    expect(custom.disclosures.join(" ")).toMatch(/Not pinned by digest.*gpu image runpod\/pytorch:1\.0\.2/);
+    expect(() => buildQuote(inputs({ gpuImage: "bad image;rm -rf /" }))).toThrow(expect.objectContaining({ code: "CLOUD_IMAGE_INVALID" }));
+  });
+
+  it("substitutes nothing when the user pinned a GPU", () => {
+    const quote = buildQuote(inputs({ gpuId: "l40" }));
+    expect(quote.gpuRange.pinnedGpuId).toBe("l40");
+    expect(quote.gpuRange.candidates.map((c) => c.id)).toEqual(["l40"]);
   });
 });
 
@@ -144,7 +180,7 @@ describe("storage costs and budget coverage", () => {
   it("counts temporary storage in the budget and reports recurring storage separately when rates are published", () => {
     const eph = buildQuote(inputs({ catalog: withRates() }));
     expect(eph.cost.temporaryStorage.worstCaseUsd).toBeCloseTo(40 * 0.1 * (1 / 730), 4);
-    expect(eph.cost.worstCaseBudgetedUsd).toBeCloseTo(0.6 + eph.cost.temporaryStorage.worstCaseUsd!, 4);
+    expect(eph.cost.worstCaseBudgetedUsd).toBeCloseTo(1.2 + eph.cost.temporaryStorage.worstCaseUsd!, 4);
     expect(eph.budgetCoverage.unknown).toEqual([]);
     expect(eph.budgetCoverage.counted.join(" | ")).toMatch(/container disk/);
 
@@ -183,12 +219,13 @@ describe("assertApprovalValid", () => {
     expect(() => assertApprovalValid(quote, approval(quote, "garbage"), quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_EXPIRED" }));
   });
 
-  it("requires a new approval when location, inputs or a material price change since", () => {
+  it("requires a new approval when constraints, inputs or a material price change since", () => {
     const quote = buildQuote(inputs());
+    // Availability moving between datacenters is covered by the approved range, not a new consent.
     const moved = catalog();
     moved.gpus[1]!.dataCenters = [{ id: "DC-VOL", availability: "LOW" }];
-    moved.dataCenters = moved.dataCenters.filter((dc) => dc.id !== "DC-NOVOL");
-    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ catalog: moved })), now)).toThrow(expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" }));
+    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ catalog: moved })), now)).not.toThrow();
+    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ gpuId: "l40" })), now)).toThrow(expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" }));
 
     const pricier = catalog();
     pricier.gpus[1]!.priceUsdPerHour = 0.7;

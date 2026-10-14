@@ -40,6 +40,11 @@ export interface CloudQuoteOptions {
   cachePolicy: CloudCachePolicy;
   gpuId?: string;
   datacenterId?: string;
+  /** Highest GPU hourly rate to accept when the first-choice GPU is unavailable. */
+  maxGpuUsdPerHour?: number;
+  /** Override the manifest's worker images. */
+  gpuImage?: string;
+  cpuImage?: string;
   maxBudgetUsd: number;
   maxLifetimeSeconds: number;
 }
@@ -449,7 +454,13 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       cachePolicy: quote.cachePolicy,
       gpuId: quote.gpu.id,
       datacenterId: quote.datacenterId,
-      images: plan.cloud.images,
+      gpuPolicy: {
+        minVramGb: quote.gpuRange.minVramGb,
+        maxUsdPerHour: quote.gpuRange.maxUsdPerHour,
+        ...(quote.gpuRange.pinnedGpuId ? { pinnedGpuId: quote.gpuRange.pinnedGpuId } : {}),
+        lockDatacenter: quote.gpuRange.lockDatacenter,
+      },
+      images: quote.images,
       containerDiskGb: plan.cloud.ephemeralDiskGb,
       volumeGb: plan.cloud.volumeGb,
       assetLayoutRevision: plan.cloud.assetLayoutRevision,
@@ -473,6 +484,10 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     let cursor = 0;
     try {
       handle = await backend.start(job, { ledger, ...(quote.cachePolicy === "persistent" ? { cache: cacheLedgerFor(journal, { accountScope, runId: dirs.runId, manifest: plan.manifest, cloud: plan.cloud, cacheKey: job.cacheKey, manifestDigest: job.manifestDigest }) } : {}), signal: options.signal, onProgress: (event) => progress(event.stage, event.message) });
+      // The GPU actually obtained may differ from the quote's first choice; record what was used.
+      if (handle.gpuId) compute.gpuId = handle.gpuId;
+      if (handle.datacenterId) compute.datacenterId = handle.datacenterId;
+      if (handle.gpuId || handle.datacenterId) journal.updateJob(dirs.runId, { ...(handle.gpuId ? { gpuId: handle.gpuId } : {}), ...(handle.datacenterId ? { datacenterId: handle.datacenterId } : {}) });
       record.status = "running";
       persist();
 
