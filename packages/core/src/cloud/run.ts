@@ -155,7 +155,7 @@ export async function planCloudRun(
     try {
       existingVolumeDatacenterId = owned
         .listCaches()
-        .find((cache) => cache.accountScope === deps.accountScope && cache.model === manifest.name && cache.state === "READY")?.datacenterId;
+        .find((cache) => cache.accountScope === deps.accountScope && cache.model === manifest.name && (cache.state === "READY" || cache.state === "FAILED"))?.datacenterId;
     } finally {
       if (!deps.journal) owned.close();
     }
@@ -237,6 +237,10 @@ export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: st
     lookup() {
       const hit = journal.listCaches().find((cache) => cache.accountScope === params.accountScope && cache.cacheKey === params.cacheKey && cache.state === "READY");
       if (hit) current = { accountScope: hit.accountScope, datacenterId: hit.datacenterId, volumeId: hit.volumeId, cacheKey: hit.cacheKey };
+      return hit ? { volumeId: hit.volumeId, datacenterId: hit.datacenterId } : undefined;
+    },
+    reusable() {
+      const hit = journal.listCaches().find((cache) => cache.accountScope === params.accountScope && cache.cacheKey === params.cacheKey && cache.state === "FAILED");
       return hit ? { volumeId: hit.volumeId, datacenterId: hit.datacenterId } : undefined;
     },
     begin(volume) {

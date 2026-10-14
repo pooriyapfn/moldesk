@@ -143,7 +143,7 @@ export class WorkerClient {
       } catch {
         detail = result.text.slice(0, 200);
       }
-      throw workerError("CLOUD_WORKER_ERROR", `Worker error ${result.status}${detail ? `: ${detail}` : ""}.`, "Retry or inspect the run logs.", { route, status: result.status });
+      throw workerError("CLOUD_WORKER_ERROR", `Worker error ${result.status} on ${route}${detail ? `: ${detail}` : ""}.`, "Retry or inspect the run logs.", { route, status: result.status });
     }
     try {
       return JSON.parse(result.text) as T;

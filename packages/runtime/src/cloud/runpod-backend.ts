@@ -149,6 +149,15 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     let volumeId = job.reuseVolumeId ?? known?.volumeId;
     let warm = known !== undefined;
 
+    // An earlier failed preparation left a volume behind: rebuild into it instead of paying for another.
+    if (!volumeId) {
+      const leftover = cache.reusable?.();
+      if (leftover && leftover.datacenterId === job.datacenterId && (await this.options.provider.getVolume(leftover.volumeId).catch(() => null))) {
+        volumeId = leftover.volumeId;
+        context.onProgress?.({ stage: "provisioning", message: "Rebuilding the cache on the volume left by an earlier failed preparation" });
+      }
+    }
+
     if (!volumeId) {
       // Do not create (and bill for) a volume in a datacenter where no GPU in range can be had.
       if ((await this.gpuCandidates(job)).length === 0) {

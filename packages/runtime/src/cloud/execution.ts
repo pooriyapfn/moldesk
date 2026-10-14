@@ -144,6 +144,8 @@ export interface ResourceLedger {
 export interface CacheLedger {
   /** A cache the journal believes is READY for this job's key, if any. */
   lookup(): { volumeId: string; datacenterId: string } | undefined;
+  /** A volume left behind by an earlier failed preparation of this key, to rebuild into rather than create another. */
+  reusable?(): { volumeId: string; datacenterId: string } | undefined;
   /** Record the volume and a PREPARING cache row. */
   begin(volume: { volumeId: string; datacenterId: string }): void;
   verifying(): void;

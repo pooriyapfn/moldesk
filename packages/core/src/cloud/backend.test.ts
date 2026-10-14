@@ -300,6 +300,20 @@ describe("RunpodExecutionBackend (ephemeral)", () => {
     expect(cpuRequests.map((request) => request.cpu!.id)).toEqual(["cpu5c"]);
   });
 
+  it("rebuilds into the volume a failed preparation left behind instead of creating another", async () => {
+    const box = setup();
+    box.fleet.rejectCpuIds.add("cpu3c");
+    await expect(box.backend.start(box.job(1, { cachePolicy: "persistent" }), box.ctx(1, true))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(box.fleet.volumes.size).toBe(1);
+    expect(box.journal.listCaches()[0]!.state).toBe("FAILED");
+    box.fleet.rejectCpuIds.clear();
+    const handle = await box.backend.start(box.job(2, { cachePolicy: "persistent" }), box.ctx(2, true));
+    await box.backend.release(handle, box.ctx(2, true));
+    expect(box.fleet.volumes.size).toBe(1);
+    expect(box.fleet.log.filter((line) => line.startsWith("createVolume"))).toHaveLength(1);
+    expect(box.journal.listCaches()[0]!.state).toBe("READY");
+  });
+
   it("refuses to start without a configured worker bundle and creates nothing", async () => {
     const box = setup({ bundle: false });
     await expect(box.backend.start(box.job(1), box.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_WORKER_BUNDLE_UNCONFIGURED" });
