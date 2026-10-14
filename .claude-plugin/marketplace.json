@@ -1,0 +1,14 @@
+{
+  "name": "moldesk",
+  "description": "MoleculeDesk agent skills",
+  "owner": {
+    "name": "MoleculeDesk"
+  },
+  "plugins": [
+    {
+      "name": "moldesk",
+      "source": "./plugins/moldesk",
+      "description": "Install, check, and run molecular AI models with the MoleculeDesk CLI."
+    }
+  ]
+}
