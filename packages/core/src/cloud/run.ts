@@ -275,6 +275,17 @@ export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: st
   };
 }
 
+/**
+ * Everything the provider holds that the journal tracks: live Pods and retained volumes. Reconciling
+ * against Pods alone would mark every journaled volume "vanished" and forget that it was ours, so it
+ * could no longer be reused or deleted and kept billing.
+ */
+export async function listProviderResources(provider: CloudProvider): Promise<{ pods: CloudPod[]; views: ProviderResourceView[] }> {
+  const [pods, volumes] = await Promise.all([provider.listPods(), provider.listVolumes()]);
+  const live = pods.filter((pod) => pod.status !== "TERMINATED");
+  return { pods, views: [...live.map(toView), ...volumes.map((volume): ProviderResourceView => ({ providerId: volume.id, name: volume.name, role: "volume" }))] };
+}
+
 function toView(pod: CloudPod): ProviderResourceView {
   const match = /-(cpu|gpu)$/.exec(pod.name);
   return { providerId: pod.id, name: pod.name, role: (match?.[1] as "cpu" | "gpu" | undefined) ?? "gpu" };
@@ -303,8 +314,8 @@ export async function confirmRunResourcesGone(
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const listed = await deps.provider.listPods();
-      journal.reconcile(listed.filter((pod) => pod.status !== "TERMINATED").map(toView));
+      const { pods: listed, views } = await listProviderResources(deps.provider);
+      journal.reconcile(views);
       const livePods = new Map(listed.filter((pod) => pod.status !== "TERMINATED").map((pod) => [pod.id, pod]));
       for (const record of open()) {
         if (!record.providerId) continue;
@@ -352,12 +363,13 @@ export async function runCloudModel(modelName: string, inputPath: string, option
   try {
     // --- Before new paid work: reconcile the journal with the provider. Unresolved cost blocks it. ---
     let listed: CloudPod[];
+    let views: ProviderResourceView[];
     try {
-      listed = await deps.provider.listPods();
+      ({ pods: listed, views } = await listProviderResources(deps.provider));
     } catch (error) {
       throw failure("CLOUD_UNAVAILABLE", `Could not verify existing cloud resources: ${toErrorInfo(error, "CLOUD_UNAVAILABLE").message}`, "Retry when the provider is reachable; new work is not started blind.");
     }
-    const preflight = journal.reconcile(listed.filter((pod) => pod.status !== "TERMINATED").map(toView));
+    const preflight = journal.reconcile(views);
     if (preflight.orphaned.length > 0 || preflight.cleanupOwed.length > 0) {
       const names = [...preflight.orphaned.map((pod) => `orphaned ${pod.providerId}`), ...preflight.cleanupOwed.map((record) => `cleanup owed ${record.providerId ?? record.intentId}`)];
       throw failure(

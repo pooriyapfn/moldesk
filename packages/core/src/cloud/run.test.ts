@@ -17,7 +17,7 @@ import {
 } from "@moldesk/runtime";
 import { MoldeskError } from "../errors.js";
 import { buildQuote } from "./quote.js";
-import { planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
+import { listProviderResources, planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
 import { CloudJournal } from "./state.js";
 import { recoverCloudRun } from "./manage.js";
 
@@ -647,5 +647,33 @@ describe("recoverCloudRun", () => {
   it("rejects unknown runs", async () => {
     const box = sandbox();
     await expect(recoverCloudRun("2026-01-01T00-00-00-000Z-00000000-0000-0000-0000-000000000000", recoverDeps(box))).rejects.toMatchObject({ code: "CLOUD_RUN_UNKNOWN" });
+  });
+});
+
+describe("provider reconciliation includes volumes", () => {
+  it("lists retained volumes alongside live pods, so a journaled volume is never forgotten", async () => {
+    const provider = {
+      listPods: async () => [
+        { id: "pod1", name: "moldesk-aaaa1111-bbbb2222-gpu", status: "RUNNING", dataCenterId: null, costUsdPerHour: null, createdAt: null },
+        { id: "pod2", name: "gone", status: "TERMINATED", dataCenterId: null, costUsdPerHour: null, createdAt: null },
+      ],
+      listVolumes: async () => [{ id: "vol1", name: "moldesk-aaaa1111-cccc3333-volume", sizeGb: 60, dataCenterId: "EU-RO-1", type: "STANDARD" }],
+    } as unknown as CloudProvider;
+    const { views } = await listProviderResources(provider);
+    expect(views.map((view) => [view.providerId, view.role])).toEqual([["pod1", "gpu"], ["vol1", "volume"]]);
+  });
+
+  it("a journaled volume the provider still lists stays active; one the listing omits is marked vanished", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk recon "));
+    homes.push(home);
+    const journal = CloudJournal.openFile(path.join(home, "j.sqlite"));
+    const intent = journal.recordResourceIntent({ role: "volume" });
+    journal.recordResourceCreated(intent.intentId, "vol1");
+    journal.reconcile([{ providerId: "vol1", name: intent.name, role: "volume" }]);
+    expect(journal.findOwnedByProviderId("vol1")).toBeDefined();
+    // This is what reconciling against Pods alone did: the volume was forgotten and could not be deleted later.
+    journal.reconcile([]);
+    expect(journal.findOwnedByProviderId("vol1")).toBeUndefined();
+    journal.close();
   });
 });
