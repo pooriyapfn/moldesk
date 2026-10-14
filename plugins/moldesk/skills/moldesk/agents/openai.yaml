@@ -1,0 +1,4 @@
+interface:
+  display_name: "MoleculeDesk"
+  short_description: "Install and run molecular AI models with the moldesk CLI"
+  default_prompt: "Check which molecular AI models this machine can run with MoleculeDesk."
