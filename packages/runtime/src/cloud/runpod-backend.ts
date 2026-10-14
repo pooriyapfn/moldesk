@@ -430,8 +430,11 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     await client.start(toWireJob(job, { mode: "execute", ...(volumeId ? { volumeMount: VOLUME_MOUNT } : {}) }));
 
     if (options.watchCacheFailure) {
-      // The worker verifies the volume cache first; a bad cache fails before anything expensive.
-      for (let i = 0; i < 120; i += 1) {
+      // The worker verifies the volume's cache first (on slow network volumes that takes minutes); a
+      // bad cache fails before anything expensive. Watch until it moves past that stage or the job's
+      // own deadline, not for a fixed number of polls.
+      const deadline = Date.parse(job.deadlineAt);
+      while ((this.options.now ?? Date.now)() < deadline) {
         const snapshot = await client.status(job.runId);
         if (snapshot.state === "failed" && (snapshot.error?.code === "CLOUD_CACHE_MISSING" || snapshot.error?.code === "CLOUD_CACHE_INVALID")) {
           await this.terminateAndConfirm(pod.id, intentId, context);

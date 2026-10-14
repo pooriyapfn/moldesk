@@ -14,7 +14,7 @@ import {
 } from "@moldesk/runtime";
 import { MoldeskError } from "../../errors.js";
 import { digest } from "../../hash.js";
-import { acquireVolumeLock, cacheRoot, publishCache, verifyCache } from "./cache.js";
+import { acquireVolumeLock, cacheRoot, materializeCache, publishCache, verifyCache } from "./cache.js";
 import type { PipelineContext, PipelineResult, WorkerPipeline } from "./server.js";
 
 const REMOTE_PLATFORM = "linux-x64" as const;
@@ -110,9 +110,10 @@ export function createManifestPipeline(options: ManifestPipelineOptions = {}): W
     const modelDir = path.join(jobDir, "runtime");
     context.setStage("preparing_assets");
     if (persistentRoot) {
-      const verified = await verifyCache({ root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision });
+      // The model gets a verified copy on local disk, never the volume itself: anything it writes next to
+      // its assets must not be able to change the cache.
+      const verified = await materializeCache({ root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision, destDir: assetsDir });
       if (!verified.ok) throw Object.assign(fail(verified.code, verified.message, "The cache will be rebuilt on a CPU machine."), {});
-      assetsDir = verified.assetsDir;
     } else {
       await prepareAssetsInto(assetsDir);
     }

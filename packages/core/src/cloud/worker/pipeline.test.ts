@@ -227,7 +227,7 @@ describe("persistent cache modes", () => {
     expect(result.runtime?.cache?.reused).toBe(true);
   });
 
-  it("an execute job on a warm volume skips asset preparation and uses the verified assets directory", async () => {
+  it("an execute job on a warm volume skips asset preparation and runs on a verified local copy, never the volume", async () => {
     const mount = volume();
     // Real materialize so the cache has content to hash.
     const prepare = setup();
@@ -235,7 +235,10 @@ describe("persistent cache modes", () => {
     const box = setup();
     await box.run(persistent(mount, "execute"));
     expect(box.calls).toEqual(["prepareEnv", "verify", "command", "execute"]);
-    expect(box.context()!.assetsDir).toBe(path.join(mount, "moldesk-cache", key, "assets"));
+    const assetsDir = box.context()!.assetsDir;
+    expect(assetsDir).not.toBe(path.join(mount, "moldesk-cache", key, "assets"));
+    expect(assetsDir.startsWith(path.join(mount, "moldesk-cache"))).toBe(false);
+    expect(fs.existsSync(assetsDir)).toBe(true);
   });
 
   it("an execute job fails fast, before installing anything, when the volume has no valid cache", async () => {
