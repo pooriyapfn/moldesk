@@ -23,4 +23,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      - run: node --test scripts/release-lib.test.mjs
+      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs
+      # The cloud worker bundle recorded in the CLI must match what these sources build.
+      - run: node scripts/worker-release.mjs check
