@@ -89,6 +89,17 @@ export type JobStage =
 
 export type JobState = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
+/** Peaks the worker observed while preparing and running one job; used to size a manifest's `cloud` block. */
+export interface RemoteResourceUsage {
+  /** Highest GPU memory in use, MiB. Absent when no GPU could be read. */
+  peakVramMb?: number;
+  /**
+   * Used bytes of each distinct filesystem the job touched. These include the image's own files, so the
+   * job's footprint is `peakUsedBytes - startUsedBytes`.
+   */
+  disk: Array<{ path: string; totalBytes: number; startUsedBytes: number; peakUsedBytes: number }>;
+}
+
 export interface RemoteRuntimeReport {
   pythonVersion?: string;
   /** `uv pip freeze` output lines. */
@@ -98,6 +109,7 @@ export interface RemoteRuntimeReport {
   /** The command the worker ran; `cwd` is a POSIX path on the worker. */
   command?: { executable: string; args: string[]; cwd: string };
   installationFingerprint?: string;
+  usage?: RemoteResourceUsage;
   /** Persistent-cache details reported by `prepare-assets` jobs. */
   cache?: { checksumManifestSha256: string; sizeBytes: number; fileCount: number; reused: boolean };
 }

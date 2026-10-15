@@ -556,6 +556,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
         compute.pythonVersion = runtime.pythonVersion;
         compute.dependencyFreeze = runtime.dependencyFreeze;
         compute.sourceRevision = runtime.sourceRevision;
+        compute.usage = runtime.usage;
         record.installationFingerprint = runtime.installationFingerprint ?? digest(runtime);
       }
       record.process = { exitCode: snapshotLast?.exitCode };

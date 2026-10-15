@@ -15,6 +15,7 @@ import {
 import { MoldeskError } from "../../errors.js";
 import { digest } from "../../hash.js";
 import { acquireVolumeLock, cacheRoot, materializeCache, publishCache, verifyCache } from "./cache.js";
+import { probePaths, startResourceProbe, type ResourceProbeOptions } from "./probe.js";
 import type { PipelineContext, PipelineResult, WorkerPipeline } from "./server.js";
 
 const REMOTE_PLATFORM = "linux-x64" as const;
@@ -31,6 +32,8 @@ export interface ManifestPipelineOptions {
   /** Looks up the bundled manifest and adapter; the worker only ever runs what it ships with. */
   resolveModel?: (name: string) => { manifest: ModelManifestV1; adapter: ModelAdapterDefinition } | undefined;
   steps?: Partial<PipelineSteps>;
+  /** Sampling overrides for the peak disk/GPU-memory probe (tests). */
+  probe?: Partial<Pick<ResourceProbeOptions, "intervalMs" | "samplers">>;
 }
 
 function defaultResolve(name: string) {
@@ -105,85 +108,93 @@ export function createManifestPipeline(options: ManifestPipelineOptions = {}): W
       }
     }
 
-    // --- Assets for an execute job: ephemeral prepares them here; persistent verifies the volume's cache. ---
-    let assetsDir = path.join(jobDir, "assets");
-    const modelDir = path.join(jobDir, "runtime");
-    context.setStage("preparing_assets");
-    if (persistentRoot) {
-      // The model gets a verified copy on local disk, never the volume itself: anything it writes next to
-      // its assets must not be able to change the cache.
-      const verified = await materializeCache({ root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision, destDir: assetsDir });
-      if (!verified.ok) throw Object.assign(fail(verified.code, verified.message, "The cache will be rebuilt on a CPU machine."), {});
-    } else {
-      await prepareAssetsInto(assetsDir);
+    // Peaks are recorded from here, so the asset download and the install count toward disk use.
+    const probe = startResourceProbe({ paths: probePaths(jobDir), ...options.probe });
+    try {
+      // --- Assets for an execute job: ephemeral prepares them here; persistent verifies the volume's cache. ---
+      let assetsDir = path.join(jobDir, "assets");
+      const modelDir = path.join(jobDir, "runtime");
+      context.setStage("preparing_assets");
+      if (persistentRoot) {
+        // The model gets a verified copy on local disk, never the volume itself: anything it writes next to
+        // its assets must not be able to change the cache.
+        const verified = await materializeCache({ root: persistentRoot, key: job.cacheKey, manifestDigest: job.manifestDigest, layoutRevision: job.assetLayoutRevision, destDir: assetsDir });
+        if (!verified.ok) throw Object.assign(fail(verified.code, verified.message, "The cache will be rebuilt on a CPU machine."), {});
+      } else {
+        await prepareAssetsInto(assetsDir);
+      }
+
+      // --- Linux runtime in an ephemeral environment. ---
+      context.setStage("installing_runtime");
+      const runtime = selectPythonRuntime(manifest.runtimes, REMOTE_PLATFORM);
+      const source = effectiveRuntimeSource(manifest, runtime);
+      if (!source) throw fail("SOURCE_PROVENANCE_MISSING", `${job.model} has no pinned source.`, "Fix the manifest.");
+      const prepared = await steps.preparePythonEnvironment({
+        targetDir: modelDir,
+        repository: source.repository,
+        revision: source.revision,
+        runtime,
+        paths,
+        onProgress: (progress) => context.log("stderr", `[install] ${progress.message ?? progress.step}\n`),
+      });
+
+      // --- GPU/CUDA verification happens here, after install and before any inference. ---
+      context.setStage("verifying_runtime");
+      const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir, assetsDir, platform: REMOTE_PLATFORM });
+      if (!verification.passed) {
+        throw fail("INSTALL_VERIFICATION_FAILED", `Verification failed for ${manifest.name}: ${verification.output ?? "unknown reason"}.`, "The worker image or GPU is not compatible with this model.");
+      }
+
+      // --- Build the command with the adapter, from worker-local POSIX paths. ---
+      const primary = job.inputs.find((input) => input.role === "job");
+      if (!primary) throw fail("WORKER_BAD_JOB", "The job has no primary input.", "Retry with a valid job.");
+      const runContext: RunContext = {
+        manifestName: manifest.name,
+        inputPath: path.join(inputDir, ...primary.relativePath.split("/")),
+        outputDir,
+        modelDir,
+        assetsDir,
+        params: job.params,
+        runtimeExecutable: prepared.executable,
+        platform: REMOTE_PLATFORM,
+      };
+      const command = await adapter.command(runContext);
+
+      context.setStage("running");
+      const execution = await steps.runtime.execute({
+        executable: command.executable,
+        args: command.args,
+        cwd: jobDir,
+        env: command.env,
+        signal,
+        onStdout: (chunk) => context.log("stdout", chunk),
+        onStderr: (chunk) => context.log("stderr", chunk),
+      });
+
+      const usage = await probe.stop();
+      const system = await steps.getSystemReport().catch(() => undefined);
+      const gpu = system?.nvidia.gpus[0];
+      const report: RemoteRuntimeReport = {
+        pythonVersion: prepared.pythonVersion,
+        dependencyFreeze: prepared.lock,
+        sourceRevision: source.revision,
+        ...(gpu
+          ? {
+              gpu: {
+                name: gpu.name,
+                ...(gpu.totalVramBytes !== undefined ? { memoryMb: Math.round(gpu.totalVramBytes / 1024 ** 2) } : {}),
+                ...(system?.nvidia.driverVersion ? { driverVersion: system.nvidia.driverVersion } : {}),
+                ...(system?.nvidia.driverCudaVersion ? { cudaVersion: system.nvidia.driverCudaVersion } : {}),
+              },
+            }
+          : {}),
+        command: { executable: command.executable, args: command.args, cwd: jobDir },
+        usage,
+        installationFingerprint: `python-${digest({ lock: prepared.lock, python: prepared.pythonVersion, revision: source.revision, platform: REMOTE_PLATFORM }).slice(0, 32)}`,
+      };
+      return { exitCode: execution.cancelled ? 130 : execution.exitCode, runtime: report };
+    } finally {
+      await probe.stop();
     }
-
-    // --- Linux runtime in an ephemeral environment. ---
-    context.setStage("installing_runtime");
-    const runtime = selectPythonRuntime(manifest.runtimes, REMOTE_PLATFORM);
-    const source = effectiveRuntimeSource(manifest, runtime);
-    if (!source) throw fail("SOURCE_PROVENANCE_MISSING", `${job.model} has no pinned source.`, "Fix the manifest.");
-    const prepared = await steps.preparePythonEnvironment({
-      targetDir: modelDir,
-      repository: source.repository,
-      revision: source.revision,
-      runtime,
-      paths,
-      onProgress: (progress) => context.log("stderr", `[install] ${progress.message ?? progress.step}\n`),
-    });
-
-    // --- GPU/CUDA verification happens here, after install and before any inference. ---
-    context.setStage("verifying_runtime");
-    const verification = await adapter.verifyInstallation({ manifestName: manifest.name, modelDir, assetsDir, platform: REMOTE_PLATFORM });
-    if (!verification.passed) {
-      throw fail("INSTALL_VERIFICATION_FAILED", `Verification failed for ${manifest.name}: ${verification.output ?? "unknown reason"}.`, "The worker image or GPU is not compatible with this model.");
-    }
-
-    // --- Build the command with the adapter, from worker-local POSIX paths. ---
-    const primary = job.inputs.find((input) => input.role === "job");
-    if (!primary) throw fail("WORKER_BAD_JOB", "The job has no primary input.", "Retry with a valid job.");
-    const runContext: RunContext = {
-      manifestName: manifest.name,
-      inputPath: path.join(inputDir, ...primary.relativePath.split("/")),
-      outputDir,
-      modelDir,
-      assetsDir,
-      params: job.params,
-      runtimeExecutable: prepared.executable,
-      platform: REMOTE_PLATFORM,
-    };
-    const command = await adapter.command(runContext);
-
-    context.setStage("running");
-    const execution = await steps.runtime.execute({
-      executable: command.executable,
-      args: command.args,
-      cwd: jobDir,
-      env: command.env,
-      signal,
-      onStdout: (chunk) => context.log("stdout", chunk),
-      onStderr: (chunk) => context.log("stderr", chunk),
-    });
-
-    const system = await steps.getSystemReport().catch(() => undefined);
-    const gpu = system?.nvidia.gpus[0];
-    const report: RemoteRuntimeReport = {
-      pythonVersion: prepared.pythonVersion,
-      dependencyFreeze: prepared.lock,
-      sourceRevision: source.revision,
-      ...(gpu
-        ? {
-            gpu: {
-              name: gpu.name,
-              ...(gpu.totalVramBytes !== undefined ? { memoryMb: Math.round(gpu.totalVramBytes / 1024 ** 2) } : {}),
-              ...(system?.nvidia.driverVersion ? { driverVersion: system.nvidia.driverVersion } : {}),
-              ...(system?.nvidia.driverCudaVersion ? { cudaVersion: system.nvidia.driverCudaVersion } : {}),
-            },
-          }
-        : {}),
-      command: { executable: command.executable, args: command.args, cwd: jobDir },
-      installationFingerprint: `python-${digest({ lock: prepared.lock, python: prepared.pythonVersion, revision: source.revision, platform: REMOTE_PLATFORM }).slice(0, 32)}`,
-    };
-    return { exitCode: execution.cancelled ? 130 : execution.exitCode, runtime: report };
   };
 }

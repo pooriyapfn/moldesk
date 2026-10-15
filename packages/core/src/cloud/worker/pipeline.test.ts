@@ -6,7 +6,7 @@ import type { ModelAdapterDefinition, RunContext } from "@moldesk/adapters";
 import { parseManifest, type ModelManifestV1 } from "@moldesk/registry";
 import type { JobStage, RuntimeProvider, WireJob } from "@moldesk/runtime";
 import { digest } from "../../hash.js";
-import { createManifestPipeline, type PipelineSteps } from "./pipeline.js";
+import { createManifestPipeline, type ManifestPipelineOptions, type PipelineSteps } from "./pipeline.js";
 import { startDeadlineWatchdog } from "./watchdog.js";
 
 const DIGEST = "a".repeat(64);
@@ -48,7 +48,7 @@ function manifest(): ModelManifestV1 {
   );
 }
 
-function setup(overrides: { verify?: boolean; exitCode?: number } = {}) {
+function setup(overrides: { verify?: boolean; exitCode?: number; probe?: ManifestPipelineOptions["probe"] } = {}) {
   const jobDir = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk pipeline "));
   dirs.push(jobDir);
   const m = manifest();
@@ -131,7 +131,7 @@ function setup(overrides: { verify?: boolean; exitCode?: number } = {}) {
     ...patch,
   });
   const run = (patch: Partial<WireJob> = {}, signal = new AbortController().signal) =>
-    createManifestPipeline({ resolveModel: (name) => (name === "fake-model" ? { manifest: m, adapter } : undefined), steps })({
+    createManifestPipeline({ resolveModel: (name) => (name === "fake-model" ? { manifest: m, adapter } : undefined), steps, ...(overrides.probe ? { probe: overrides.probe } : {}) })({
       job: job(patch),
       jobDir,
       inputDir: path.join(jobDir, "input"),
@@ -159,6 +159,13 @@ describe("manifest pipeline", () => {
     });
     expect(result.runtime!.installationFingerprint).toMatch(/^python-[0-9a-f]{32}$/);
     expect(box.logs.join("")).toContain("model output");
+  });
+
+  it("reports the peak GPU memory and disk observed during the job", async () => {
+    const box = setup({ probe: { intervalMs: 1000, samplers: { disk: () => ({ usedBytes: 5, totalBytes: 50 }), vramUsedMb: async () => 1234 } } });
+    const result = await box.run();
+    expect(result.runtime!.usage).toMatchObject({ peakVramMb: 1234 });
+    expect(result.runtime!.usage!.disk[0]).toMatchObject({ startUsedBytes: 5, peakUsedBytes: 5, totalBytes: 50 });
   });
 
   it("builds the adapter command from worker-local paths and the approved params only", async () => {
