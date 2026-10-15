@@ -476,6 +476,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
         // price, so a momentary dip would otherwise shrink the range below what was consented to.
         maxUsdPerHour: options.cloud.quote.gpuRange.maxUsdPerHour,
         ...(quote.gpuRange.pinnedGpuId ? { pinnedGpuId: quote.gpuRange.pinnedGpuId } : {}),
+        ...(plan.cloud.gpuAllowList ? { allowedGpuIds: plan.cloud.gpuAllowList } : {}),
         lockDatacenter: quote.gpuRange.lockDatacenter,
       },
       ...(quote.cpu ? { cpuPolicy: { maxUsdPerHour: options.cloud.quote.cpu?.maxUsdPerHour ?? quote.cpu.maxUsdPerHour } } : {}),

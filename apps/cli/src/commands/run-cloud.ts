@@ -61,7 +61,7 @@ export function formatQuote(quote: CloudQuote): string {
     `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h (first choice)`,
     quote.gpuRange.pinnedGpuId
       ? `  GPU range:    only ${quote.gpuRange.pinnedGpuId} (pinned with --gpu); no substitute is used`
-      : `  GPU range:    if unavailable, any available GPU >= ${quote.gpuRange.minVramGb} GB up to ${money(quote.gpuRange.maxUsdPerHour)}/h${quote.gpuRange.lockDatacenter ? ` in ${quote.datacenterId}` : ""}: ${quote.gpuRange.candidates.map((c) => `${c.name} ${money(c.priceUsdPerHour)}`).join(", ")}`,
+      : `  GPU range:    if unavailable, any available ${quote.gpuRange.allowedGpuIds ? "validated " : ""}GPU >= ${quote.gpuRange.minVramGb} GB up to ${money(quote.gpuRange.maxUsdPerHour)}/h${quote.gpuRange.lockDatacenter ? ` in ${quote.datacenterId}` : ""}: ${quote.gpuRange.candidates.map((c) => `${c.name} ${money(c.priceUsdPerHour)}`).join(", ")}`,
     ...(quote.cpu ? [`  Prep CPU:     ${quote.cpu.id} x${quote.cpu.vcpuCount} at ${money(quote.cpu.priceUsdPerHour)}/h (asset preparation only)`] : []),
     `  Images:       gpu ${quote.images.gpu}${quote.cpu ? `; cpu ${quote.images.cpu}` : ""}`,
     `  Cache policy: ${quote.cachePolicy}`,

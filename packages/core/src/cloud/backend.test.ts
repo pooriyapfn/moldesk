@@ -279,6 +279,21 @@ describe("RunpodExecutionBackend (ephemeral)", () => {
     await expect(box.backend.start(box.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, pinnedGpuId: "a40", lockDatacenter: false } }), box.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
   });
 
+  it("only tries GPUs on the manifest's allow-list, whatever else the price range admits", async () => {
+    const box = setup();
+    box.fleet.extraGpus = [gpu("l40", 0.9)];
+    const handle = await box.backend.start(box.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, allowedGpuIds: ["l40"], lockDatacenter: false } }), box.ctx(1, false));
+    const used = [...box.fleet.pods.values()].map((entry) => entry.request.gpu?.id);
+    await box.backend.release(handle, box.ctx(1, false));
+    expect(used).toEqual(["l40"]);
+
+    const refused = setup();
+    refused.fleet.rejectGpuIds.add("l40");
+    refused.fleet.extraGpus = [gpu("l40", 0.9)];
+    await expect(refused.backend.start(refused.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, allowedGpuIds: ["l40"], lockDatacenter: false } }), refused.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(refused.fleet.pods.size).toBe(0);
+  });
+
   it("keeps the CPU preparation pod's container disk within Runpod's 20 GB limit", async () => {
     const box = setup();
     const handle = await box.backend.start(box.job(1, { cachePolicy: "persistent", containerDiskGb: 60 }), box.ctx(1, true));

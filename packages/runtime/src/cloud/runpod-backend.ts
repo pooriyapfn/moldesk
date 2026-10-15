@@ -282,6 +282,7 @@ export class RunpodExecutionBackend implements ExecutionBackend {
     const pairs: Array<{ gpuId: string; datacenterId: string; priceUsdPerHour: number; availability: string }> = [];
     for (const gpu of catalog.gpus) {
       if (job.gpuPolicy.pinnedGpuId && gpu.id !== job.gpuPolicy.pinnedGpuId) continue;
+      if (job.gpuPolicy.allowedGpuIds && !job.gpuPolicy.allowedGpuIds.includes(gpu.id)) continue;
       if (gpu.memoryGb < job.gpuPolicy.minVramGb || gpu.priceUsdPerHour <= 0 || gpu.priceUsdPerHour > job.gpuPolicy.maxUsdPerHour) continue;
       for (const dc of gpu.dataCenters) {
         if (dc.availability === "NONE") continue;

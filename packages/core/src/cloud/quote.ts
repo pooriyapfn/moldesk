@@ -55,6 +55,8 @@ export interface CloudQuote {
     /** Highest GPU hourly rate this quote covers; compute is costed at this rate for the lifetime limit. */
     maxUsdPerHour: number;
     pinnedGpuId: string | null;
+    /** The manifest's validated GPU ids when it restricts them; no other GPU is used. */
+    allowedGpuIds: string[] | null;
     lockDatacenter: boolean;
     /** Available now within the range, cheapest first (informational; availability changes). */
     candidates: Array<{ id: string; name: string; memoryGb: number; priceUsdPerHour: number; datacenterIds: string[] }>;
@@ -147,8 +149,10 @@ interface GpuPlacement {
 function chooseGpuPlacement(input: QuoteInputs, priceLimit: number): GpuPlacement {
   const persistent = input.cachePolicy === "persistent";
   const dcById = new Map(input.catalog.dataCenters.map((dc) => [dc.id, dc]));
+  const allowed = input.cloud.gpuAllowList;
+  const isAllowed = (id: string): boolean => allowed === undefined || allowed.includes(id);
   const eligible = input.catalog.gpus.filter(
-    (gpu) => gpu.memoryGb >= input.cloud.minVramGb && gpu.priceUsdPerHour > 0 && gpu.availability !== "NONE",
+    (gpu) => gpu.memoryGb >= input.cloud.minVramGb && isAllowed(gpu.id) && gpu.priceUsdPerHour > 0 && gpu.availability !== "NONE",
   );
 
   if (input.gpuId) {
@@ -156,6 +160,14 @@ function chooseGpuPlacement(input: QuoteInputs, priceLimit: number): GpuPlacemen
     if (!gpu) throw rejected("CLOUD_GPU_UNKNOWN", `GPU "${input.gpuId}" is not in the provider catalog.`, "Pick an id from the provider's GPU catalog.");
     if (gpu.memoryGb < input.cloud.minVramGb) {
       throw rejected("CLOUD_GPU_INELIGIBLE", `${gpu.name} has ${gpu.memoryGb} GB VRAM; ${input.manifest.name} needs at least ${input.cloud.minVramGb} GB.`, "Choose a larger GPU.");
+    }
+    if (!isAllowed(gpu.id)) {
+      throw rejected(
+        "CLOUD_GPU_INELIGIBLE",
+        `${gpu.name} is not validated for ${input.manifest.name}; its pinned framework may not support this GPU generation.`,
+        `Choose one of: ${allowed!.join(", ")}.`,
+        { gpuAllowList: allowed },
+      );
     }
   }
 
@@ -180,8 +192,8 @@ function chooseGpuPlacement(input: QuoteInputs, priceLimit: number): GpuPlacemen
     throw rejected(
       "CLOUD_CAPACITY_UNAVAILABLE",
       "No eligible GPU currently has capacity in a compatible datacenter.",
-      "Retry later, relax --gpu/--datacenter, or use an ephemeral cache policy if a persistent volume location is the constraint. Quotes never reserve capacity.",
-      { cachePolicy: input.cachePolicy, minVramGb: input.cloud.minVramGb },
+      `Retry later, relax --gpu/--datacenter, or use an ephemeral cache policy if a persistent volume location is the constraint. Quotes never reserve capacity.${allowed ? ` ${input.manifest.name} runs only on: ${allowed.join(", ")}.` : ""}`,
+      { cachePolicy: input.cachePolicy, minVramGb: input.cloud.minVramGb, ...(allowed ? { gpuAllowList: allowed } : {}) },
     );
   }
 
@@ -331,6 +343,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     pinnedGpuId: input.gpuId ?? null,
     pinnedDatacenterId: input.datacenterId ?? input.existingVolumeDatacenterId ?? null,
     minVramGb: input.cloud.minVramGb,
+    gpuAllowList: input.cloud.gpuAllowList ?? null,
     // The default range is relative to the live cheapest price, which the price guard already watches.
     maxGpuUsdPerHour: input.maxGpuUsdPerHour ?? null,
     gpuRangeFactor: input.maxGpuUsdPerHour === undefined ? DEFAULT_GPU_PRICE_RANGE_FACTOR : null,
@@ -367,7 +380,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     cachePolicy: input.cachePolicy,
     gpu: { id: gpu.id, name: gpu.name, memoryGb: gpu.memoryGb, priceUsdPerHour: gpu.priceUsdPerHour },
     datacenterId,
-    gpuRange: { minVramGb: input.cloud.minVramGb, maxUsdPerHour: maxGpuUsdPerHour, pinnedGpuId: input.gpuId ?? null, lockDatacenter, candidates },
+    gpuRange: { minVramGb: input.cloud.minVramGb, maxUsdPerHour: maxGpuUsdPerHour, pinnedGpuId: input.gpuId ?? null, allowedGpuIds: input.cloud.gpuAllowList ?? null, lockDatacenter, candidates },
     ...(cpu ? { cpu } : {}),
     images,
     upload: { files: input.inputs.length, bytes: input.inputs.reduce((total, file) => total + file.sizeBytes, 0) },

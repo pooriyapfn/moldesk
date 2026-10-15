@@ -40,6 +40,36 @@ cloud:
     cpu: runpod/base@sha256:74a2e72024f090b8ba98c4e5233b00471fe6e49f614be070c569e8be3ae0c5c1
   minVramGb: 16
   minRamGb: 16
+  # Pinned torch 2.2.1 (cu121) supports only CUDA capabilities sm_50..sm_90, so Blackwell (sm_120) fails with
+  # "no kernel image is available" and AMD cannot run it. Listed: Ampere (sm_80/86), Ada (sm_89) and Hopper (sm_90).
+  # Live-validated 2026-10-15 on NVIDIA A40 only; the rest are listed by architecture.
+  gpuAllowList:
+    - NVIDIA A40
+    - NVIDIA RTX A4000
+    - NVIDIA RTX A4500
+    - NVIDIA RTX A5000
+    - NVIDIA RTX A6000
+    - NVIDIA GeForce RTX 3090
+    - NVIDIA GeForce RTX 3090 Ti
+    - NVIDIA A100-SXM4-40GB
+    - NVIDIA A100 80GB PCIe
+    - NVIDIA A100-SXM4-80GB
+    - NVIDIA L4
+    - NVIDIA L40
+    - NVIDIA L40S
+    - NVIDIA RTX 2000 Ada Generation
+    - NVIDIA RTX 4000 Ada Generation
+    - NVIDIA RTX 4000 SFF Ada Generation
+    - NVIDIA RTX 5000 Ada Generation
+    - NVIDIA RTX 6000 Ada Generation
+    - NVIDIA GeForce RTX 4090
+    - NVIDIA GeForce RTX 4080
+    - NVIDIA GeForce RTX 4080 SUPER
+    - NVIDIA H100 PCIe
+    - NVIDIA H100 NVL
+    - NVIDIA H100 80GB HBM3
+    - NVIDIA H200
+    - NVIDIA H200 NVL
   ephemeralDiskGb: 20
   volumeGb: 20
   assetLayoutRevision: "1"

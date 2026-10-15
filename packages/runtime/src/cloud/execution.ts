@@ -60,6 +60,8 @@ export interface GpuPolicy {
   maxUsdPerHour: number;
   /** Set only when the user asked for one specific GPU; nothing else is substituted. */
   pinnedGpuId?: string;
+  /** The manifest's validated GPU ids; when set, no other GPU is tried, whatever the price range allows. */
+  allowedGpuIds?: string[];
   /** True when the Pod must stay in `datacenterId` (a retained volume, a pinned datacenter, or a volume just created). */
   lockDatacenter: boolean;
 }

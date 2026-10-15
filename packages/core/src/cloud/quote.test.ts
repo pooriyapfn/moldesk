@@ -183,6 +183,44 @@ describe("buildQuote", () => {
     expect(quote.gpuRange.pinnedGpuId).toBe("l40");
     expect(quote.gpuRange.candidates.map((c) => c.id)).toEqual(["l40"]);
   });
+
+  describe("manifest GPU allow-list", () => {
+    const restricted = (ids: string[], overrides: Partial<QuoteInputs> = {}): QuoteInputs => {
+      const base = inputs();
+      return { ...base, cloud: { ...base.cloud, gpuAllowList: ids }, ...overrides };
+    };
+
+    it("quotes and offers only listed GPUs, even when cheaper ones meet the VRAM floor", () => {
+      const quote = buildQuote(restricted(["l40"], { maxGpuUsdPerHour: 2 }));
+      expect(quote.gpu.id).toBe("l40");
+      expect(quote.gpuRange.candidates.map((c) => c.id)).toEqual(["l40"]);
+      expect(quote.gpuRange.allowedGpuIds).toEqual(["l40"]);
+      expect(buildQuote(inputs()).gpuRange.allowedGpuIds).toBeNull();
+    });
+
+    it("refuses a pinned GPU that is not listed and names the listed ones", () => {
+      expect(() => buildQuote(restricted(["l40"], { gpuId: "a40" }))).toThrow(/not validated for test-model/);
+      try {
+        buildQuote(restricted(["l40"], { gpuId: "a40" }));
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_GPU_INELIGIBLE", remediation: expect.stringContaining("l40") });
+      }
+      expect(buildQuote(restricted(["l40", "a40"], { gpuId: "a40" })).gpu.id).toBe("a40");
+    });
+
+    it("reports capacity as unavailable, naming the listed GPUs, when none of them has capacity", () => {
+      try {
+        buildQuote(restricted(["a5000"]));
+        throw new Error("expected a rejection");
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE", remediation: expect.stringContaining("runs only on: a5000") });
+      }
+    });
+
+    it("binds the list to the quote id", () => {
+      expect(buildQuote(restricted(["l40"])).id).not.toBe(buildQuote(restricted(["l40", "a40"])).id);
+    });
+  });
 });
 
 describe("storage costs and budget coverage", () => {
