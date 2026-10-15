@@ -76,6 +76,7 @@ function fakeDeps(opts: { terminateFails?: boolean } = {}) {
       dataCenters: [{ id: "DC-1", region: "EU", networkVolumeTypes: ["STANDARD"] }],
     }),
     listPods: async () => [...pods.values()],
+    listVolumes: async () => [],
     getPod: async (id: string) => pods.get(id) ?? null,
     terminatePod: async (id: string) => {
       if (opts.terminateFails) throw new Error("down");
