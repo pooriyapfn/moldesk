@@ -18,11 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Runpod cloud execution code (`moldesk run --compute runpod`, `moldesk cloud ...`), **disabled
-  and not usable yet**: no model declares a cloud block and no worker bundle is published, pending
-  live validation. When enabled, shutdown is best effort and every run requires explicit
-  acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Adds
-  `better-sqlite3` and `@napi-rs/keyring` as runtime dependencies. See `docs/cloud-execution.md`.
+- Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2 and
+  ProteinMPNN. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
+  but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and
+  RTX A5000 Pods, including the in-Pod watchdog. Shutdown is still best effort and every run requires
+  explicit acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Other
+  models are not enabled for cloud execution yet. Adds `better-sqlite3` and `@napi-rs/keyring` as
+  runtime dependencies. See `docs/cloud-execution.md`.
+- Cloud GPU choice: a price range with fallback (`--max-gpu-price`) instead of waiting on one GPU,
+  digest-pinned stock Runpod images with `--gpu-image` / `--cpu-image` overrides, and an optional
+  `cloud.gpuAllowList` in a model's manifest so a fallback never lands on a GPU generation the
+  model's pinned framework cannot run (ProteinMPNN's torch 2.2.1 has no kernels for Blackwell GPUs).
+- Cloud runs record the peak GPU memory and disk the worker observed in `run.json`
+  (`compute.usage`), so a model's cloud sizes can be set from measured runs.
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a
   fullscreen, always-dark Mol* 3D view, a floating toolbox, and a colored sequence
   strip in blocks of ten, no network access.

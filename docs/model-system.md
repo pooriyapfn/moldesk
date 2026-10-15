@@ -56,6 +56,9 @@ cloud:
     cpu: runpod/base@sha256:<64 hex>      # asset preparation only
   minVramGb: 24
   minRamGb: 32
+  gpuAllowList:           # optional: Runpod GPU type ids the model is validated on
+    - NVIDIA A40
+    - NVIDIA RTX A5000
   ephemeralDiskGb: 40     # one job's container disk
   volumeGb: 40            # persistent network volume (raw cache + materialized assets)
   assetLayoutRevision: "1"
@@ -64,7 +67,15 @@ cloud:
 
 Images must be pinned by digest, never a tag. They can be stock public images (for example
 `runpod/pytorch@sha256:…`): the worker bootstraps its own Node.js, so nothing custom needs publishing.
-Users may override them per run with `--gpu-image` / `--cpu-image`. The block reuses the manifest's
+Users may override them per run with `--gpu-image` / `--cpu-image`.
+
+`gpuAllowList` is optional. Without it, any GPU with enough memory in the price range may be used, which is wrong
+for a model whose pinned framework does not support every GPU generation (ProteinMPNN's torch 2.2.1 supports CUDA
+capabilities sm_50 to sm_90, so Blackwell GPUs fail with "no kernel image is available", and AMD cards cannot run
+it at all). With a list, the quote offers only those GPUs, the backend never tries another, and `--gpu` rejects
+an unlisted id. List ids exactly as the Runpod catalog spells them (for example `NVIDIA GeForce RTX 4090`).
+
+The block reuses the manifest's
 own `assets`, `runtimes` and `source`; it adds no commands. Validation requires
 a Python runtime entry that applies to `linux-x64`, `minVramGb` at least that
 runtime's own floor, and disk/volume sizes no smaller than the declared asset

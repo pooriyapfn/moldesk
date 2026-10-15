@@ -243,10 +243,11 @@ Still unverified: chosen CPU deployment/volume request shape; provider terminati
 Explicit spec adaptations: replace Normal/Efficient modes with `cachePolicy: "ephemeral" | "persistent"` and CLI `--cache-policy`; positional CLI input retained; SQLite added only for cloud journal; no desktop implementation until shell exists; structured manifest installer reused instead of new command DSL; timeout/cost/orphan safeguards moved into initial Ephemeral release, not deferred to hardening.
 
 
-## 13. Implementation status and deviations (updated 2026-10-13, work in progress)
+## 13. Implementation status and deviations (updated 2026-10-15)
 
-**Not complete and not releasable.** Code exists for the pieces below and is covered by unit and local
-integration tests using fakes; no paid validation has been performed since the provider spike. See
+**Enabled for Boltz-2 and ProteinMPNN; the release itself (worker bundle, version bump) is still to be made.** Code
+exists for the pieces below and is covered by unit and local integration tests using fakes, and was validated on
+paid Runpod compute on 2026-10-14/15 (see [runpod-spike-findings.md](./runpod-spike-findings.md)). See
 [cloud-execution.md](./cloud-execution.md).
 
 Present in code: manifest `cloud` block, credential store, Runpod provider client, SQLite cloud journal,
@@ -274,13 +275,17 @@ Still open (not claimed as done):
 
 1. **Lifetime enforcement is best effort (accepted limitation, not a blocker):** there is no independent
    scheduler. If MoleculeDesk closes or loses connection, a Pod may keep running and charging; the user must
-   acknowledge this before approving. Pod-key expiry and GPU Pod key injection for the in-Pod watchdog remain
-   unverified and must be validated and documented.
-2. **Live validation (release blocker):** no real Boltz Linux/CUDA run, no real image digests/sizes, no
-   published worker bundle, no measured asset extraction size or timings; the Boltz manifest has no `cloud` block.
-3. **Untested against the real provider:** the container bootstrap script, the proxy path for uploads and large
-   downloads (including real stall/timeout behavior), CPU Pod + volume then GPU remount in one datacenter,
-   billing after terminate, and the actual cost of container disk and volumes.
+   acknowledge this before approving. The in-Pod watchdog was verified live (key injection on a GPU Pod; an
+   orphaned Pod terminated itself at its deadline). Pod-key expiry and the behavior with the key absent remain
+   untested.
+2. **Live validation (done for two models):** Boltz-2 (`ephemeral` 235 s on an RTX 3090; `persistent` cold and
+   warm, experimental because it was slower) and ProteinMPNN (`ephemeral`, A40 and RTX A5000) ran on real
+   compute with real image digests and measured disk and timings. Still open: the worker bundle attached to a
+   GitHub Release (development bundles were used), and sizes come from short runs. LigandMPNN's live run failed on
+   its upstream weights host; DiffDock-L and BindCraft2 need companion-file upload; OpenDDE is unchecked.
+3. **Still untested against the real provider:** real stall/timeout behavior on large transfers, a billing audit
+   after terminate, and the actual cost of container disk and volumes. Observed and not yet handled: Runpod's proxy
+   sometimes returns a transient 404 to the first calls after a Pod is healthy (no retry).
 4. Worker logs are a bounded in-memory tail (4 MiB): loss is detected and reported (`CLOUD_LOGS_INCOMPLETE`) but not prevented; upload has an overall rather than idle timeout.
 5. Cross-machine cache lock reclamation relies on the client confirming the previous owner is gone;
    multi-client contention is only covered by unit tests.
@@ -288,16 +293,17 @@ Still open (not claimed as done):
 
 ### Release gates and acceptance criteria (current)
 
-Cloud execution stays disabled for users until every gate below passes. Items marked *shipped in code* are
-tested with fakes only.
+Cloud execution is enabled for Boltz-2 and ProteinMPNN (`ephemeral` supported, `persistent` experimental); the
+published worker bundle and version bump are made at release time. Each gate below records what was verified, with
+the evidence in `runpod-spike-findings.md`. Items marked *shipped in code* are tested with fakes only.
 
 | Gate | Status |
 |---|---|
 | Risk acknowledgment: prominent exact warning before approval, explicit acknowledgment (prompt or `--accept-lifetime-risk`; `--yes` alone does not count); persistent caching also acknowledges continuing storage charges (`--accept-storage-charges`); acknowledgments recorded in `run.json` | Shipped in code |
 | Acknowledged limitation instead of a scheduler: documented in the plan, user docs and quote text; spec acceptance criterion 8 is **not** satisfied and must not be claimed | Documented |
 | Client deadline, cleanup while connected, cleanup journal, restart recovery, preflight refusal on unresolved resources | Shipped in code |
-| In-Pod watchdog verified on a real GPU Pod (terminates its own Pod at the deadline; behavior when the key is absent), results recorded in the spike findings | **Open** |
-| Live Boltz Linux/CUDA validation: real image digests and sizes in a `cloud` manifest block, measured extraction size and timings | **Open** |
-| Published, checksummed worker bundle validated on a clean generic worker image | **Open** |
-| Real-provider checks: container bootstrap, proxy upload/download and stall behavior, CPU Pod + volume then GPU remount in one datacenter, billing after terminate, real disk/volume costs | **Open** |
+| In-Pod watchdog verified on a real GPU Pod (terminates its own Pod at the deadline; behavior when the key is absent), results recorded in the spike findings | **Verified** with the key present: the client was killed mid-run and the orphaned Pod terminated itself 7 s after its deadline (2026-10-15). Behavior with the key absent is not tested |
+| Live Boltz Linux/CUDA validation: real image digests and sizes in a `cloud` manifest block, measured extraction size and timings | **Verified** for `ephemeral` (235 s on an RTX 3090). `persistent` ran cold (43 min) and warm and is experimental. ProteinMPNN also verified (`ephemeral`, A40 and RTX A5000). Sizes come from short runs; peaks are recorded in `run.json` (`compute.usage`) |
+| Published, checksummed worker bundle validated on a clean generic worker image | **Open** until the release: development bundles hosted by the maintainer were verified by checksum and ran on stock Runpod images; the bundle attached to the GitHub Release is produced at release time |
+| Real-provider checks: container bootstrap, proxy upload/download and stall behavior, CPU Pod + volume then GPU remount in one datacenter, billing after terminate, real disk/volume costs | **Mostly verified**: bootstrap, proxy transfers, CPU Pod + volume then GPU remount, and Pod/volume absence after terminate (checked through the API). Open: stall behavior live (unit-tested only), a billing audit after terminate, real disk/volume costs (still unpublished by Runpod). Observed: the proxy sometimes returns a transient 404 right after the Pod is healthy, which is not retried yet |
 | Docs and quote text never claim guaranteed shutdown or complete logs | Maintained |

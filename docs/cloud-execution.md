@@ -1,16 +1,19 @@
 # Cloud execution (Runpod)
 
-Status: **work in progress, disabled by default, not releasable.** The code paths exist and are tested with
-mocks and local fixtures only; nothing has been validated against real paid compute.
+Status: **Boltz-2 and ProteinMPNN are supported with `ephemeral` caching; `persistent` caching is
+experimental.** Other models are not enabled for cloud execution. The code paths are tested with fakes and were
+validated live on Runpod in October 2026 (evidence in [runpod-spike-findings.md](./runpod-spike-findings.md)).
 Read [runpod-execution-implementation-plan.md](./runpod-execution-implementation-plan.md) and
 [runpod-spike-findings.md](./runpod-spike-findings.md) for design and evidence.
 
-## What is gated
+## What a run requires
 
-Cloud runs refuse to start until all of these exist (release gates; live validation has not been done):
+Cloud runs refuse to start unless all of these exist:
 
 1. **A model that declares a validated `cloud` block** in its manifest (see [model-system.md](./model-system.md)).
-   No shipped manifest declares one: image digests and sizes must come from a live validation.
+   Boltz-2 and ProteinMPNN do; every other model is refused with an explanation. A block may list the GPUs the
+   model can run on (`gpuAllowList`); ProteinMPNN's pinned torch has no kernels for Blackwell GPUs, so only
+   Ampere, Ada and Hopper NVIDIA GPUs are quoted, tried as a fallback, or accepted with `--gpu`.
 2. **A published worker bundle.** The worker is a small Node program that runs inside the Pod: it serves an
    authenticated endpoint, runs the manifest install/run pipeline and the in-Pod watchdog. `pnpm --filter
    @moldesk/core build:worker` builds `worker.tar` deterministically (same sources, same SHA-256). The CLI
@@ -20,7 +23,25 @@ Cloud runs refuse to start until all of these exist (release gates; live validat
    the sources, and the release workflow attaches `worker.tar` to the GitHub Release before publishing to npm.
    For development, set `MOLDESK_WORKER_BUNDLE_URL` and `MOLDESK_WORKER_BUNDLE_SHA256`. End users do nothing:
    the URL and checksum ship inside the CLI they installed.
-3. **Passing live validation** of the items listed in the plan's release gates, including the in-Pod watchdog.
+
+Which models are enabled, and why the others are not:
+
+| Model | Cloud status |
+|---|---|
+| Boltz-2 | Supported (`ephemeral`); `persistent` experimental |
+| ProteinMPNN | Supported (`ephemeral`), on the GPUs in its allow-list |
+| LigandMPNN | Not enabled: its live run could not download the weights from the upstream host |
+| DiffDock-L, BindCraft2 | Not enabled: they need companion input files uploaded, which is not built |
+| OpenDDE | Not enabled: its Linux/CUDA path has not been checked live |
+
+## Cache policies
+
+- **`ephemeral`** (supported): the GPU Pod downloads the model assets, installs the runtime, runs the model and is
+  terminated. Nothing is kept. A live Boltz run took about 4 minutes end to end on an RTX 3090.
+- **`persistent`** (experimental): a CPU Pod prepares the assets on a retained network volume, then a GPU Pod
+  mounts it. The cold run worked and a warm run reused the cache, but on standard volumes preparation was slow
+  (about 20 minutes of CPU time at ~25 MB/s, 43 minutes end to end for Boltz), so it is slower than `ephemeral`
+  for a single run. The volume keeps billing until you delete it with `moldesk cloud cache delete`.
 
 ## Images and GPU selection
 
@@ -57,7 +78,7 @@ Persistent caching additionally requires acknowledging that storage charges cont
 deleted. Without a terminal, pass `--yes --accept-lifetime-risk` (and `--accept-storage-charges` for persistent);
 `--yes` alone is refused. Acknowledgments are recorded in `run.json` (`compute.acknowledgedRisks`).
 
-## Using it (once enabled)
+## Using it
 
 ```bash
 moldesk cloud connect runpod           # hidden prompt, or --key-stdin
@@ -86,7 +107,7 @@ plaintext fallback.
 `13` cleanup pending or orphaned resources, `14` consent/safety refusal (approval mismatch or expiry,
 re-quote required, acknowledgment missing, worker bundle unavailable).
 
-## What the code enforces (tested with fakes only)
+## What the code enforces (tested with fakes; the live runs are in the spike findings)
 
 - **Quote before spend, with explicit coverage.** The quote lists what `--max-budget` is compared against and
   what it is not: GPU (and preparation-CPU) compute at catalog rates for the lifetime limit is counted;
@@ -120,7 +141,15 @@ re-quote required, acknowledgment missing, worker bundle unavailable).
 
 ## Known gaps (do not treat cloud execution as complete)
 
-- Shutdown is best effort (see above); live validation and real-provider behavior are open: plan section 13.
+- Shutdown is best effort (see above). The in-Pod watchdog was verified live: with the client killed
+  mid-run, the orphaned Pod terminated itself at its deadline. It cannot help if the container never boots.
+- Runpod's proxy occasionally returns a transient 404 to the first calls after the Pod reports healthy (2 of 3
+  live ProteinMPNN attempts). The client does not retry it yet; the run fails cleanly, cleanup is confirmed, and
+  re-running works.
+- Only ProteinMPNN restricts GPUs. The catalog also offers GPUs a model's framework may not support (AMD, and
+  Blackwell for older torch builds); a model without `gpuAllowList` can be offered them if the price range allows.
+- GPU memory and disk sizes in manifests come from short runs (a 46-residue ProteinMPNN input); larger inputs
+  may need more. `run.json` records the peaks (`compute.usage`) so sizes can be revisited.
 - Storage and egress costs are unknown for Runpod (no published rates); the budget does not cover them.
 - Worker log retention is a bounded tail; loss is detected and reported, not prevented. Only the cumulative
   evicted byte count is known, not the content, and the oldest output of a very chatty job can be gone.

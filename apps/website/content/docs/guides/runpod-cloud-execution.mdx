@@ -1,12 +1,12 @@
 export const metadata = {
-  title: "Runpod cloud execution: development update",
+  title: "Runpod cloud execution",
   description:
-    "MoleculeDesk is developing optional Runpod cloud GPU execution for molecular AI, with local results and temporary or reusable model assets. Boltz is the first target.",
+    "MoleculeDesk can run Boltz-2 and ProteinMPNN on your own Runpod GPU, with verified results returned locally and temporary or reusable model assets.",
 };
 
 # MoleculeDesk + Runpod: cloud GPU execution with local molecular results
 
-**MoleculeDesk is developing optional Runpod cloud execution for molecular AI models.** The planned workflow uses your own Runpod account, prepares the model, runs prediction on a cloud GPU, and downloads verified results to your computer. Boltz-2 is the first target model. Cloud execution is currently disabled and is not ready for production use.
+**MoleculeDesk can run Boltz-2 and ProteinMPNN on a Runpod GPU.** The workflow uses your own Runpod account, prepares the model, runs prediction on a cloud GPU, and downloads verified results to your computer. `ephemeral` caching is supported; `persistent` caching is experimental. Other models are not enabled for cloud execution yet, and shutdown is best effort (see below).
 
 The goal is to make a cloud run feel like a familiar MoleculeDesk run: choose an input, review the cost and location, approve execution, then open the structures and report locally.
 
@@ -18,22 +18,22 @@ MoleculeDesk's Runpod integration introduces two cache policies. They let you ch
 
 | Cache policy | Where preparation happens | What remains afterward | Tradeoff |
 |---|---|---|---|
-| `ephemeral` — temporary model assets | GPU Pod prepares assets and runtime | Downloaded local results; no persistent model volume | Simple cleanup, but model assets must be prepared again next time |
-| `persistent` — reusable model assets | CPU Pod prepares missing assets; GPU Pod installs its runtime and predicts | Local results plus model assets on a retained network volume | Reuses prepared assets, but storage continues to incur charges |
+| `ephemeral` — temporary model assets (supported) | GPU Pod prepares assets and runtime | Downloaded local results; no persistent model volume | Simple cleanup, but model assets must be prepared again next time |
+| `persistent` — reusable model assets (experimental) | CPU Pod prepares missing assets; GPU Pod installs its runtime and predicts | Local results plus model assets on a retained network volume | Reuses prepared assets, but storage continues to incur charges |
 
 Both policies are designed to terminate GPU Pods after each run. Persistent caching retains model data, not a running GPU or a portable Python environment. GPU runtime setup is still required.
 
-Persistent caching may reduce repeated preparation work. It does not guarantee a lower bill for every workload, especially for a single run. Actual costs depend on preparation time, hardware, transfer time and storage retention.
+Persistent caching may reduce repeated preparation work. It does not guarantee a lower bill for every workload, especially for a single run. In live tests with Boltz on standard network volumes, the first persistent run was much slower than an `ephemeral` run (about 43 minutes against about 4 minutes), because the CPU Pod prepared the assets slowly. That is why it is marked experimental. Actual costs depend on preparation time, hardware, transfer time and storage retention.
 
-## What will the first Runpod run look like?
+## What does a Runpod run look like?
 
-The planned onboarding starts with connecting your Runpod account. MoleculeDesk saves the API key in the operating system's credential store. Runpod bills your account directly.
+Onboarding starts with connecting your Runpod account. MoleculeDesk saves the API key in the operating system's credential store. Runpod bills your account directly.
 
 Next, you choose temporary or reusable model assets. Before execution, MoleculeDesk presents the uploaded input, selected datacenter and GPU, lifetime limit, estimated compute cost and budget exclusions. Retained storage charges are disclosed separately; unavailable rates are shown as unknown.
 
 After approval, the run progresses through provisioning, asset preparation, runtime installation, prediction, result verification and Pod cleanup. Returned structures can be opened through MoleculeDesk's existing local visualization workflow.
 
-The CLI interface is implemented behind release gates. These examples describe the intended workflow once enabled; they cannot currently start a shipped model in the cloud:
+From the CLI:
 
 ```bash
 moldesk cloud connect runpod
@@ -43,7 +43,12 @@ moldesk run boltz complex.yaml --compute runpod \
 
 moldesk run boltz complex.yaml --compute runpod \
   --cache-policy persistent --max-budget 2 --max-lifetime 3600
+
+moldesk run proteinmpnn structure.pdb --compute runpod \
+  --cache-policy ephemeral --max-budget 2 --max-lifetime 3600
 ```
+
+Add `--dry-run` to print the quote without uploading or provisioning anything. Without a terminal, approve with `--yes --accept-lifetime-risk`.
 
 The example budget is a user-selected limit for covered cost estimates, not a quoted Runpod price or a guaranteed spending cap. Desktop onboarding is a future integration; MoleculeDesk's desktop application is still planned.
 
@@ -65,11 +70,17 @@ Ordinary cleanup terminates ephemeral Pods. Deleting a retained model cache is a
 
 ## Is MoleculeDesk Runpod execution available now?
 
-**No. It is a work in progress.** Core orchestration, CLI controls, authenticated worker transport, cache handling and local result collection exist, with automated tests using local fixtures and fake providers.
+**Yes, for Boltz-2 and ProteinMPNN.** `ephemeral` caching is supported. `persistent` caching ran live (cold and warm) but is experimental because it was slower than `ephemeral`.
 
-Release still requires a live GPU watchdog test, validated worker images and release bundle, and a real Boltz Linux/CUDA cloud run. CPU-prepared storage must also be tested through GPU remount in the same datacenter, alongside large proxy transfers and billing behavior after termination.
+What was checked on real Runpod compute: a Boltz run on an RTX 3090, ProteinMPNN runs on an A40 and an RTX A5000, a persistent cold and warm run, and the in-Pod watchdog (with the client killed mid-run, the orphaned Pod terminated itself at its deadline).
 
-Provider capability spikes are useful evidence, but they are not validation of the complete scientific execution workflow.
+Known limits:
+
+- Automatic shutdown is not guaranteed; the watchdog does not help if a container never boots.
+- Runpod's proxy sometimes returns a transient error right after a Pod becomes healthy. The run then fails cleanly, resources are cleaned up, and running it again works. Automatic retries are not built yet.
+- ProteinMPNN runs only on Ampere, Ada and Hopper NVIDIA GPUs (its pinned PyTorch has no kernels for newer ones). Other models do not restrict GPUs yet.
+- GPU memory and disk sizes come from short runs; very large inputs may need more.
+- Runpod does not publish disk or volume rates, so those costs are shown as unknown.
 
 ## Common questions
 
@@ -81,13 +92,13 @@ Yes. The integration is designed around your own Runpod account and API key. Mol
 
 No. It retains prepared model assets on a network volume. GPU Pods are intended to be terminated after each run; the retained volume remains billable until deleted.
 
-### Can I run Boltz from a computer without a local NVIDIA GPU?
+### Can I run Boltz or ProteinMPNN from a computer without a local NVIDIA GPU?
 
-That is the intended cloud workflow. Prediction would use the remote Linux/CUDA environment, while verified results return to your computer. The complete Boltz cloud workflow has not yet passed live validation.
+Yes. Prediction runs in the remote Linux/CUDA environment, while verified results return to your computer.
 
 ### Will every MoleculeDesk model support Runpod immediately?
 
-No. Cloud support requires a validated model profile. Boltz-2 is the first target; no shipped model is currently enabled for cloud execution.
+No. Cloud support requires a validated model profile. Boltz-2 and ProteinMPNN are enabled today. LigandMPNN, DiffDock-L, BindCraft2 and OpenDDE are not yet: some need companion input files uploaded, which is not built, and some have not been checked live.
 
 ### Where can I follow implementation details?
 
