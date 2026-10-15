@@ -53,20 +53,6 @@ assets:
     target: model_params/ligandmpnn_v_32_010_25.pt
     sizeBytes: 10541943
     archive: none
-# Remote execution (Runpod). Stock Runpod images pinned by digest; the worker bootstraps its own
-# Node.js when the image has none. Disk/VRAM are provisional until a live run records measured values.
-cloud:
-  schemaVersion: 1
-  platform: linux-x64
-  images:
-    gpu: runpod/pytorch@sha256:0a360022e8de4375af99430f84e8b38951acc397252163a37ceac7204d01be35
-    cpu: runpod/base@sha256:74a2e72024f090b8ba98c4e5233b00471fe6e49f614be070c569e8be3ae0c5c1
-  minVramGb: 16
-  minRamGb: 16
-  ephemeralDiskGb: 30
-  volumeGb: 20
-  assetLayoutRevision: "1"
-  cpuAssetPreparation: true
 hardware:
   platforms:
     - darwin-arm64
