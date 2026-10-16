@@ -64,7 +64,7 @@ const adapter = {
   },
 };
 
-function fakeDeps(opts: { terminateFails?: boolean } = {}) {
+function fakeDeps(opts: { terminateFails?: boolean; extraFile?: boolean } = {}) {
   const pods = new Map<string, { id: string; name: string; status: "RUNNING" }>();
   const calls = { start: 0, upload: 0 };
   const provider = {
@@ -102,7 +102,7 @@ function fakeDeps(opts: { terminateFails?: boolean } = {}) {
     },
     async release() {},
   };
-  const deps = { provider, backend, paths: getMoldeskPaths({ MOLDESK_HOME: home }), accountScope: "acct", resolveModel: () => ({ manifest: manifest(), adapter }), sleep: async () => undefined, pollIntervalMs: 1, cleanupAttempts: 1 } as unknown as CloudRunDeps;
+  const deps = { provider, backend, paths: getMoldeskPaths({ MOLDESK_HOME: home }), accountScope: "acct", resolveModel: () => ({ manifest: manifest(), adapter: opts.extraFile ? { ...adapter, resolveCompanionInputs: async () => [{ id: "protein", sourcePath: "protein.pdb" }] } : adapter }), sleep: async () => undefined, pollIntervalMs: 1, cleanupAttempts: 1 } as unknown as CloudRunDeps;
   return { deps, calls, pods };
 }
 
@@ -237,6 +237,51 @@ describe("moldesk run --compute runpod", () => {
     expect(err.join("\n")).toMatch(/Storage charges continue until you delete it/);
     await run({ deps: async () => f.deps, confirm: async (q) => (asked.push(q), q.startsWith("Do you understand")) }, ...persistent);
     expect(asked.filter((q) => q.startsWith("Do you understand"))).toHaveLength(2);
+  });
+
+  describe("when the job file references other files on this computer", () => {
+    const folder = () => path.join(home, "protein.pdb");
+    const withFile = () => {
+      fs.writeFileSync(folder(), "ATOM");
+      return fakeDeps({ extraFile: true });
+    };
+
+    it("lists the files in the quote, and --dry-run uploads nothing", async () => {
+      const f = withFile();
+      await run({ deps: async () => f.deps, interactive: false }, ...base, "--dry-run");
+      const text = err.join("\n");
+      expect(text).toContain("protein");
+      expect(text).toContain("protein.pdb");
+      expect(text).toContain("They will be copied to a Runpod machine");
+      expect(text).toContain("Dry run: nothing was uploaded or provisioned.");
+      expect(f.calls.start).toBe(0);
+    });
+
+    it("does not accept --yes and the shutdown flag alone: the upload needs its own flag, and nothing starts", async () => {
+      const f = withFile();
+      await run({ deps: async () => f.deps, interactive: false }, ...base, ...accept, "--yes", "--json");
+      expect(JSON.parse(out.join("\n"))).toMatchObject({ status: "error", code: "CLOUD_ACKNOWLEDGMENT_REQUIRED" });
+      expect(JSON.parse(out.join("\n")).remediation).toContain("--accept-file-upload");
+      expect(process.exitCode).toBe(14);
+      expect(f.calls.start).toBe(0);
+    });
+
+    it("runs once --accept-file-upload is given, and records the acknowledgment", async () => {
+      const f = withFile();
+      await run({ deps: async () => f.deps, interactive: false }, ...base, ...accept, "--accept-file-upload", "--yes", "--json");
+      expect(JSON.parse(out.join("\n"))).toMatchObject({ status: "succeeded" });
+      expect(f.calls.start).toBe(1);
+    });
+
+    it("asks a separate question that lists the files, and uploads nothing if you decline", async () => {
+      const f = withFile();
+      const asked: string[] = [];
+      await run({ deps: async () => f.deps, confirm: async (q) => (asked.push(q), !q.startsWith("Copy these files")) }, ...base);
+      expect(asked).toEqual(["Do you understand and accept this risk?", "Copy these files to Runpod?"]);
+      expect(err.join("\n")).toContain("Not acknowledged. Nothing was uploaded or provisioned.");
+      expect(process.exitCode).toBe(2);
+      expect(f.calls.start).toBe(0);
+    });
   });
 
   it("runs end to end after approval and reports where it ran", async () => {

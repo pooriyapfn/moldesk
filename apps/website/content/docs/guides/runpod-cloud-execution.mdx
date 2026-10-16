@@ -56,7 +56,7 @@ The example budget is a user-selected limit for covered cost estimates, not a qu
 
 The cloud workflow is designed to preserve input snapshots, parameters, model provenance, verified outputs and received logs in the local run directory. Scientific outputs are checked by file size and SHA-256 before acceptance. Local reports use the existing MoleculeDesk adapters and visualizer.
 
-Cloud execution still uploads approved inputs to the selected datacenter. Local result storage does not mean inference happens locally. Worker logs currently use a bounded remote tail, so complete log retention is not guaranteed for very chatty jobs.
+Cloud execution still uploads approved inputs to the selected datacenter. Local result storage does not mean inference happens locally. If a job file references other files on your computer (for example a protein structure), the quote lists each one with its path and checksum, and you must acknowledge that upload separately (`--accept-file-upload` without a terminal) before anything is copied. Worker logs currently use a bounded remote tail, so complete log retention is not guaranteed for very chatty jobs.
 
 ## What happens if MoleculeDesk disconnects?
 
@@ -98,7 +98,7 @@ Yes. Prediction runs in the remote Linux/CUDA environment, while verified result
 
 ### Will every MoleculeDesk model support Runpod immediately?
 
-No. Cloud support requires a validated model profile. Boltz-2 and ProteinMPNN are enabled today. LigandMPNN, DiffDock-L, BindCraft2 and OpenDDE are not yet: some need companion input files uploaded, which is not built, and some have not been checked live.
+No. Cloud support requires a validated model profile. Boltz-2 and ProteinMPNN are enabled today. LigandMPNN, DiffDock-L, BindCraft2 and OpenDDE are not yet. DiffDock-L and BindCraft2 need extra input files uploaded; MoleculeDesk can now do that, behind an explicit acknowledgment, but neither has been run on Runpod yet. LigandMPNN's live run failed on its weights host, and OpenDDE has not been checked on Linux/CUDA.
 
 ### Where can I follow implementation details?
 

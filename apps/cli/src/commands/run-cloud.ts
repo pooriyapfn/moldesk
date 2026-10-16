@@ -27,6 +27,7 @@ export interface CloudRunFlags {
   dryRun?: boolean;
   acceptLifetimeRisk?: boolean;
   acceptStorageCharges?: boolean;
+  acceptFileUpload?: boolean;
   output?: string;
   runtime?: string;
   param: Record<string, string>;
@@ -43,6 +44,18 @@ export interface CloudRunHooks {
 
 function usage(code: string, message: string, remediation: string): MoldeskError {
   return new MoldeskError({ code, message, remediation });
+}
+
+const ACCEPT_FLAG: Record<CloudAcknowledgment, string> = {
+  "lifetime-risk": "--accept-lifetime-risk",
+  "storage-charges": "--accept-storage-charges",
+  "upload-files": "--accept-file-upload",
+};
+
+function acceptedByFlag(id: CloudAcknowledgment, flags: Partial<CloudRunFlags>): boolean {
+  if (id === "lifetime-risk") return flags.acceptLifetimeRisk === true;
+  if (id === "storage-charges") return flags.acceptStorageCharges === true;
+  return flags.acceptFileUpload === true;
 }
 
 /** Printed first and again at the prompt: there is no independent shutdown service. */
@@ -75,6 +88,7 @@ export function formatQuote(quote: CloudQuote): string {
     ...(quote.budgetCoverage.unknown.length > 0 ? [`    unknown:    ${quote.budgetCoverage.unknown.join("; ")}`] : []),
     `  Timing:       no measured estimate available`,
     `  Upload:       ${quote.upload.files} file(s), ${quote.upload.bytes} bytes`,
+    ...quote.upload.items.map((item) => `    ${item.role === "job" ? "input" : item.role}: ${item.localPath ?? item.fileName} (${item.sizeBytes} bytes, sha256 ${item.sha256.slice(0, 12)}...)`),
     ...quote.disclosures.map((line) => `  - ${line}`),
   ];
   return lines.join("\n");
@@ -112,7 +126,7 @@ export function assertNoCloudFlagsForLocal(flags: Partial<CloudRunFlags>): void 
       ["--max-lifetime", flags.maxLifetime],
     ] as const
   ).filter(([, value]) => value !== undefined);
-  if (flags.yes || flags.dryRun || flags.acceptLifetimeRisk || flags.acceptStorageCharges) used.push(["--yes/--dry-run/--accept-*", "set"]);
+  if (flags.yes || flags.dryRun || flags.acceptLifetimeRisk || flags.acceptStorageCharges || flags.acceptFileUpload) used.push(["--yes/--dry-run/--accept-*", "set"]);
   if (used.length > 0) {
     throw usage("CLOUD_OPTIONS_WITHOUT_CLOUD", `${used.map(([name]) => name).join(", ")} only apply with --compute runpod.`, "Add --compute runpod, or remove those options.");
   }
@@ -155,7 +169,7 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
     // Each warning needs its own explicit acknowledgment: a flag, or an answered prompt. `--yes` alone never counts.
     const acknowledged: CloudAcknowledgment[] = [];
     for (const warning of plan.quote.warnings) {
-      const flagged = warning.id === "lifetime-risk" ? flags.acceptLifetimeRisk === true : flags.acceptStorageCharges === true;
+      const flagged = acceptedByFlag(warning.id, flags);
       if (flagged) {
         acknowledged.push(warning.id);
         continue;
@@ -164,11 +178,11 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
         throw usage(
           "CLOUD_ACKNOWLEDGMENT_REQUIRED",
           `You must acknowledge: ${warning.text}`,
-          `Re-run with ${warning.id === "lifetime-risk" ? "--accept-lifetime-risk" : "--accept-storage-charges"} (and --yes) to accept this risk without a terminal.`,
+          `Re-run with ${ACCEPT_FLAG[warning.id]} (and --yes) to accept without a terminal.`,
         );
       }
       console.error(`\n${warning.text}`);
-      if (!(await ask("Do you understand and accept this risk?"))) {
+      if (!(await ask(warning.id === "upload-files" ? "Copy these files to Runpod?" : "Do you understand and accept this risk?"))) {
         if (flags.json) out({ status: "declined", quoteId: plan.quote.id, reason: `warning not acknowledged: ${warning.id}` });
         else console.error("Not acknowledged. Nothing was uploaded or provisioned.");
         process.exitCode = 2;

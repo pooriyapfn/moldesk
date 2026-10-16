@@ -39,8 +39,9 @@ export {
   visualizationDir,
   isWithinRoot,
   stageCompanionInputs,
+  resolveCompanionInputSources,
 } from "./filesystem/index.js";
-export type { MoldeskPaths, CompanionInputRef, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
+export type { MoldeskPaths, CompanionInputRef, ResolvedCompanionInputSource, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
 export type {
   ExecuteRequest,
   ExecutionResult,

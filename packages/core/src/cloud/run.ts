@@ -4,6 +4,7 @@ import { getAdapter, type ModelAdapterDefinition, type RunContext } from "@molde
 import { isCloudEligible, listAvailableModels, type CloudSpec, type ModelManifestV1 } from "@moldesk/registry";
 import {
   getMoldeskPaths,
+  resolveCompanionInputSources,
   type ApprovedJob,
   type ArtifactInventory,
   type CloudPod,
@@ -94,6 +95,8 @@ export interface CloudPlan {
   adapter: ModelAdapterDefinition;
   resolvedInputPath: string;
   input: { fileName: string; sha256: string; sizeBytes: number };
+  /** Files the job file references (for example DiffDock-L's protein), checked and hashed but not yet copied or uploaded. */
+  companions: Array<{ id: string; fileName: string; sha256: string; sizeBytes: number; sourcePath: string }>;
   suppliedParams: Record<string, string>;
   effectiveParams: Record<string, unknown>;
 }
@@ -135,13 +138,13 @@ export async function planCloudRun(
   }
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
-  const companions = (await adapter.resolveCompanionInputs?.(resolvedInputPath)) ?? [];
-  if (companions.length > 0) {
-    throw failure(
-      "CLOUD_COMPANION_INPUTS_UNSUPPORTED",
-      `${modelName} jobs that reference additional input files are not supported in the cloud yet.`,
-      "Use a self-contained job file (for example sequences inline), or run locally.",
-    );
+  // Files the job references are resolved with the same safety checks as a local run (inside the job file's
+  // folder, no symlink escape, regular files) but nothing is copied or uploaded yet: the quote lists them and
+  // the user must acknowledge the upload first.
+  const companionRefs = (await adapter.resolveCompanionInputs?.(resolvedInputPath)) ?? [];
+  const companions: CloudPlan["companions"] = [];
+  for (const source of resolveCompanionInputSources({ jobFilePath: resolvedInputPath, refs: companionRefs })) {
+    companions.push({ id: source.id, fileName: source.fileName, sha256: await sha256File(source.sourcePath), sizeBytes: fs.statSync(source.sourcePath).size, sourcePath: source.sourcePath });
   }
   const { suppliedParams, effectiveParams } = prepareRunParams(adapter, manifest.name, REMOTE_INSTALLED, options.params);
 
@@ -167,7 +170,10 @@ export async function planCloudRun(
     cloud: manifest.cloud,
     catalog,
     ...options.cloud,
-    inputs: [{ role: "job", sha256, sizeBytes: stat.size }],
+    inputs: [
+      { role: "job", sha256, sizeBytes: stat.size, fileName: path.basename(resolvedInputPath), localPath: resolvedInputPath },
+      ...companions.map((file) => ({ role: file.id, sha256: file.sha256, sizeBytes: file.sizeBytes, fileName: file.fileName, localPath: file.sourcePath })),
+    ],
     existingVolumeDatacenterId,
   });
   return {
@@ -177,6 +183,7 @@ export async function planCloudRun(
     adapter,
     resolvedInputPath,
     input: { fileName: path.basename(resolvedInputPath), sha256, sizeBytes: stat.size },
+    companions,
     suppliedParams,
     effectiveParams,
   };
@@ -394,7 +401,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       signal: options.signal,
     });
     if (!snapshot.ok) return { status: snapshot.record.status as RunModelResult["status"], record: snapshot.record };
-    const { record, startedAt, storedInputPath } = snapshot;
+    const { record, startedAt, storedInputPath, companionInputs } = snapshot;
     const { runDirPath } = dirs;
 
     const deadlineAt = new Date(now().getTime() + quote.maxLifetimeSeconds * 1000).toISOString();
@@ -448,6 +455,14 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       abort("CLOUD_INPUT_CHANGED", "The input file changed after the quote was produced.");
       return finish();
     }
+    // So must every file the job references: the user approved these exact bytes, and nothing is uploaded otherwise.
+    for (const companion of plan.companions) {
+      const staged = record.input.find((entry) => entry.role === companion.id);
+      if (staged?.sha256 !== companion.sha256) {
+        abort("CLOUD_INPUT_CHANGED", `The extra file "${companion.id}" changed after the quote was produced; nothing was uploaded.`);
+        return finish();
+      }
+    }
 
     const accountScope = deps.accountScope ?? "unscoped";
     journal.createJob({
@@ -487,7 +502,17 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       cacheKey: cloudCacheKey(plan.manifest),
       cpuAssetPreparation: plan.cloud.cpuAssetPreparation,
       params: plan.effectiveParams,
-      inputs: [{ role: "job", relativePath: plan.input.fileName, sha256: plan.input.sha256, sizeBytes: plan.input.sizeBytes, sourcePath: storedInputPath }],
+      inputs: [
+        { role: "job", relativePath: plan.input.fileName, sha256: plan.input.sha256, sizeBytes: plan.input.sizeBytes, sourcePath: storedInputPath },
+        // Extra files live in `input/<id>/<name>` on the worker, the layout the local staging already uses.
+        ...plan.companions.map((companion) => ({
+          role: companion.id,
+          relativePath: `${companion.id}/${companion.fileName}`,
+          sha256: companion.sha256,
+          sizeBytes: companion.sizeBytes,
+          sourcePath: companionInputs.find((entry) => entry.id === companion.id)?.path ?? "",
+        })),
+      ],
       deadlineAt,
     };
     const ledger = ledgerFor(journal, dirs.runId, deadlineAt);

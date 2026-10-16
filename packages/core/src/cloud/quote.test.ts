@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CloudCatalog } from "@moldesk/runtime";
 import { parseManifest, type ModelManifestV1 } from "@moldesk/registry";
-import { LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING, assertApprovalValid, buildQuote, type QuoteInputs } from "./quote.js";
+import { LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING, assertApprovalValid, buildQuote, type CloudAcknowledgment, type QuoteInputs } from "./quote.js";
 import type { CloudCatalog as Catalog } from "@moldesk/runtime";
 
 const DIGEST = "a".repeat(64);
@@ -268,7 +268,7 @@ describe("storage costs and budget coverage", () => {
 
 describe("assertApprovalValid", () => {
   const now = new Date("2026-10-13T12:05:00.000Z");
-  const approval = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt, acknowledged: quote.warnings.map((w) => w.id) });
+  const approval = (quote: { id: string; warnings: Array<{ id: CloudAcknowledgment }> }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt, acknowledged: quote.warnings.map((w) => w.id) });
 
   it("accepts a matching, fresh approval", () => {
     const quote = buildQuote(inputs());
@@ -309,7 +309,7 @@ describe("approval revalidation of storage cost and budget coverage", () => {
     ...catalog(),
     ...(disk !== undefined || volume !== undefined ? { storageRates: { ...(disk !== undefined ? { containerDiskUsdPerGbMonth: disk } : {}), ...(volume !== undefined ? { networkVolumeUsdPerGbMonth: volume } : {}) } } : {}),
   });
-  const approve = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: quote.warnings.map((w) => w.id) });
+  const approve = (quote: { id: string; warnings: Array<{ id: CloudAcknowledgment }> }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: quote.warnings.map((w) => w.id) });
   const check = (approved: ReturnType<typeof buildQuote>, fresh: ReturnType<typeof buildQuote>) => assertApprovalValid(approved, approve(approved), fresh, now);
   const requote = expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" });
 
@@ -400,6 +400,54 @@ describe("explicit risk acknowledgment", () => {
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(/Storage charges continue/);
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["storage-charges"] }, quote, now)).toThrow(needs);
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk", "storage-charges"] }, quote, now)).not.toThrow();
+  });
+
+  describe("extra files the job uploads", () => {
+    const withFiles = (count = 1, sizeBytes = 100): QuoteInputs =>
+      inputs({
+        inputs: [
+          { role: "job", sha256: "b".repeat(64), sizeBytes: 100, fileName: "job.json", localPath: "/work/job.json" },
+          ...Array.from({ length: count }, (_, index) => ({ role: `file${index}`, sha256: String(index % 10).repeat(64), sizeBytes, fileName: `f${index}.pdb`, localPath: `/work/f${index}.pdb` })),
+        ],
+      });
+
+    it("adds an upload-files warning that names every extra file, and only then", () => {
+      const quote = buildQuote(withFiles(2));
+      expect(quote.warnings.map((w) => w.id)).toEqual(["lifetime-risk", "upload-files"]);
+      const text = quote.warnings[1]!.text;
+      expect(text).toContain("/work/f0.pdb");
+      expect(text).toContain("/work/f1.pdb");
+      expect(text).not.toContain("/work/job.json"); // the input you named is not the surprise
+      expect(quote.upload.items.map((item) => item.role)).toEqual(["job", "file0", "file1"]);
+      expect(buildQuote(inputs()).warnings.map((w) => w.id)).toEqual(["lifetime-risk"]);
+    });
+
+    it("refuses an approval that did not acknowledge the upload, naming the flag", () => {
+      const quote = buildQuote(withFiles());
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(/copied to a Runpod machine/);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(needs);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["upload-files"] }, quote, now)).toThrow(needs);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk", "upload-files"] }, quote, now)).not.toThrow();
+    });
+
+    it("binds the files' contents to the quote id", () => {
+      const first = buildQuote(withFiles());
+      const changed = withFiles();
+      changed.inputs[1] = { ...changed.inputs[1]!, sha256: "e".repeat(64) };
+      expect(buildQuote(changed).id).not.toBe(first.id);
+      expect(() => assertApprovalValid(first, { quoteId: first.id, ...base, acknowledged: ["lifetime-risk", "upload-files"] }, buildQuote(changed), now)).toThrow(/Inputs, model/);
+    });
+
+    it("allows 16 extra files and rejects 17, or more than 4 GiB in total", () => {
+      expect(() => buildQuote(withFiles(16))).not.toThrow();
+      expect(() => buildQuote(withFiles(17))).toThrow(/limits are 16 extra files/);
+      expect(() => buildQuote(withFiles(2, 2.5 * 1024 ** 3))).toThrow(/bytes/);
+      try {
+        buildQuote(withFiles(17));
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_COMPANION_LIMIT" });
+      }
+    });
   });
 
   it("a missing acknowledgments field (old or hand-built approval) is refused, not assumed", () => {

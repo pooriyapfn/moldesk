@@ -42,6 +42,11 @@ function defaultResolve(name: string) {
   return manifest && adapter ? { manifest, adapter } : undefined;
 }
 
+/** The extra files a job uploaded (role = the adapter's id, `input/<id>/<name>`), in the form adapters receive them. */
+export function companionInputsFromJob(inputs: Array<{ role: string; relativePath: string }>, inputDir: string): Array<{ id: string; path: string }> {
+  return inputs.filter((input) => input.role !== "job").map((input) => ({ id: input.role, path: path.join(inputDir, ...input.relativePath.split("/")) }));
+}
+
 function fail(code: string, message: string, remediation: string): MoldeskError {
   return new MoldeskError({ code, message, remediation });
 }
@@ -148,9 +153,13 @@ export function createManifestPipeline(options: ManifestPipelineOptions = {}): W
       // --- Build the command with the adapter, from worker-local POSIX paths. ---
       const primary = job.inputs.find((input) => input.role === "job");
       if (!primary) throw fail("WORKER_BAD_JOB", "The job has no primary input.", "Retry with a valid job.");
+      // Files the job file references arrive as extra inputs (role = the adapter's id, `input/<id>/<name>`); the
+      // adapter gets them exactly as a local run stages them, so it needs no cloud-specific code.
+      const companionInputs = companionInputsFromJob(job.inputs, inputDir);
       const runContext: RunContext = {
         manifestName: manifest.name,
         inputPath: path.join(inputDir, ...primary.relativePath.split("/")),
+        ...(companionInputs.length > 0 ? { companionInputs } : {}),
         outputDir,
         modelDir,
         assetsDir,

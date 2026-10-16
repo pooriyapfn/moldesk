@@ -60,6 +60,7 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
     .option("--yes", "cloud: approve exactly the quote shown (required without a terminal)")
     .option("--accept-lifetime-risk", "cloud: acknowledge that machines may keep running and charging if MoleculeDesk closes or disconnects")
     .option("--accept-storage-charges", "cloud: acknowledge that a persistent cache keeps billing until you delete it")
+    .option("--accept-file-upload", "cloud: acknowledge that files your job file references will be copied to the cloud machine")
     .option("--dry-run", "cloud: print the quote and exit without uploading or provisioning")
     .action(
       async (
@@ -84,6 +85,7 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
           dryRun?: boolean;
           acceptLifetimeRisk?: boolean;
           acceptStorageCharges?: boolean;
+          acceptFileUpload?: boolean;
         },
       ) => {
         if (options.compute !== "local") {

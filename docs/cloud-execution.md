@@ -31,7 +31,7 @@ Which models are enabled, and why the others are not:
 | Boltz-2 | Supported (`ephemeral`); `persistent` experimental |
 | ProteinMPNN | Supported (`ephemeral`), on the GPUs in its allow-list |
 | LigandMPNN | Not enabled: its live run could not download the weights from the upstream host |
-| DiffDock-L, BindCraft2 | Not enabled: they need companion input files uploaded, which is not built |
+| DiffDock-L, BindCraft2 | Not enabled yet: their jobs reference extra files, which can now be uploaded (see below), but neither has a cloud block or a live run |
 | OpenDDE | Not enabled: its Linux/CUDA path has not been checked live |
 
 ## Cache policies
@@ -75,8 +75,8 @@ Before you approve a run, MoleculeDesk shows this warning prominently and requir
 > is not guaranteed. Check your Runpod dashboard and terminate any remaining Pod.
 
 Persistent caching additionally requires acknowledging that storage charges continue until the volume is
-deleted. Without a terminal, pass `--yes --accept-lifetime-risk` (and `--accept-storage-charges` for persistent);
-`--yes` alone is refused. Acknowledgments are recorded in `run.json` (`compute.acknowledgedRisks`).
+deleted. Jobs that upload extra files from your computer need `--accept-file-upload` too (see below). Without a terminal,
+pass `--yes --accept-lifetime-risk` (and `--accept-storage-charges` for persistent); `--yes` alone is refused. Acknowledgments are recorded in `run.json` (`compute.acknowledgedRisks`).
 
 ## Using it
 
@@ -99,6 +99,27 @@ moldesk cloud cache delete boltz
 Credentials: the OS keyring is the default. An explicit `RUNPOD_API_KEY` environment variable is accepted as
 a development override and takes precedence when set. `.env` files are never read, and there is no
 plaintext fallback.
+
+## Files your job file references
+
+Some models take a job file that points at other files on your computer (DiffDock-L's protein structure, BindCraft2's
+targets, OpenDDE's ligand files). MoleculeDesk finds them through the model's adapter and handles them like this:
+
+- **You approve the upload explicitly.** The quote lists every such file (its role, exact local path, size and a
+  short checksum) in a warning at the top, and the run needs a separate acknowledgment, `upload-files`: an answered
+  prompt, or `--accept-file-upload` without a terminal. `--yes` and `--accept-lifetime-risk` do not cover it. The
+  file you named on the command line is listed but does not need this extra acknowledgment. `--dry-run` shows the
+  list and uploads nothing.
+- **Nothing leaves before approval.** Planning only reads and hashes the files locally. They are copied into the run
+  folder and uploaded only after the approval is checked, and each file's checksum is part of the quote id, so a file
+  that changes after you approved stops the run and asks for a new approval.
+- **A job cannot pull in other files.** A reference must be a regular file inside the job file's own folder; paths that
+  escape it, symlinks that leave it, directories and devices are refused.
+- **Limits:** at most 16 extra files and 4 GiB across everything uploaded (the worker also caps one file at 2 GiB);
+  beyond that the quote is refused with `CLOUD_COMPANION_LIMIT`.
+- On the machine the files sit under `input/<id>/<name>` and are given to the adapter by id, the same layout a local
+  run uses. They are recorded in `run.json` (`input`, with each file's role and checksum) and the acknowledgment in
+  `compute.acknowledgedRisks`.
 
 ## Exit codes
 

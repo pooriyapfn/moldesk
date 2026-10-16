@@ -72,7 +72,7 @@ moldesk run proteinmpnn structure.pdb --compute runpod --cache-policy ephemeral 
   --max-budget 2 --max-lifetime 3600             # asks for each acknowledgment, then approval
 ```
 
-`--cache-policy` is required: `ephemeral` keeps nothing after the run (supported), `persistent` keeps a reusable model cache on a billed network volume (experimental). `--max-budget` and `--max-lifetime` are required too. `--gpu`, `--max-gpu-price`, `--datacenter`, `--gpu-image` and `--cpu-image` tune where and on what the run happens. Without a terminal, pass `--yes --accept-lifetime-risk`; `--yes` alone is refused.
+`--cache-policy` is required: `ephemeral` keeps nothing after the run (supported), `persistent` keeps a reusable model cache on a billed network volume (experimental). `--max-budget` and `--max-lifetime` are required too. `--gpu`, `--max-gpu-price`, `--datacenter`, `--gpu-image` and `--cpu-image` tune where and on what the run happens. Without a terminal, pass `--yes --accept-lifetime-risk`; `--yes` alone is refused. If your job file references other files on your computer, the quote lists them and you must also acknowledge copying them to Runpod (answer the prompt, or pass `--accept-file-upload`).
 
 Shutdown is best effort: if MoleculeDesk closes or loses connection, your Pod may keep running and charging. Inspect or clean up with:
 

@@ -18,7 +18,21 @@ export const LIFETIME_RISK_WARNING =
 export const STORAGE_CHARGES_WARNING =
   "Persistent caching keeps a network volume. Storage charges continue until you delete it (`moldesk cloud cache delete`, or in the Runpod dashboard).";
 
-export type CloudAcknowledgment = "lifetime-risk" | "storage-charges";
+/** Most extra files a job may upload, and the most bytes across every uploaded input. */
+export const MAX_COMPANION_FILES = 16;
+export const MAX_UPLOAD_BYTES = 4 * 1024 ** 3;
+
+export type CloudAcknowledgment = "lifetime-risk" | "storage-charges" | "upload-files";
+
+export interface QuoteUploadItem {
+  /** `"job"` for the input you named, or the adapter-declared id of a file the job references. */
+  role: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  /** Where the file is on this computer; shown so you can see exactly what leaves it. */
+  localPath?: string;
+}
 
 export interface QuoteWarning {
   id: CloudAcknowledgment;
@@ -64,7 +78,7 @@ export interface CloudQuote {
   /** Asset-preparation machine (persistent runs). Any available type up to `maxUsdPerHour` may be used. */
   cpu?: { id: string; vcpuCount: number; priceUsdPerHour: number; maxUsdPerHour: number };
   images: { gpu: string; cpu: string };
-  upload: { files: number; bytes: number };
+  upload: { files: number; bytes: number; items: QuoteUploadItem[] };
   maxLifetimeSeconds: number;
   maxBudgetUsd: number;
   cost: {
@@ -102,7 +116,7 @@ export interface QuoteInputs {
   maxGpuUsdPerHour?: number;
   maxBudgetUsd: number;
   maxLifetimeSeconds: number;
-  inputs: Array<{ role: string; sha256: string; sizeBytes: number }>;
+  inputs: Array<{ role: string; sha256: string; sizeBytes: number; fileName?: string; localPath?: string }>;
   /** Datacenter of a compatible retained volume; persistent runs must stay there. */
   existingVolumeDatacenterId?: string;
 }
@@ -230,10 +244,23 @@ function cpuOptions(catalog: CloudCatalog, datacenterId?: string): Array<{ type:
     .sort((a, b) => a.priceUsdPerHour - b.priceUsdPerHour);
 }
 
-function requiredWarnings(persistent: boolean): QuoteWarning[] {
+/**
+ * Shown when a job references files you did not name on the command line (for example the protein inside a
+ * DiffDock-L job file). Lists every such file so nothing leaves this computer unseen.
+ */
+export function uploadFilesWarning(items: QuoteUploadItem[]): string {
+  const lines = items.map((item) => `  - ${item.role}: ${item.localPath ?? item.fileName} (${item.sizeBytes} bytes, sha256 ${item.sha256.slice(0, 12)}...)`);
+  return [
+    "This job references files on your computer besides the input you named. They will be copied to a Runpod machine, and that machine's disk is erased when it is terminated:",
+    ...lines,
+  ].join("\n");
+}
+
+function requiredWarnings(persistent: boolean, companions: QuoteUploadItem[]): QuoteWarning[] {
   return [
     { id: "lifetime-risk", text: LIFETIME_RISK_WARNING },
     ...(persistent ? [{ id: "storage-charges" as const, text: STORAGE_CHARGES_WARNING }] : []),
+    ...(companions.length > 0 ? [{ id: "upload-files" as const, text: uploadFilesWarning(companions) }] : []),
   ];
 }
 
@@ -243,6 +270,23 @@ const round = (value: number): number => Math.round(value * 10_000) / 10_000;
 export function buildQuote(input: QuoteInputs): CloudQuote {
   if (!Number.isFinite(input.maxBudgetUsd) || input.maxBudgetUsd <= 0) {
     throw rejected("CLOUD_BUDGET_REQUIRED", "A positive maximum budget is required.", "Pass --max-budget <usd>.");
+  }
+  const uploadItems: QuoteUploadItem[] = input.inputs.map((file) => ({
+    role: file.role,
+    fileName: file.fileName ?? file.role,
+    sizeBytes: file.sizeBytes,
+    sha256: file.sha256,
+    ...(file.localPath !== undefined ? { localPath: file.localPath } : {}),
+  }));
+  const companionItems = uploadItems.filter((item) => item.role !== "job");
+  const uploadBytes = uploadItems.reduce((total, item) => total + item.sizeBytes, 0);
+  if (companionItems.length > MAX_COMPANION_FILES || uploadBytes > MAX_UPLOAD_BYTES) {
+    throw rejected(
+      "CLOUD_COMPANION_LIMIT",
+      `This job would upload ${companionItems.length} extra file(s) and ${uploadBytes} bytes in total; the limits are ${MAX_COMPANION_FILES} extra files and ${MAX_UPLOAD_BYTES} bytes.`,
+      "Reference fewer or smaller files, or run the model locally.",
+      { companionFiles: companionItems.length, uploadBytes },
+    );
   }
   if (!Number.isInteger(input.maxLifetimeSeconds) || input.maxLifetimeSeconds <= 0) {
     throw rejected("CLOUD_LIFETIME_REQUIRED", "A positive maximum lifetime in seconds is required.", "Pass --max-lifetime <seconds>.");
@@ -352,7 +396,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     images,
     maxLifetimeSeconds: input.maxLifetimeSeconds,
     maxBudgetUsd: input.maxBudgetUsd,
-    acknowledgments: requiredWarnings(persistent).map((warning) => warning.id),
+    acknowledgments: requiredWarnings(persistent, companionItems).map((warning) => warning.id),
     bindings,
   });
 
@@ -383,7 +427,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     gpuRange: { minVramGb: input.cloud.minVramGb, maxUsdPerHour: maxGpuUsdPerHour, pinnedGpuId: input.gpuId ?? null, allowedGpuIds: input.cloud.gpuAllowList ?? null, lockDatacenter, candidates },
     ...(cpu ? { cpu } : {}),
     images,
-    upload: { files: input.inputs.length, bytes: input.inputs.reduce((total, file) => total + file.sizeBytes, 0) },
+    upload: { files: uploadItems.length, bytes: uploadBytes, items: uploadItems },
     maxLifetimeSeconds: input.maxLifetimeSeconds,
     maxBudgetUsd: input.maxBudgetUsd,
     cost: {
@@ -394,7 +438,7 @@ export function buildQuote(input: QuoteInputs): CloudQuote {
     },
     budgetCoverage: { counted, notCounted, unknown },
     timing: { preparation: null, inference: null, transfer: null },
-    warnings: requiredWarnings(persistent),
+    warnings: requiredWarnings(persistent, companionItems),
     disclosures,
     bindings,
   };
@@ -420,7 +464,7 @@ export function assertApprovalValid(approved: CloudQuote, approval: CloudApprova
     throw rejected(
       "CLOUD_ACKNOWLEDGMENT_REQUIRED",
       `You must acknowledge: ${missing.map((warning) => warning.text).join(" ")}`,
-      "Re-run and explicitly accept the risk (--accept-lifetime-risk, and --accept-storage-charges for persistent caching), or answer the prompts.",
+      "Re-run and explicitly accept (--accept-lifetime-risk; --accept-storage-charges for persistent caching; --accept-file-upload when the job uploads extra files), or answer the prompts.",
       { missing: missing.map((warning) => warning.id) },
     );
   }

@@ -168,6 +168,27 @@ describe("manifest pipeline", () => {
     expect(result.runtime!.usage!.disk[0]).toMatchObject({ startUsedBytes: 5, peakUsedBytes: 5, totalBytes: 50 });
   });
 
+  it("hands the adapter the uploaded extra files under their ids, as a local run stages them", async () => {
+    const box = setup();
+    const extra: WireJob["inputs"] = [
+      { role: "job", relativePath: "in.txt", sha256: "d".repeat(64), sizeBytes: 3 },
+      { role: "protein", relativePath: "protein/p.pdb", sha256: "e".repeat(64), sizeBytes: 4 },
+      { role: "ligand", relativePath: "ligand/l.sdf", sha256: "f".repeat(64), sizeBytes: 5 },
+    ];
+    await box.run({ inputs: extra });
+    expect(box.context()!.companionInputs).toEqual([
+      { id: "protein", path: path.join(box.jobDir, "input", "protein", "p.pdb") },
+      { id: "ligand", path: path.join(box.jobDir, "input", "ligand", "l.sdf") },
+    ]);
+    expect(box.context()!.inputPath).toBe(path.join(box.jobDir, "input", "in.txt"));
+  });
+
+  it("passes no companion inputs when the job has only its main input", async () => {
+    const box = setup();
+    await box.run();
+    expect(box.context()!.companionInputs).toBeUndefined();
+  });
+
   it("builds the adapter command from worker-local paths and the approved params only", async () => {
     const box = setup();
     await box.run();
