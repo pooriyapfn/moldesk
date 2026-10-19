@@ -1,15 +1,24 @@
 # Cloud GPU runs on Runpod
 
-## Current status: disabled
+## Current status
 
-Runpod execution is implemented but **disabled** until live validation finishes. No shipped model declares a cloud profile yet, so `moldesk run <model> <input> --compute runpod` refuses to start for every model today. Do not try to work around this (for example with `MOLDESK_WORKER_BUNDLE_URL` or edited manifests); those are developer settings.
+Runpod execution is available for four models, with `--cache-policy ephemeral` (nothing is kept after the run):
 
-If the user needs a GPU now, suggest:
+| Model | Notes |
+| --- | --- |
+| `boltz` | `persistent` caching is experimental: it was slower than `ephemeral` for a single run |
+| `proteinmpnn` | Runs on the Ampere, Ada and Hopper NVIDIA GPUs in its allow-list |
+| `diffdock` | Uploads the protein file named in the job file, so the run also needs `--accept-file-upload` |
+| `opendde` | Needs a GPU with at least 24 GB. No `.pdb` copy of the structure is made in cloud runs; the mmCIF is returned |
+
+`ligandmpnn` and `bindcraft2` are not enabled: `moldesk run <model> <input> --compute runpod` refuses them. A CLI version that ships without a worker bundle also refuses every model. Do not try to work around a refusal (for example with `MOLDESK_WORKER_BUNDLE_URL` or edited manifests); those are developer settings.
+
+If cloud is refused, or the user prefers not to use it, suggest:
 
 - a Linux + NVIDIA machine they already manage, using "Remote GPU servers" in [install.md](install.md), or
 - a model that runs locally (see [compatibility.md](compatibility.md)).
 
-Check whether cloud runs have been enabled with `moldesk run <model> <input> --compute runpod --dry-run`. A refusal means still disabled. Follow the rest of this file only when a dry run returns a quote.
+Check whether a model is enabled with `moldesk run <model> <input> --compute runpod --dry-run`. Follow the rest of this file only when a dry run returns a quote.
 
 ## Costs and risks the user must understand
 
@@ -17,7 +26,8 @@ Check whether cloud runs have been enabled with `moldesk run <model> <input> --c
 - `--max-budget` is a guard on MoleculeDesk's estimate, **not** a spending cap enforced by Runpod.
 - If MoleculeDesk closes or loses connection, the Pod **may keep running and charging**. Automatic shutdown is not guaranteed.
 - `--cache-policy persistent` keeps a network volume that **bills until deleted**. It is not counted in the one-run budget.
-- Inputs are uploaded to the chosen datacenter.
+- Inputs are uploaded to the chosen datacenter. When the job file references other files (DiffDock-L's protein structure), the quote lists each one by role, local path, size and a short checksum. Show that list to the user: the files are copied to a machine whose disk is erased on termination, and the run needs a separate acknowledgment for it.
+- Runpod's proxy sometimes returns a transient `Worker error 404` right after a Pod starts. The run fails and cleanup is confirmed; running the same command again usually works. Check `moldesk cloud resources --json` first.
 
 ## Procedure
 
@@ -51,7 +61,7 @@ Check whether cloud runs have been enabled with `moldesk run <model> <input> --c
      --max-budget 2 --max-lifetime 3600 --yes --accept-lifetime-risk --json
    ```
 
-   Add `--accept-storage-charges` only for `persistent`, and only if the user agreed to it. Approval expires after 15 minutes; a changed price or location needs a new quote and a new yes.
+   Add `--accept-storage-charges` only for `persistent`, and only if the user agreed to it. Add `--accept-file-upload` only when the quote lists files to upload and the user agreed to copy those exact files. `--yes` does not cover either. Approval expires after 15 minutes; a changed price or location needs a new quote and a new yes.
 
 6. **Clean up and check.** After the run, or if anything fails or disconnects:
 
@@ -66,4 +76,4 @@ Check whether cloud runs have been enabled with `moldesk run <model> <input> --c
 
 ## Exit codes
 
-`11` credential, `12` provider (payment, capacity, rate limit), `13` cleanup pending or orphaned resources (new paid work is refused until resolved), `14` consent or safety refusal (missing acknowledgment, expired approval, re-quote required).
+`11` credential, `12` provider (payment, capacity, rate limit), `13` cleanup pending or orphaned resources (new paid work is refused until resolved), `14` consent or safety refusal (missing acknowledgment such as `--accept-file-upload`, expired approval, re-quote required).

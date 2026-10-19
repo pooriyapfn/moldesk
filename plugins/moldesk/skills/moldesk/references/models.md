@@ -66,10 +66,10 @@ Read confidence from the confidence JSON (for example `confidence_score`, `ptm`,
 
 ## OpenDDE Preview (`opendde`): all-atom co-folding
 
-- **Runs on:** Apple Silicon (MPS). The Linux + CUDA path exists but is not advertised.
+- **Runs on:** Apple Silicon (MPS) and Linux + NVIDIA (CUDA).
 - **Disk:** about 3.3 GB of model assets plus the environment.
 - **Input:** OpenDDE `.json`, a list of jobs.
-- **Outputs:** mmCIF structures, PDB copies (pLDDT in the B-factor column), confidence JSON per sample.
+- **Outputs:** mmCIF structures, PDB copies (pLDDT in the B-factor column; local runs only, cloud runs return the mmCIF), confidence JSON per sample.
 - Upstream labels it a preview. Formats may change between versions.
 
 ```json

@@ -37,7 +37,7 @@ plugins/moldesk/
       compatibility.md         doctor/list, platform matrix, alternatives
       models.md                inputs, params, examples for each model
       workflows.md             multi-step recipes
-      cloud-runpod.md          quote, approval, cleanup (currently disabled)
+      cloud-runpod.md          quote, approval, cleanup (Boltz-2, ProteinMPNN, DiffDock-L, OpenDDE)
 ```
 
 Marketplace catalogs live at the repository root: `.claude-plugin/marketplace.json` (Claude Code) and `.agents/plugins/marketplace.json` (Codex).

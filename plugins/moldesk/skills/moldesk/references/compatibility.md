@@ -9,12 +9,12 @@ moldesk list --json       # per model: compatibility.status, selectedRuntime, re
 
 `compatibility.status` is `compatible` or `unsupported`. Every reason has a `code`, a `message`, and often a `remediation`. Quote the message to the user instead of paraphrasing.
 
-## Advertised support (as of MoleculeDesk 0.0.6)
+## Advertised support (as of MoleculeDesk 0.0.7)
 
 | Model | Apple Silicon (darwin-arm64) | Linux x64 + NVIDIA | Linux x64, no GPU |
 | --- | --- | --- | --- |
 | `boltz` | yes (MPS) | yes (CUDA) | CPU accepted, slow |
-| `opendde` | yes (MPS) | not advertised | no |
+| `opendde` | yes (MPS) | yes (CUDA) | no |
 | `diffdock` | no | yes (CUDA required) | no |
 | `bindcraft2` | no | yes (CUDA 12, 24 GB RAM, 25 GB disk) | no |
 | `proteinmpnn` | yes | yes | yes |
@@ -26,7 +26,7 @@ Intel Macs and native Windows are not supported. Windows users can use WSL2.
 
 | Code | Meaning | What to offer |
 | --- | --- | --- |
-| `RUNTIME_PLATFORM_UNSUPPORTED` | No build for this OS/CPU | A model that runs here, a Linux + NVIDIA machine, or cloud (when enabled) |
+| `RUNTIME_PLATFORM_UNSUPPORTED` | No build for this OS/CPU | A model that runs here, a Linux + NVIDIA machine, or cloud for the models in [cloud-runpod.md](cloud-runpod.md) |
 | `DISK_SPACE_LOW` | Not enough free space under `MOLDESK_HOME` | Free space, or move `MOLDESK_HOME` to a larger disk |
 | `DOCKER_GPU_UNVERIFIED` | Docker cannot reach the GPU | Fix the NVIDIA container toolkit, or use the Python runtime |
 
