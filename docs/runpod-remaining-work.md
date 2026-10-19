@@ -17,10 +17,12 @@ Status on 2026-10-19. Boltz-2, ProteinMPNN, DiffDock-L and OpenDDE have a `cloud
 
 ## After every later release
 
-1. If the worker code (`packages/core`) or any `models/*/manifest.yaml` changed, run `update --tag <next tag>`
-   before tagging. This includes comment-only manifest edits.
-2. Once a bundle is recorded, a pull request that touches those files fails the CI `check` until the recorded
-   checksum is refreshed, so refresh it in the same pull request with the planned next tag.
+1. Always run `node scripts/worker-release.mjs update --tag <next tag>` before tagging, even when nothing
+   changed: the release workflow requires the recorded URL to be that tag's own release asset. No upload by
+   hand is needed; the workflow builds and attaches `worker.tar`.
+2. Once a bundle is recorded, a pull request that touches the worker code (`packages/core`) or any
+   `models/*/manifest.yaml` (a comment counts) fails the CI `check` until the recorded checksum is refreshed,
+   so refresh it in the same pull request with the planned next tag.
 3. Re-run one live smoke test per model whose manifest or adapter changed.
 
 ## Known issues
