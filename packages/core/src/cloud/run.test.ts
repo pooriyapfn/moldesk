@@ -17,7 +17,7 @@ import {
 } from "@moldesk/runtime";
 import { MoldeskError } from "../errors.js";
 import { buildQuote } from "./quote.js";
-import { planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
+import { listProviderResources, planCloudRun, runCloudModel, type CloudRunDeps, type CloudRunModelOptions } from "./run.js";
 import { CloudJournal } from "./state.js";
 import { recoverCloudRun } from "./manage.js";
 
@@ -141,8 +141,10 @@ class FakeBackend implements ExecutionBackend {
   collectFailures = 0;
   files: Record<string, string> = { "answer.out": "result-bytes" };
   constructor(private readonly provider: FakeProvider, readonly script: Script, private readonly events: string[]) {}
-  async start(job: { runId: string }, context: BackendContext): Promise<JobHandle> {
+  lastInputs: Array<{ role: string; relativePath: string; sha256: string; sourcePath: string }> = [];
+  async start(job: { runId: string; inputs?: FakeBackend["lastInputs"] }, context: BackendContext): Promise<JobHandle> {
     this.starts += 1;
+    this.lastInputs = job.inputs ?? [];
     this.events.push("backend.start");
     const intent = context.ledger.beginCreate("gpu");
     const pod = await this.provider.createPod({ name: intent.name });
@@ -553,12 +555,10 @@ describe("preflight reconciliation", () => {
 });
 
 describe("planCloudRun", () => {
-  it("rejects models without a cloud block and jobs with companion inputs", async () => {
+  it("rejects models without a cloud block", async () => {
     const box = sandbox();
     const plain = parseManifest({ ...JSON.parse(JSON.stringify(manifest())), cloud: undefined }, "x/manifest.yaml");
     await expect(planCloudRun("fake-model", box.inputPath, { cloud: { cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600 } }, { ...box.deps, resolveModel: () => ({ manifest: plain, adapter: adapter() }) })).rejects.toMatchObject({ code: "CLOUD_MODEL_UNSUPPORTED" });
-    const withCompanions: ModelAdapterDefinition = { ...adapter(), resolveCompanionInputs: async () => [{ id: "protein", sourcePath: "p.pdb" }] };
-    await expect(planCloudRun("fake-model", box.inputPath, { cloud: { cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600 } }, { ...box.deps, resolveModel: () => ({ manifest: manifest(), adapter: withCompanions }) })).rejects.toMatchObject({ code: "CLOUD_COMPANION_INPUTS_UNSUPPORTED" });
   });
 
   it("produces the same quote that buildQuote would, without allocating anything", async () => {
@@ -566,6 +566,86 @@ describe("planCloudRun", () => {
     const plan = await planCloudRun("fake-model", box.inputPath, { cloud: { cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600 } }, box.deps);
     expect(plan.quote.id).toBe(buildQuote({ provider: "runpod", manifest: plan.manifest, cloud: plan.cloud, catalog: catalog(), cachePolicy: "ephemeral", maxBudgetUsd: 5, maxLifetimeSeconds: 3600, inputs: [{ role: "job", sha256: plan.input.sha256, sizeBytes: 3 }] }).id);
     expect(fs.existsSync(box.paths.runs)).toBe(false);
+  });
+});
+
+describe("files the job file references", () => {
+  const cloud = { cachePolicy: "ephemeral" as const, maxBudgetUsd: 5, maxLifetimeSeconds: 3600 };
+  /** A job that points at `protein.pdb` next to it, the way DiffDock-L's job file does. */
+  function withProtein(box: ReturnType<typeof sandbox>, sourcePath = "protein.pdb") {
+    const folder = path.dirname(box.inputPath);
+    fs.writeFileSync(path.join(folder, "protein.pdb"), "ATOM");
+    const withCompanions: ModelAdapterDefinition = { ...adapter(), resolveCompanionInputs: async () => [{ id: "protein", sourcePath }] };
+    box.deps.resolveModel = () => ({ manifest: manifest(), adapter: withCompanions });
+    return path.join(folder, "protein.pdb");
+  }
+
+  it("lists each file in the quote and makes the upload a separate acknowledgment, with nothing copied or provisioned", async () => {
+    const box = sandbox();
+    const proteinPath = withProtein(box);
+    const plan = await planCloudRun("fake-model", box.inputPath, { cloud }, box.deps);
+    expect(plan.companions).toMatchObject([{ id: "protein", fileName: "protein.pdb", sizeBytes: 4, sourcePath: fs.realpathSync(proteinPath) }]);
+    expect(plan.quote.warnings.map((warning) => warning.id)).toEqual(["lifetime-risk", "upload-files"]);
+    const text = plan.quote.warnings.find((warning) => warning.id === "upload-files")!.text;
+    expect(text).toContain("protein");
+    expect(text).toContain(fs.realpathSync(proteinPath));
+    expect(plan.quote.upload).toMatchObject({ files: 2, bytes: 7 });
+    expect(plan.quote.upload.items.map((item) => item.role)).toEqual(["job", "protein"]);
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
+    expect(box.backend.starts).toBe(0);
+  });
+
+  it("refuses to start, uploading nothing, unless the upload was acknowledged", async () => {
+    const box = sandbox();
+    withProtein(box);
+    const options = await box.optionsFor();
+    options.cloud.approval!.acknowledged = ["lifetime-risk"];
+    await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_ACKNOWLEDGMENT_REQUIRED", details: { missing: ["upload-files"] } });
+    expect(box.backend.starts).toBe(0);
+    expect(box.events).toEqual([]);
+    expect(fs.existsSync(box.paths.runs)).toBe(false);
+  });
+
+  it("sends each file next to the main input, under its id, and records it in run.json", async () => {
+    const box = sandbox();
+    withProtein(box);
+    const options = await box.optionsFor();
+    const result = await runCloudModel("fake-model", box.inputPath, options, box.deps);
+    expect(result.status).toBe("succeeded");
+    expect(box.backend.lastInputs.map((file) => [file.role, file.relativePath])).toEqual([["job", "in.txt"], ["protein", "protein/protein.pdb"]]);
+    const protein = box.backend.lastInputs[1]!;
+    expect(fs.readFileSync(protein.sourcePath, "utf8")).toBe("ATOM");
+    expect(protein.sourcePath).toContain(`${path.sep}input${path.sep}protein${path.sep}`); // the staged copy, not the original
+    expect(result.record.input.map((entry) => entry.role)).toEqual(["job", "protein"]);
+    expect(result.record.input[1]!.sha256).toBe(protein.sha256);
+    expect(result.record.compute!.acknowledgedRisks).toEqual(["lifetime-risk", "upload-files"]);
+  });
+
+  it("requires a new approval, and uploads nothing, if a file changes after it was approved", async () => {
+    const box = sandbox();
+    const proteinPath = withProtein(box);
+    const options = await box.optionsFor();
+    fs.writeFileSync(proteinPath, "ATOM changed");
+    await expect(runCloudModel("fake-model", box.inputPath, options, box.deps)).rejects.toMatchObject({ code: "CLOUD_REQUOTE_REQUIRED" });
+    expect(box.backend.starts).toBe(0);
+  });
+
+  it("rejects a reference outside the job file's folder, so a job cannot pull in other files", async () => {
+    const box = sandbox();
+    const outside = path.join(path.dirname(path.dirname(box.inputPath)), "outside-secret.txt");
+    fs.writeFileSync(outside, "secret");
+    try {
+      withProtein(box, outside);
+      await expect(planCloudRun("fake-model", box.inputPath, { cloud }, box.deps)).rejects.toMatchObject({ code: "UNSAFE_COMPANION_INPUT_PATH" });
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
+  });
+
+  it("rejects a reference that is not a regular file", async () => {
+    const box = sandbox();
+    withProtein(box, ".");
+    await expect(planCloudRun("fake-model", box.inputPath, { cloud }, box.deps)).rejects.toMatchObject({ code: "UNSAFE_COMPANION_INPUT_TYPE" });
   });
 });
 
@@ -647,5 +727,33 @@ describe("recoverCloudRun", () => {
   it("rejects unknown runs", async () => {
     const box = sandbox();
     await expect(recoverCloudRun("2026-01-01T00-00-00-000Z-00000000-0000-0000-0000-000000000000", recoverDeps(box))).rejects.toMatchObject({ code: "CLOUD_RUN_UNKNOWN" });
+  });
+});
+
+describe("provider reconciliation includes volumes", () => {
+  it("lists retained volumes alongside live pods, so a journaled volume is never forgotten", async () => {
+    const provider = {
+      listPods: async () => [
+        { id: "pod1", name: "moldesk-aaaa1111-bbbb2222-gpu", status: "RUNNING", dataCenterId: null, costUsdPerHour: null, createdAt: null },
+        { id: "pod2", name: "gone", status: "TERMINATED", dataCenterId: null, costUsdPerHour: null, createdAt: null },
+      ],
+      listVolumes: async () => [{ id: "vol1", name: "moldesk-aaaa1111-cccc3333-volume", sizeGb: 60, dataCenterId: "EU-RO-1", type: "STANDARD" }],
+    } as unknown as CloudProvider;
+    const { views } = await listProviderResources(provider);
+    expect(views.map((view) => [view.providerId, view.role])).toEqual([["pod1", "gpu"], ["vol1", "volume"]]);
+  });
+
+  it("a journaled volume the provider still lists stays active; one the listing omits is marked vanished", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk recon "));
+    homes.push(home);
+    const journal = CloudJournal.openFile(path.join(home, "j.sqlite"));
+    const intent = journal.recordResourceIntent({ role: "volume" });
+    journal.recordResourceCreated(intent.intentId, "vol1");
+    journal.reconcile([{ providerId: "vol1", name: intent.name, role: "volume" }]);
+    expect(journal.findOwnedByProviderId("vol1")).toBeDefined();
+    // This is what reconciling against Pods alone did: the volume was forgotten and could not be deleted later.
+    journal.reconcile([]);
+    expect(journal.findOwnedByProviderId("vol1")).toBeUndefined();
+    journal.close();
   });
 });

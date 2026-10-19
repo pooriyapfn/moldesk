@@ -4,6 +4,7 @@ import { getAdapter, type ModelAdapterDefinition, type RunContext } from "@molde
 import { isCloudEligible, listAvailableModels, type CloudSpec, type ModelManifestV1 } from "@moldesk/registry";
 import {
   getMoldeskPaths,
+  resolveCompanionInputSources,
   type ApprovedJob,
   type ArtifactInventory,
   type CloudPod,
@@ -40,6 +41,11 @@ export interface CloudQuoteOptions {
   cachePolicy: CloudCachePolicy;
   gpuId?: string;
   datacenterId?: string;
+  /** Highest GPU hourly rate to accept when the first-choice GPU is unavailable. */
+  maxGpuUsdPerHour?: number;
+  /** Override the manifest's worker images. */
+  gpuImage?: string;
+  cpuImage?: string;
   maxBudgetUsd: number;
   maxLifetimeSeconds: number;
 }
@@ -89,6 +95,8 @@ export interface CloudPlan {
   adapter: ModelAdapterDefinition;
   resolvedInputPath: string;
   input: { fileName: string; sha256: string; sizeBytes: number };
+  /** Files the job file references (for example DiffDock-L's protein), checked and hashed but not yet copied or uploaded. */
+  companions: Array<{ id: string; fileName: string; sha256: string; sizeBytes: number; sourcePath: string }>;
   suppliedParams: Record<string, string>;
   effectiveParams: Record<string, unknown>;
 }
@@ -130,13 +138,13 @@ export async function planCloudRun(
   }
   const resolvedInputPath = path.resolve(inputPath);
   await adapter.validateInput(resolvedInputPath);
-  const companions = (await adapter.resolveCompanionInputs?.(resolvedInputPath)) ?? [];
-  if (companions.length > 0) {
-    throw failure(
-      "CLOUD_COMPANION_INPUTS_UNSUPPORTED",
-      `${modelName} jobs that reference additional input files are not supported in the cloud yet.`,
-      "Use a self-contained job file (for example sequences inline), or run locally.",
-    );
+  // Files the job references are resolved with the same safety checks as a local run (inside the job file's
+  // folder, no symlink escape, regular files) but nothing is copied or uploaded yet: the quote lists them and
+  // the user must acknowledge the upload first.
+  const companionRefs = (await adapter.resolveCompanionInputs?.(resolvedInputPath)) ?? [];
+  const companions: CloudPlan["companions"] = [];
+  for (const source of resolveCompanionInputSources({ jobFilePath: resolvedInputPath, refs: companionRefs })) {
+    companions.push({ id: source.id, fileName: source.fileName, sha256: await sha256File(source.sourcePath), sizeBytes: fs.statSync(source.sourcePath).size, sourcePath: source.sourcePath });
   }
   const { suppliedParams, effectiveParams } = prepareRunParams(adapter, manifest.name, REMOTE_INSTALLED, options.params);
 
@@ -150,7 +158,7 @@ export async function planCloudRun(
     try {
       existingVolumeDatacenterId = owned
         .listCaches()
-        .find((cache) => cache.accountScope === deps.accountScope && cache.model === manifest.name && cache.state === "READY")?.datacenterId;
+        .find((cache) => cache.accountScope === deps.accountScope && cache.model === manifest.name && (cache.state === "READY" || cache.state === "FAILED"))?.datacenterId;
     } finally {
       if (!deps.journal) owned.close();
     }
@@ -162,7 +170,10 @@ export async function planCloudRun(
     cloud: manifest.cloud,
     catalog,
     ...options.cloud,
-    inputs: [{ role: "job", sha256, sizeBytes: stat.size }],
+    inputs: [
+      { role: "job", sha256, sizeBytes: stat.size, fileName: path.basename(resolvedInputPath), localPath: resolvedInputPath },
+      ...companions.map((file) => ({ role: file.id, sha256: file.sha256, sizeBytes: file.sizeBytes, fileName: file.fileName, localPath: file.sourcePath })),
+    ],
     existingVolumeDatacenterId,
   });
   return {
@@ -172,6 +183,7 @@ export async function planCloudRun(
     adapter,
     resolvedInputPath,
     input: { fileName: path.basename(resolvedInputPath), sha256, sizeBytes: stat.size },
+    companions,
     suppliedParams,
     effectiveParams,
   };
@@ -234,6 +246,10 @@ export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: st
       if (hit) current = { accountScope: hit.accountScope, datacenterId: hit.datacenterId, volumeId: hit.volumeId, cacheKey: hit.cacheKey };
       return hit ? { volumeId: hit.volumeId, datacenterId: hit.datacenterId } : undefined;
     },
+    reusable() {
+      const hit = journal.listCaches().find((cache) => cache.accountScope === params.accountScope && cache.cacheKey === params.cacheKey && cache.state === "FAILED");
+      return hit ? { volumeId: hit.volumeId, datacenterId: hit.datacenterId } : undefined;
+    },
     begin(volume) {
       current = { accountScope: params.accountScope, datacenterId: volume.datacenterId, volumeId: volume.volumeId, cacheKey: params.cacheKey };
       journal.upsertCache({
@@ -266,6 +282,17 @@ export function cacheLedgerFor(journal: CloudJournal, params: { accountScope: st
   };
 }
 
+/**
+ * Everything the provider holds that the journal tracks: live Pods and retained volumes. Reconciling
+ * against Pods alone would mark every journaled volume "vanished" and forget that it was ours, so it
+ * could no longer be reused or deleted and kept billing.
+ */
+export async function listProviderResources(provider: CloudProvider): Promise<{ pods: CloudPod[]; views: ProviderResourceView[] }> {
+  const [pods, volumes] = await Promise.all([provider.listPods(), provider.listVolumes()]);
+  const live = pods.filter((pod) => pod.status !== "TERMINATED");
+  return { pods, views: [...live.map(toView), ...volumes.map((volume): ProviderResourceView => ({ providerId: volume.id, name: volume.name, role: "volume" }))] };
+}
+
 function toView(pod: CloudPod): ProviderResourceView {
   const match = /-(cpu|gpu)$/.exec(pod.name);
   return { providerId: pod.id, name: pod.name, role: (match?.[1] as "cpu" | "gpu" | undefined) ?? "gpu" };
@@ -294,8 +321,8 @@ export async function confirmRunResourcesGone(
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const listed = await deps.provider.listPods();
-      journal.reconcile(listed.filter((pod) => pod.status !== "TERMINATED").map(toView));
+      const { pods: listed, views } = await listProviderResources(deps.provider);
+      journal.reconcile(views);
       const livePods = new Map(listed.filter((pod) => pod.status !== "TERMINATED").map((pod) => [pod.id, pod]));
       for (const record of open()) {
         if (!record.providerId) continue;
@@ -343,12 +370,13 @@ export async function runCloudModel(modelName: string, inputPath: string, option
   try {
     // --- Before new paid work: reconcile the journal with the provider. Unresolved cost blocks it. ---
     let listed: CloudPod[];
+    let views: ProviderResourceView[];
     try {
-      listed = await deps.provider.listPods();
+      ({ pods: listed, views } = await listProviderResources(deps.provider));
     } catch (error) {
       throw failure("CLOUD_UNAVAILABLE", `Could not verify existing cloud resources: ${toErrorInfo(error, "CLOUD_UNAVAILABLE").message}`, "Retry when the provider is reachable; new work is not started blind.");
     }
-    const preflight = journal.reconcile(listed.filter((pod) => pod.status !== "TERMINATED").map(toView));
+    const preflight = journal.reconcile(views);
     if (preflight.orphaned.length > 0 || preflight.cleanupOwed.length > 0) {
       const names = [...preflight.orphaned.map((pod) => `orphaned ${pod.providerId}`), ...preflight.cleanupOwed.map((record) => `cleanup owed ${record.providerId ?? record.intentId}`)];
       throw failure(
@@ -373,7 +401,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       signal: options.signal,
     });
     if (!snapshot.ok) return { status: snapshot.record.status as RunModelResult["status"], record: snapshot.record };
-    const { record, startedAt, storedInputPath } = snapshot;
+    const { record, startedAt, storedInputPath, companionInputs } = snapshot;
     const { runDirPath } = dirs;
 
     const deadlineAt = new Date(now().getTime() + quote.maxLifetimeSeconds * 1000).toISOString();
@@ -427,6 +455,14 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       abort("CLOUD_INPUT_CHANGED", "The input file changed after the quote was produced.");
       return finish();
     }
+    // So must every file the job references: the user approved these exact bytes, and nothing is uploaded otherwise.
+    for (const companion of plan.companions) {
+      const staged = record.input.find((entry) => entry.role === companion.id);
+      if (staged?.sha256 !== companion.sha256) {
+        abort("CLOUD_INPUT_CHANGED", `The extra file "${companion.id}" changed after the quote was produced; nothing was uploaded.`);
+        return finish();
+      }
+    }
 
     const accountScope = deps.accountScope ?? "unscoped";
     journal.createJob({
@@ -449,14 +485,34 @@ export async function runCloudModel(modelName: string, inputPath: string, option
       cachePolicy: quote.cachePolicy,
       gpuId: quote.gpu.id,
       datacenterId: quote.datacenterId,
-      images: plan.cloud.images,
+      gpuPolicy: {
+        minVramGb: quote.gpuRange.minVramGb,
+        // The ceiling the user approved, not the re-quote's: the default range tracks the live cheapest
+        // price, so a momentary dip would otherwise shrink the range below what was consented to.
+        maxUsdPerHour: options.cloud.quote.gpuRange.maxUsdPerHour,
+        ...(quote.gpuRange.pinnedGpuId ? { pinnedGpuId: quote.gpuRange.pinnedGpuId } : {}),
+        ...(plan.cloud.gpuAllowList ? { allowedGpuIds: plan.cloud.gpuAllowList } : {}),
+        lockDatacenter: quote.gpuRange.lockDatacenter,
+      },
+      ...(quote.cpu ? { cpuPolicy: { maxUsdPerHour: options.cloud.quote.cpu?.maxUsdPerHour ?? quote.cpu.maxUsdPerHour } } : {}),
+      images: quote.images,
       containerDiskGb: plan.cloud.ephemeralDiskGb,
       volumeGb: plan.cloud.volumeGb,
       assetLayoutRevision: plan.cloud.assetLayoutRevision,
       cacheKey: cloudCacheKey(plan.manifest),
       cpuAssetPreparation: plan.cloud.cpuAssetPreparation,
       params: plan.effectiveParams,
-      inputs: [{ role: "job", relativePath: plan.input.fileName, sha256: plan.input.sha256, sizeBytes: plan.input.sizeBytes, sourcePath: storedInputPath }],
+      inputs: [
+        { role: "job", relativePath: plan.input.fileName, sha256: plan.input.sha256, sizeBytes: plan.input.sizeBytes, sourcePath: storedInputPath },
+        // Extra files live in `input/<id>/<name>` on the worker, the layout the local staging already uses.
+        ...plan.companions.map((companion) => ({
+          role: companion.id,
+          relativePath: `${companion.id}/${companion.fileName}`,
+          sha256: companion.sha256,
+          sizeBytes: companion.sizeBytes,
+          sourcePath: companionInputs.find((entry) => entry.id === companion.id)?.path ?? "",
+        })),
+      ],
       deadlineAt,
     };
     const ledger = ledgerFor(journal, dirs.runId, deadlineAt);
@@ -473,6 +529,10 @@ export async function runCloudModel(modelName: string, inputPath: string, option
     let cursor = 0;
     try {
       handle = await backend.start(job, { ledger, ...(quote.cachePolicy === "persistent" ? { cache: cacheLedgerFor(journal, { accountScope, runId: dirs.runId, manifest: plan.manifest, cloud: plan.cloud, cacheKey: job.cacheKey, manifestDigest: job.manifestDigest }) } : {}), signal: options.signal, onProgress: (event) => progress(event.stage, event.message) });
+      // The GPU actually obtained may differ from the quote's first choice; record what was used.
+      if (handle.gpuId) compute.gpuId = handle.gpuId;
+      if (handle.datacenterId) compute.datacenterId = handle.datacenterId;
+      if (handle.gpuId || handle.datacenterId) journal.updateJob(dirs.runId, { ...(handle.gpuId ? { gpuId: handle.gpuId } : {}), ...(handle.datacenterId ? { datacenterId: handle.datacenterId } : {}) });
       record.status = "running";
       persist();
 
@@ -522,6 +582,7 @@ export async function runCloudModel(modelName: string, inputPath: string, option
         compute.pythonVersion = runtime.pythonVersion;
         compute.dependencyFreeze = runtime.dependencyFreeze;
         compute.sourceRevision = runtime.sourceRevision;
+        compute.usage = runtime.usage;
         record.installationFingerprint = runtime.installationFingerprint ?? digest(runtime);
       }
       record.process = { exitCode: snapshotLast?.exitCode };

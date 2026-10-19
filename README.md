@@ -31,7 +31,7 @@ Available:
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
 * beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
-* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; the Linux x64/CUDA path ran successfully on an NVIDIA RTX 3090 in testing but is not yet advertised in the registry
+* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
 * `moldesk list --installed`, reinstall, and uninstall state management
 * offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
 * `moldesk --version`
@@ -63,9 +63,9 @@ MoleculeDesk focuses on a few principles:
 * **Hardware awareness**
   Detect available CPU, GPU, memory, CUDA, and runtime capabilities before running a model.
 
-### Optional cloud execution (in development)
+### Optional cloud execution
 
-Runpod support is being developed for running molecular AI models with your own cloud account and returning verified results locally. Choose temporary model assets (`ephemeral`) or retain a reusable model cache (`persistent`); retained storage continues to incur charges. Boltz-2 is the first target. Cloud execution is currently disabled pending a validated worker release and live cloud tests. Shutdown is best effort: if MoleculeDesk disconnects, Pods may keep charging; each run requires explicit risk acknowledgment. Read the [Runpod cloud execution development post](https://moleculedesk.com/docs/guides/runpod-cloud-execution) for the planned workflow and onboarding.
+Boltz-2 and ProteinMPNN can run on your own Runpod account (`moldesk run <model> <input> --compute runpod`), with verified results returned locally. Use temporary model assets (`ephemeral`, supported) or retain a reusable model cache (`persistent`, experimental: it was slower than `ephemeral` in live tests, and retained storage keeps incurring charges until you delete it). Other models are not enabled for cloud execution yet. Shutdown is best effort: if MoleculeDesk disconnects, Pods may keep charging; each run requires explicit risk acknowledgment. Read the [Runpod cloud execution guide](https://moleculedesk.com/docs/guides/runpod-cloud-execution) for the workflow, costs and limits.
 
 ## Architecture
 
@@ -140,7 +140,7 @@ Model support is being added incrementally.
 | LigandMPNN | Beta |
 | DiffDock-L | Beta; Linux/NVIDIA CUDA verified on an A40 |
 | BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
-| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
+| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
 | ColabFold | Planned |
 | AlphaFold | Planned |
 | Chai | Planned |

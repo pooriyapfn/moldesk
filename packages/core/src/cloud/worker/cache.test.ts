@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseManifest } from "@moldesk/registry";
-import { acquireVolumeLock, cacheDirFor, cloudCacheKey, hashTree, publishCache, verifyCache } from "./cache.js";
+import { acquireVolumeLock, cacheDirFor, cloudCacheKey, hashTree, materializeCache, publishCache, verifyCache } from "./cache.js";
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -136,5 +136,66 @@ describe("acquireVolumeLock", () => {
     const root = tmp();
     acquireVolumeLock({ root, key: "k", owner: "a", ttlSeconds: 600, now: () => 1_000 });
     expect(() => acquireVolumeLock({ root, key: "k", owner: "b", ttlSeconds: 600, reclaimStale: true, now: () => 2_000 })).toThrow(expect.objectContaining({ code: "CLOUD_CACHE_LOCKED" }));
+  });
+});
+
+describe("materializeCache", () => {
+  const prepare = async () => {
+    const root = tmp();
+    const m = manifest();
+    const params = { root, key: "k".repeat(64), manifestDigest: "md", layoutRevision: "1" };
+    await publishCache({ ...params, stagingDir: stage(root, params.key) });
+    return { root, params, dest: path.join(tmp(), "assets") };
+  };
+
+  it("copies the verified assets, and the model writing next to them never changes the cache", async () => {
+    const { params, dest } = await prepare();
+    const result = await materializeCache({ ...params, destDir: dest });
+    expect(result.ok).toBe(true);
+    expect(fs.readFileSync(path.join(dest, "w.bin"), "utf8")).toBe("weights");
+    expect(fs.readFileSync(path.join(dest, "sub", "x.dat"), "utf8")).toBe("data");
+
+    // What Boltz does: unpack new files beside its checkpoints and rewrite one.
+    fs.mkdirSync(path.join(dest, "mols"));
+    fs.writeFileSync(path.join(dest, "mols", "ALA.pkl"), "generated");
+    fs.writeFileSync(path.join(dest, "w.bin"), "changed by the model");
+
+    expect((await verifyCache(params)).ok).toBe(true);
+    expect((await materializeCache({ ...params, destDir: path.join(tmp(), "again") })).ok).toBe(true);
+  });
+
+  it("refuses and removes the copy when a file was altered, added or removed on the volume", async () => {
+    for (const tamper of [
+      (dir: string) => fs.appendFileSync(path.join(dir, "assets", "w.bin"), "x"),
+      (dir: string) => fs.writeFileSync(path.join(dir, "assets", "extra.bin"), "extra"),
+      (dir: string) => fs.rmSync(path.join(dir, "assets", "sub", "x.dat")),
+    ]) {
+      const { root, params, dest } = await prepare();
+      tamper(cacheDirFor(root, params.key));
+      const result = await materializeCache({ ...params, destDir: dest });
+      expect(result).toMatchObject({ ok: false, code: "CLOUD_CACHE_INVALID" });
+      expect(fs.existsSync(dest)).toBe(false);
+    }
+  });
+
+  it("reports a missing cache and rejects a symlink planted in it", async () => {
+    const empty = tmp();
+    expect(await materializeCache({ root: empty, key: "z".repeat(64), manifestDigest: "md", layoutRevision: "1", destDir: path.join(tmp(), "a") })).toMatchObject({ ok: false, code: "CLOUD_CACHE_MISSING" });
+    const { root, params, dest } = await prepare();
+    fs.symlinkSync("/etc/passwd", path.join(cacheDirFor(root, params.key), "assets", "link"));
+    expect(await materializeCache({ ...params, destDir: dest })).toMatchObject({ ok: false });
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+});
+
+describe("publishCache replacement", () => {
+  it("removes the superseded cache instead of leaving it on the billed volume", async () => {
+    const root = tmp();
+    const params = { root, key: "r".repeat(64), manifestDigest: "md", layoutRevision: "1" };
+    await publishCache({ ...params, stagingDir: stage(root, params.key) });
+    const second = stage(root, params.key);
+    await publishCache({ ...params, stagingDir: second });
+    expect(fs.readdirSync(root).filter((name) => name.includes(".replaced-"))).toEqual([]);
+    expect((await verifyCache(params)).ok).toBe(true);
   });
 });

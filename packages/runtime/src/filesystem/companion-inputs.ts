@@ -144,39 +144,8 @@ function resolveCompanionSource(ref: CompanionInputRef, allowedRoot: string, all
  */
 export function stageCompanionInputs(params: StageCompanionInputsParams): StagedCompanionInputPath[] {
   const { jobFilePath, refs, inputDir } = params;
-  const allowedRoot = path.resolve(params.allowedRoot ?? path.dirname(jobFilePath));
-  let allowedRootReal: string;
-  try {
-    allowedRootReal = fs.realpathSync(allowedRoot);
-  } catch {
-    throw companionError(
-      "UNSAFE_COMPANION_INPUT_PATH",
-      `Allowed source root does not exist: ${allowedRoot}.`,
-      "This is a MoleculeDesk bug — report it; the job file's own directory should always exist.",
-      { allowedRoot },
-    );
-  }
-
-  const seenIds = new Set<string>();
-  for (const ref of refs) {
-    if (!SAFE_ID_PATTERN.test(ref.id)) {
-      throw companionError(
-        "UNSAFE_COMPANION_INPUT_ID",
-        `Unsafe companion input id: ${JSON.stringify(ref.id)}.`,
-        "This is a MoleculeDesk adapter bug — report it; ids must match [A-Za-z0-9_-]+.",
-        { id: ref.id },
-      );
-    }
-    if (seenIds.has(ref.id)) {
-      throw companionError(
-        "DUPLICATE_STAGED_INPUT",
-        `Duplicate companion input id: "${ref.id}".`,
-        "This is a MoleculeDesk adapter bug — report it; each companion input id must be unique.",
-        { id: ref.id },
-      );
-    }
-    seenIds.add(ref.id);
-  }
+  const { allowedRoot, allowedRootReal } = canonicalAllowedRoot(params);
+  assertCompanionIds(refs);
 
   const staged: StagedCompanionInputPath[] = [];
   for (const ref of refs) {
@@ -201,4 +170,62 @@ export function stageCompanionInputs(params: StageCompanionInputsParams): Staged
     staged.push({ id: ref.id, originalPath: sourceFile, storedPath: destFile });
   }
   return staged;
+}
+
+export interface ResolvedCompanionInputSource {
+  id: string;
+  /** Canonical absolute path of the file that would be staged. */
+  sourcePath: string;
+  fileName: string;
+}
+
+/**
+ * Runs exactly the checks `stageCompanionInputs` runs (safe ids, confinement to the job file's tree, no symlink
+ * escape, regular file) but copies nothing, so a caller can show the user what would be uploaded and hash it
+ * before any file is staged or leaves the machine.
+ */
+export function resolveCompanionInputSources(params: Omit<StageCompanionInputsParams, "inputDir">): ResolvedCompanionInputSource[] {
+  const { allowedRoot, allowedRootReal } = canonicalAllowedRoot(params);
+  assertCompanionIds(params.refs);
+  return params.refs.map((ref) => {
+    const sourcePath = resolveCompanionSource(ref, allowedRoot, allowedRootReal);
+    return { id: ref.id, sourcePath, fileName: path.basename(sourcePath) };
+  });
+}
+
+function canonicalAllowedRoot(params: Pick<StageCompanionInputsParams, "jobFilePath" | "allowedRoot">): { allowedRoot: string; allowedRootReal: string } {
+  const allowedRoot = path.resolve(params.allowedRoot ?? path.dirname(params.jobFilePath));
+  try {
+    return { allowedRoot, allowedRootReal: fs.realpathSync(allowedRoot) };
+  } catch {
+    throw companionError(
+      "UNSAFE_COMPANION_INPUT_PATH",
+      `Allowed source root does not exist: ${allowedRoot}.`,
+      "This is a MoleculeDesk bug — report it; the job file's own directory should always exist.",
+      { allowedRoot },
+    );
+  }
+}
+
+function assertCompanionIds(refs: CompanionInputRef[]): void {
+  const seenIds = new Set<string>();
+  for (const ref of refs) {
+    if (!SAFE_ID_PATTERN.test(ref.id)) {
+      throw companionError(
+        "UNSAFE_COMPANION_INPUT_ID",
+        `Unsafe companion input id: ${JSON.stringify(ref.id)}.`,
+        "This is a MoleculeDesk adapter bug — report it; ids must match [A-Za-z0-9_-]+.",
+        { id: ref.id },
+      );
+    }
+    if (seenIds.has(ref.id)) {
+      throw companionError(
+        "DUPLICATE_STAGED_INPUT",
+        `Duplicate companion input id: "${ref.id}".`,
+        "This is a MoleculeDesk adapter bug — report it; each companion input id must be unique.",
+        { id: ref.id },
+      );
+    }
+    seenIds.add(ref.id);
+  }
 }

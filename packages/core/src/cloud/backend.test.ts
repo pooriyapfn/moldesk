@@ -51,6 +51,14 @@ class Fleet implements CloudProvider {
   volumes = new Map<string, CloudVolume & { cacheReady: boolean }>();
   nextId = 1;
   gpuAvailable = true;
+  /** Extra catalog GPUs besides the default A40. */
+  extraGpus: CloudCatalog["gpus"] = [];
+  /** GPU ids whose create is rejected for capacity even though the catalog lists them. */
+  rejectGpuIds = new Set<string>();
+  cpuDiskGbSeen: number[] = [];
+  rejectCpuIds = new Set<string>();
+  cpuRequests: CreatePodRequest[] = [];
+  extraCpus: CloudCatalog["cpus"] = [];
   /** Make the next volume claim `cacheReady` (a warm cache) or not. */
   podStatus: CloudPod["status"] = "RUNNING";
   terminateFails = false;
@@ -63,8 +71,8 @@ class Fleet implements CloudProvider {
   async getCatalog(): Promise<CloudCatalog> {
     return {
       retrievedAt: "t",
-      gpus: [{ id: "a40", name: "A40", memoryGb: 48, priceUsdPerHour: 0.6, availability: this.gpuAvailable ? "LOW" : "NONE", dataCenters: [{ id: "DC-1", availability: this.gpuAvailable ? "LOW" : "NONE" }], cudaVersions: [] }],
-      cpus: [],
+      gpus: [{ id: "a40", name: "A40", memoryGb: 48, priceUsdPerHour: 0.6, availability: this.gpuAvailable ? "LOW" : "NONE", dataCenters: [{ id: "DC-1", availability: this.gpuAvailable ? "LOW" : "NONE" }], cudaVersions: [] }, ...this.extraGpus],
+      cpus: [{ id: "cpu3c", name: "c", priceUsdPerVcpuHour: 0.03, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32 }, ...this.extraCpus],
       dataCenters: [{ id: "DC-1", region: "EU", networkVolumeTypes: ["STANDARD"] }],
     };
   }
@@ -75,9 +83,15 @@ class Fleet implements CloudProvider {
     return volume;
   }
   async createPod(request: CreatePodRequest): Promise<CloudPod> {
+    if (request.cpu && this.rejectCpuIds.has(request.cpu.id)) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    if (request.gpu && this.rejectGpuIds.has(request.gpu.id)) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     if (request.gpu && !this.gpuAvailable) throw Object.assign(new Error("no capacity"), { code: "CLOUD_CAPACITY_UNAVAILABLE" });
     const id = `pod${this.nextId++}`;
     const role = request.gpu ? "gpu" : "cpu";
+    if (!request.gpu) {
+      this.cpuDiskGbSeen.push(request.containerDiskGb);
+      this.cpuRequests.push(request);
+    }
     this.log.push(`createPod ${role} ${id}`);
     const volumeId = request.volume?.id;
     const pipeline: WorkerPipeline = async ({ job, outputDir, log, setStage }) => {
@@ -167,6 +181,7 @@ function setup(overrides: { bundle?: boolean } = {}) {
     cachePolicy: "ephemeral",
     gpuId: "a40",
     datacenterId: "DC-1",
+    gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, lockDatacenter: false },
     images: manifest.cloud!.images,
     containerDiskGb: 40,
     volumeGb: 40,
@@ -232,6 +247,86 @@ describe("RunpodExecutionBackend (ephemeral)", () => {
     expect(box.fleet.pods.size).toBe(0);
     expect(box.tokens.data.size).toBe(0);
     expect(box.journal.listResources({ states: ["create_pending", "active", "delete_pending"] })).toHaveLength(0);
+  });
+
+  const gpu = (id: string, price: number, memoryGb = 48, dc = "DC-1"): CloudCatalog["gpus"][number] => ({ id, name: id, memoryGb, priceUsdPerHour: price, availability: "LOW", dataCenters: [{ id: dc, availability: "LOW" }], cudaVersions: [] });
+
+  it("falls back to the next available GPU in the price range when the first rejects for capacity, and reports what it got", async () => {
+    const box = setup();
+    box.fleet.extraGpus = [gpu("l40", 0.9), gpu("h100", 3), gpu("small", 0.2, 16)];
+    box.fleet.rejectGpuIds.add("a40");
+    const handle = await box.backend.start(box.job(1), box.ctx(1, false));
+    expect(handle).toMatchObject({ gpuId: "l40", datacenterId: "DC-1" });
+    expect([...box.fleet.pods.values()].map((entry) => entry.request.gpu?.id)).toEqual(["l40"]);
+    // The rejected attempt left no orphaned journal intent.
+    await box.backend.release(handle, box.ctx(1, false));
+    expect(box.journal.listResources({ states: ["create_pending", "active", "delete_pending"] })).toHaveLength(0);
+  });
+
+  it("never uses a GPU over the approved price or under the VRAM floor, and fails with guidance when none is left", async () => {
+    const box = setup();
+    box.fleet.extraGpus = [gpu("h100", 3), gpu("small", 0.2, 16)];
+    box.fleet.rejectGpuIds.add("a40");
+    await expect(box.backend.start(box.job(1), box.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(box.fleet.pods.size).toBe(0);
+    expect(box.journal.listResources({ states: ["create_pending", "active", "delete_pending"] })).toHaveLength(0);
+  });
+
+  it("substitutes nothing when the user pinned a GPU", async () => {
+    const box = setup();
+    box.fleet.extraGpus = [gpu("l40", 0.9)];
+    box.fleet.rejectGpuIds.add("a40");
+    await expect(box.backend.start(box.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, pinnedGpuId: "a40", lockDatacenter: false } }), box.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+  });
+
+  it("only tries GPUs on the manifest's allow-list, whatever else the price range admits", async () => {
+    const box = setup();
+    box.fleet.extraGpus = [gpu("l40", 0.9)];
+    const handle = await box.backend.start(box.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, allowedGpuIds: ["l40"], lockDatacenter: false } }), box.ctx(1, false));
+    const used = [...box.fleet.pods.values()].map((entry) => entry.request.gpu?.id);
+    await box.backend.release(handle, box.ctx(1, false));
+    expect(used).toEqual(["l40"]);
+
+    const refused = setup();
+    refused.fleet.rejectGpuIds.add("l40");
+    refused.fleet.extraGpus = [gpu("l40", 0.9)];
+    await expect(refused.backend.start(refused.job(1, { gpuPolicy: { minVramGb: 24, maxUsdPerHour: 1.2, allowedGpuIds: ["l40"], lockDatacenter: false } }), refused.ctx(1, false))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(refused.fleet.pods.size).toBe(0);
+  });
+
+  it("keeps the CPU preparation pod's container disk within Runpod's 20 GB limit", async () => {
+    const box = setup();
+    const handle = await box.backend.start(box.job(1, { cachePolicy: "persistent", containerDiskGb: 60 }), box.ctx(1, true));
+    const requests = [...box.fleet.pods.values()].map((entry) => entry.request);
+    await box.backend.release(handle, box.ctx(1, true));
+    expect(box.fleet.log.filter((line) => line.startsWith("createPod cpu"))).toHaveLength(1);
+    expect(box.fleet.cpuDiskGbSeen).toEqual([20]);
+    expect(requests.find((request) => request.gpu)!.containerDiskGb).toBe(60);
+  });
+
+  it("prepares on the next available CPU type when the first rejects for capacity", async () => {
+    const box = setup();
+    box.fleet.extraCpus = [{ id: "cpu5c", name: "c5", priceUsdPerVcpuHour: 0.035, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32 }, { id: "cpu5m", name: "mem", priceUsdPerVcpuHour: 0.065, ramGbPerVcpu: 8, minVcpu: 2, maxVcpu: 32 }];
+    box.fleet.rejectCpuIds.add("cpu3c");
+    const handle = await box.backend.start(box.job(1, { cachePolicy: "persistent", cpuPolicy: { maxUsdPerHour: 0.2 } }), box.ctx(1, true));
+    const cpuRequests = box.fleet.cpuRequests;
+    await box.backend.release(handle, box.ctx(1, true));
+    // cpu5c is used (cheaper than the rejected cpu3c's fallback and never the memory-optimized type).
+    expect(cpuRequests.map((request) => request.cpu!.id)).toEqual(["cpu5c"]);
+  });
+
+  it("rebuilds into the volume a failed preparation left behind instead of creating another", async () => {
+    const box = setup();
+    box.fleet.rejectCpuIds.add("cpu3c");
+    await expect(box.backend.start(box.job(1, { cachePolicy: "persistent" }), box.ctx(1, true))).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(box.fleet.volumes.size).toBe(1);
+    expect(box.journal.listCaches()[0]!.state).toBe("FAILED");
+    box.fleet.rejectCpuIds.clear();
+    const handle = await box.backend.start(box.job(2, { cachePolicy: "persistent" }), box.ctx(2, true));
+    await box.backend.release(handle, box.ctx(2, true));
+    expect(box.fleet.volumes.size).toBe(1);
+    expect(box.fleet.log.filter((line) => line.startsWith("createVolume"))).toHaveLength(1);
+    expect(box.journal.listCaches()[0]!.state).toBe("READY");
   });
 
   it("refuses to start without a configured worker bundle and creates nothing", async () => {

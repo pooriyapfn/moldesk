@@ -472,6 +472,15 @@ print(json.dumps(errors))
 
 async function exportPdb(context: RunContext, cifPaths: string[]): Promise<void> {
   if (cifPaths.length === 0) return;
+  if (!context.runtimeExecutable) {
+    // A cloud run collects results on a machine with no local OpenDDE install, so the conversion cannot run.
+    // The mmCIF files are the prediction output; record the skipped copies instead of failing the run.
+    const skipped = Object.fromEntries(
+      cifPaths.map((cif) => [path.relative(context.outputDir, cif), "PDB export skipped: this run's results were collected without a local OpenDDE install (cloud run). Use the mmCIF file."]),
+    );
+    fs.writeFileSync(path.join(context.outputDir, PDB_EXPORT_ERRORS_FILE), `${JSON.stringify(skipped, null, 2)}\n`, { flag: "wx" });
+    return;
+  }
   const runner = context.runner ?? runCommand;
   const result = await runner(context.runtimeExecutable, ["-c", PDB_EXPORT_SCRIPT, ...cifPaths], { timeoutMs: 10 * 60_000 });
   let errors: Record<string, string>;

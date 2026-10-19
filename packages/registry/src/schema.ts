@@ -236,6 +236,16 @@ const cloudSpecSchema = z
       .strict(),
     minVramGb: z.number().positive(),
     minRamGb: z.number().positive(),
+    /**
+     * Runpod GPU type ids this model is validated on. When set, only these GPUs are quoted, used as a
+     * fallback, or accepted with `--gpu`: a GPU generation newer than the pinned framework supports (for
+     * example Blackwell with torch 2.2) passes the VRAM check but fails at runtime.
+     */
+    gpuAllowList: z
+      .array(z.string().min(1))
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length, "gpuAllowList must not repeat a GPU id")
+      .optional(),
     /** Container disk for one ephemeral job: runtime environment, inputs and outputs (and assets when ephemeral). */
     ephemeralDiskGb: z.number().int().positive(),
     /** Persistent network volume holding the raw object cache plus materialized assets. */

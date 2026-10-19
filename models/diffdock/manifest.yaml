@@ -197,6 +197,35 @@ assets:
     sha256: 8ffe6edbd4173dc8d45c2cd5cb27d43aad77ec26b4c768200c58ae1f96693575
     sizeBytes: 3687
     target: torch-home/hub/checkpoints/esm2_t33_650M_UR50D-contact-regression.pt
+# Remote execution (Runpod). Stock Runpod images pinned by digest; the worker bootstraps its own
+# Node.js when the image has none. minVramGb comes from a measured 8.3 GiB peak (A40, local verification);
+# ephemeralDiskGb is about twice the 12.5 GB of disk growth recorded by a live cloud run (A40, `compute.usage`).
+cloud:
+  schemaVersion: 1
+  platform: linux-x64
+  images:
+    gpu: runpod/pytorch@sha256:0a360022e8de4375af99430f84e8b38951acc397252163a37ceac7204d01be35
+    cpu: runpod/base@sha256:74a2e72024f090b8ba98c4e5233b00471fe6e49f614be070c569e8be3ae0c5c1
+  minVramGb: 16
+  minRamGb: 16
+  # Pinned torch 1.13.1 (cu117) predates Ada (sm_89), Hopper (sm_90) and Blackwell (sm_120) GPUs: Ada can
+  # reuse the sm_86 binaries but has no native code, and Hopper/Blackwell have none. Listed: Ampere (sm_80/86).
+  # Live-validated on NVIDIA A40 only (local verification 2026-10-11, Runpod run 2026-10-19); the rest are listed by architecture.
+  gpuAllowList:
+    - NVIDIA A40
+    - NVIDIA RTX A4000
+    - NVIDIA RTX A4500
+    - NVIDIA RTX A5000
+    - NVIDIA RTX A6000
+    - NVIDIA GeForce RTX 3090
+    - NVIDIA GeForce RTX 3090 Ti
+    - NVIDIA A100-SXM4-40GB
+    - NVIDIA A100 80GB PCIe
+    - NVIDIA A100-SXM4-80GB
+  ephemeralDiskGb: 25
+  volumeGb: 20
+  assetLayoutRevision: "1"
+  cpuAssetPreparation: true
 hardware:
   platforms:
     - linux-x64

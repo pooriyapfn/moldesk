@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CloudCatalog } from "@moldesk/runtime";
 import { parseManifest, type ModelManifestV1 } from "@moldesk/registry";
-import { LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING, assertApprovalValid, buildQuote, type QuoteInputs } from "./quote.js";
+import { LIFETIME_RISK_WARNING, STORAGE_CHARGES_WARNING, assertApprovalValid, buildQuote, type CloudAcknowledgment, type QuoteInputs } from "./quote.js";
 import type { CloudCatalog as Catalog } from "@moldesk/runtime";
 
 const DIGEST = "a".repeat(64);
@@ -75,7 +75,9 @@ describe("buildQuote", () => {
     const quote = buildQuote(inputs());
     expect(quote.gpu.id).toBe("a40");
     expect(quote.datacenterId).toBe("DC-NOVOL");
-    expect(quote.cost.worstCaseComputeUsd).toBe(0.6);
+    // Compute is costed at the top of the default price range (twice the cheapest eligible GPU).
+    expect(quote.gpuRange).toMatchObject({ minVramGb: 24, maxUsdPerHour: 1.2, pinnedGpuId: null, lockDatacenter: false });
+    expect(quote.cost.worstCaseComputeUsd).toBe(1.2);
     expect(quote.timing).toEqual({ preparation: null, inference: null, transfer: null });
     expect(quote.cost.recurringStorage).toEqual({ recurring: false, volumeGb: null, usdPerMonth: null });
     expect(quote.cpu).toBeUndefined();
@@ -84,8 +86,10 @@ describe("buildQuote", () => {
   it("persistent policy needs a volume-capable datacenter, adds the CPU preparer and discloses recurring storage", () => {
     const quote = buildQuote(inputs({ cachePolicy: "persistent" }));
     expect(quote.datacenterId).toBe("DC-VOL");
-    expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06 });
-    expect(quote.cost.worstCaseComputeUsd).toBe(0.66);
+    expect(quote.cpu).toEqual({ id: "cpu3c", vcpuCount: 2, priceUsdPerHour: 0.06, maxUsdPerHour: 0.06 });
+    expect(quote.cost.worstCaseComputeUsd).toBe(1.26);
+    expect(quote.gpuRange.lockDatacenter).toBe(true);
+    expect(quote.gpuRange.candidates.every((c) => c.datacenterIds.every((id) => id === "DC-VOL"))).toBe(true);
     expect(quote.cost.recurringStorage).toEqual({ recurring: true, volumeGb: 40, usdPerMonth: null });
     expect(quote.disclosures.join(" ")).toMatch(/billed until you delete/);
   });
@@ -108,6 +112,11 @@ describe("buildQuote", () => {
     expect(() => buildQuote(inputs({ maxBudgetUsd: 0 }))).toThrow(expect.objectContaining({ code: "CLOUD_BUDGET_REQUIRED" }));
     expect(() => buildQuote(inputs({ maxLifetimeSeconds: 0 }))).toThrow(expect.objectContaining({ code: "CLOUD_LIFETIME_REQUIRED" }));
     expect(buildQuote(inputs({ maxBudgetUsd: 0.3, maxLifetimeSeconds: 1800 })).cost.worstCaseComputeUsd).toBe(0.3);
+    // The budget caps the GPU price range, so the worst case holds whichever GPU is obtained.
+    const capped = buildQuote(inputs({ maxBudgetUsd: 0.7 }));
+    expect(capped.gpuRange.maxUsdPerHour).toBe(0.7);
+    expect(capped.gpuRange.candidates.map((c) => c.id)).toEqual(["a40"]);
+    expect(capped.cost.worstCaseBudgetedUsd).toBeLessThanOrEqual(0.7);
   });
 
   it("derives a stable id bound to inputs, policy, location and limits but not to price", () => {
@@ -120,6 +129,97 @@ describe("buildQuote", () => {
     expect(buildQuote(inputs({ cachePolicy: "persistent" })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ maxLifetimeSeconds: 1800 })).id).not.toBe(base.id);
     expect(buildQuote(inputs({ gpuId: "l40" })).id).not.toBe(base.id);
+    expect(buildQuote(inputs({ maxGpuUsdPerHour: 1 })).id).not.toBe(base.id);
+  });
+
+  it("offers every available GPU in the price range, cheapest first, and never one over it", () => {
+    const quote = buildQuote(inputs({ maxGpuUsdPerHour: 0.95 }));
+    expect(quote.gpuRange.candidates.map((c) => [c.id, c.priceUsdPerHour, c.datacenterIds])).toEqual([
+      ["a40", 0.6, ["DC-NOVOL", "DC-VOL"]],
+      ["l40", 0.9, ["DC-VOL"]],
+    ]);
+    expect(buildQuote(inputs({ maxGpuUsdPerHour: 0.7 })).gpuRange.candidates.map((c) => c.id)).toEqual(["a40"]);
+    expect(() => buildQuote(inputs({ maxGpuUsdPerHour: 0.5 }))).toThrow(expect.objectContaining({ code: "CLOUD_GPU_PRICE_RANGE_INVALID" }));
+  });
+
+  it("lets the user override the worker images, binds them to the id and discloses unpinned ones", () => {
+    const base = buildQuote(inputs());
+    expect(base.disclosures.join(" ")).not.toMatch(/Not pinned by digest/);
+    const custom = buildQuote(inputs({ gpuImage: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404" }));
+    expect(custom.images).toEqual({ gpu: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404", cpu: base.images.cpu });
+    expect(custom.id).not.toBe(base.id);
+    expect(custom.disclosures.join(" ")).toMatch(/Not pinned by digest.*gpu image runpod\/pytorch:1\.0\.2/);
+    expect(() => buildQuote(inputs({ gpuImage: "bad image;rm -rf /" }))).toThrow(expect.objectContaining({ code: "CLOUD_IMAGE_INVALID" }));
+  });
+
+  it("puts a new persistent volume where a GPU is affordable, not where the most expensive options are", () => {
+    const crowded = catalog();
+    const pricey = (id: string, price: number) => ({ id, name: id, memoryGb: 80, priceUsdPerHour: price, availability: "LOW" as const, dataCenters: [{ id: "DC-EXP", availability: "LOW" }], cudaVersions: [] });
+    crowded.gpus.push(pricey("h100", 3.19), pricey("h200", 5.29), pricey("b200", 7.99));
+    crowded.dataCenters.push({ id: "DC-EXP", region: "US", networkVolumeTypes: ["STANDARD"] });
+    const quote = buildQuote(inputs({ cachePolicy: "persistent", catalog: crowded, maxBudgetUsd: 2 }));
+    expect(quote.datacenterId).toBe("DC-VOL");
+    expect(quote.gpu.id).toBe("a40");
+    // With nothing affordable anywhere, the error names the real cheapest GPU rather than hiding it.
+    expect(() => buildQuote(inputs({ cachePolicy: "persistent", catalog: crowded, maxBudgetUsd: 0.3 }))).toThrow(expect.objectContaining({ code: "CLOUD_BUDGET_EXCEEDED" }));
+  });
+
+  it("only offers persistent datacenters where a CPU preparation machine is available", () => {
+    const noCpu = catalog();
+    noCpu.cpus[0]!.dataCenters = [{ id: "DC-A", availability: "HIGH" }, { id: "DC-VOL", availability: "NONE" }];
+    expect(() => buildQuote(inputs({ cachePolicy: "persistent", catalog: noCpu }))).toThrow(expect.objectContaining({ code: "CLOUD_CAPACITY_UNAVAILABLE" }));
+    // Ephemeral runs have no CPU step and are unaffected.
+    expect(buildQuote(inputs({ catalog: noCpu })).gpu.id).toBe("a40");
+    const other = catalog();
+    other.cpus.push({ id: "cpu5c", name: "c5", priceUsdPerVcpuHour: 0.05, ramGbPerVcpu: 2, minVcpu: 2, maxVcpu: 32, dataCenters: [{ id: "DC-VOL", availability: "HIGH" }] });
+    other.cpus[0]!.dataCenters = [{ id: "DC-A", availability: "HIGH" }];
+    const quote = buildQuote(inputs({ cachePolicy: "persistent", catalog: other }));
+    expect(quote.datacenterId).toBe("DC-VOL");
+    expect(quote.cpu).toMatchObject({ id: "cpu5c", priceUsdPerHour: 0.1, maxUsdPerHour: 0.1 });
+  });
+
+  it("substitutes nothing when the user pinned a GPU", () => {
+    const quote = buildQuote(inputs({ gpuId: "l40" }));
+    expect(quote.gpuRange.pinnedGpuId).toBe("l40");
+    expect(quote.gpuRange.candidates.map((c) => c.id)).toEqual(["l40"]);
+  });
+
+  describe("manifest GPU allow-list", () => {
+    const restricted = (ids: string[], overrides: Partial<QuoteInputs> = {}): QuoteInputs => {
+      const base = inputs();
+      return { ...base, cloud: { ...base.cloud, gpuAllowList: ids }, ...overrides };
+    };
+
+    it("quotes and offers only listed GPUs, even when cheaper ones meet the VRAM floor", () => {
+      const quote = buildQuote(restricted(["l40"], { maxGpuUsdPerHour: 2 }));
+      expect(quote.gpu.id).toBe("l40");
+      expect(quote.gpuRange.candidates.map((c) => c.id)).toEqual(["l40"]);
+      expect(quote.gpuRange.allowedGpuIds).toEqual(["l40"]);
+      expect(buildQuote(inputs()).gpuRange.allowedGpuIds).toBeNull();
+    });
+
+    it("refuses a pinned GPU that is not listed and names the listed ones", () => {
+      expect(() => buildQuote(restricted(["l40"], { gpuId: "a40" }))).toThrow(/not validated for test-model/);
+      try {
+        buildQuote(restricted(["l40"], { gpuId: "a40" }));
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_GPU_INELIGIBLE", remediation: expect.stringContaining("l40") });
+      }
+      expect(buildQuote(restricted(["l40", "a40"], { gpuId: "a40" })).gpu.id).toBe("a40");
+    });
+
+    it("reports capacity as unavailable, naming the listed GPUs, when none of them has capacity", () => {
+      try {
+        buildQuote(restricted(["a5000"]));
+        throw new Error("expected a rejection");
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE", remediation: expect.stringContaining("runs only on: a5000") });
+      }
+    });
+
+    it("binds the list to the quote id", () => {
+      expect(buildQuote(restricted(["l40"])).id).not.toBe(buildQuote(restricted(["l40", "a40"])).id);
+    });
   });
 });
 
@@ -144,7 +244,7 @@ describe("storage costs and budget coverage", () => {
   it("counts temporary storage in the budget and reports recurring storage separately when rates are published", () => {
     const eph = buildQuote(inputs({ catalog: withRates() }));
     expect(eph.cost.temporaryStorage.worstCaseUsd).toBeCloseTo(40 * 0.1 * (1 / 730), 4);
-    expect(eph.cost.worstCaseBudgetedUsd).toBeCloseTo(0.6 + eph.cost.temporaryStorage.worstCaseUsd!, 4);
+    expect(eph.cost.worstCaseBudgetedUsd).toBeCloseTo(1.2 + eph.cost.temporaryStorage.worstCaseUsd!, 4);
     expect(eph.budgetCoverage.unknown).toEqual([]);
     expect(eph.budgetCoverage.counted.join(" | ")).toMatch(/container disk/);
 
@@ -168,7 +268,7 @@ describe("storage costs and budget coverage", () => {
 
 describe("assertApprovalValid", () => {
   const now = new Date("2026-10-13T12:05:00.000Z");
-  const approval = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt, acknowledged: quote.warnings.map((w) => w.id) });
+  const approval = (quote: { id: string; warnings: Array<{ id: CloudAcknowledgment }> }, approvedAt = "2026-10-13T12:00:00.000Z") => ({ quoteId: quote.id, approvedAt, acknowledged: quote.warnings.map((w) => w.id) });
 
   it("accepts a matching, fresh approval", () => {
     const quote = buildQuote(inputs());
@@ -183,12 +283,13 @@ describe("assertApprovalValid", () => {
     expect(() => assertApprovalValid(quote, approval(quote, "garbage"), quote, now)).toThrow(expect.objectContaining({ code: "CLOUD_APPROVAL_EXPIRED" }));
   });
 
-  it("requires a new approval when location, inputs or a material price change since", () => {
+  it("requires a new approval when constraints, inputs or a material price change since", () => {
     const quote = buildQuote(inputs());
+    // Availability moving between datacenters is covered by the approved range, not a new consent.
     const moved = catalog();
     moved.gpus[1]!.dataCenters = [{ id: "DC-VOL", availability: "LOW" }];
-    moved.dataCenters = moved.dataCenters.filter((dc) => dc.id !== "DC-NOVOL");
-    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ catalog: moved })), now)).toThrow(expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" }));
+    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ catalog: moved })), now)).not.toThrow();
+    expect(() => assertApprovalValid(quote, approval(quote), buildQuote(inputs({ gpuId: "l40" })), now)).toThrow(expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" }));
 
     const pricier = catalog();
     pricier.gpus[1]!.priceUsdPerHour = 0.7;
@@ -208,7 +309,7 @@ describe("approval revalidation of storage cost and budget coverage", () => {
     ...catalog(),
     ...(disk !== undefined || volume !== undefined ? { storageRates: { ...(disk !== undefined ? { containerDiskUsdPerGbMonth: disk } : {}), ...(volume !== undefined ? { networkVolumeUsdPerGbMonth: volume } : {}) } } : {}),
   });
-  const approve = (quote: { id: string; warnings: Array<{ id: "lifetime-risk" | "storage-charges" }> }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: quote.warnings.map((w) => w.id) });
+  const approve = (quote: { id: string; warnings: Array<{ id: CloudAcknowledgment }> }) => ({ quoteId: quote.id, approvedAt: "2026-10-13T12:00:00.000Z", acknowledged: quote.warnings.map((w) => w.id) });
   const check = (approved: ReturnType<typeof buildQuote>, fresh: ReturnType<typeof buildQuote>) => assertApprovalValid(approved, approve(approved), fresh, now);
   const requote = expect.objectContaining({ code: "CLOUD_REQUOTE_REQUIRED" });
 
@@ -299,6 +400,54 @@ describe("explicit risk acknowledgment", () => {
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(/Storage charges continue/);
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["storage-charges"] }, quote, now)).toThrow(needs);
     expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk", "storage-charges"] }, quote, now)).not.toThrow();
+  });
+
+  describe("extra files the job uploads", () => {
+    const withFiles = (count = 1, sizeBytes = 100): QuoteInputs =>
+      inputs({
+        inputs: [
+          { role: "job", sha256: "b".repeat(64), sizeBytes: 100, fileName: "job.json", localPath: "/work/job.json" },
+          ...Array.from({ length: count }, (_, index) => ({ role: `file${index}`, sha256: String(index % 10).repeat(64), sizeBytes, fileName: `f${index}.pdb`, localPath: `/work/f${index}.pdb` })),
+        ],
+      });
+
+    it("adds an upload-files warning that names every extra file, and only then", () => {
+      const quote = buildQuote(withFiles(2));
+      expect(quote.warnings.map((w) => w.id)).toEqual(["lifetime-risk", "upload-files"]);
+      const text = quote.warnings[1]!.text;
+      expect(text).toContain("/work/f0.pdb");
+      expect(text).toContain("/work/f1.pdb");
+      expect(text).not.toContain("/work/job.json"); // the input you named is not the surprise
+      expect(quote.upload.items.map((item) => item.role)).toEqual(["job", "file0", "file1"]);
+      expect(buildQuote(inputs()).warnings.map((w) => w.id)).toEqual(["lifetime-risk"]);
+    });
+
+    it("refuses an approval that did not acknowledge the upload, naming the flag", () => {
+      const quote = buildQuote(withFiles());
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(/copied to a Runpod machine/);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk"] }, quote, now)).toThrow(needs);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["upload-files"] }, quote, now)).toThrow(needs);
+      expect(() => assertApprovalValid(quote, { quoteId: quote.id, ...base, acknowledged: ["lifetime-risk", "upload-files"] }, quote, now)).not.toThrow();
+    });
+
+    it("binds the files' contents to the quote id", () => {
+      const first = buildQuote(withFiles());
+      const changed = withFiles();
+      changed.inputs[1] = { ...changed.inputs[1]!, sha256: "e".repeat(64) };
+      expect(buildQuote(changed).id).not.toBe(first.id);
+      expect(() => assertApprovalValid(first, { quoteId: first.id, ...base, acknowledged: ["lifetime-risk", "upload-files"] }, buildQuote(changed), now)).toThrow(/Inputs, model/);
+    });
+
+    it("allows 16 extra files and rejects 17, or more than 4 GiB in total", () => {
+      expect(() => buildQuote(withFiles(16))).not.toThrow();
+      expect(() => buildQuote(withFiles(17))).toThrow(/limits are 16 extra files/);
+      expect(() => buildQuote(withFiles(2, 2.5 * 1024 ** 3))).toThrow(/bytes/);
+      try {
+        buildQuote(withFiles(17));
+      } catch (error) {
+        expect(error).toMatchObject({ code: "CLOUD_COMPANION_LIMIT" });
+      }
+    });
   });
 
   it("a missing acknowledgments field (old or hand-built approval) is refused, not assumed", () => {

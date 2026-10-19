@@ -39,8 +39,9 @@ export {
   visualizationDir,
   isWithinRoot,
   stageCompanionInputs,
+  resolveCompanionInputSources,
 } from "./filesystem/index.js";
-export type { MoldeskPaths, CompanionInputRef, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
+export type { MoldeskPaths, CompanionInputRef, ResolvedCompanionInputSource, StageCompanionInputsParams, StagedCompanionInputPath } from "./filesystem/index.js";
 export type {
   ExecuteRequest,
   ExecutionResult,
@@ -54,6 +55,7 @@ export type {
 export { MoldeskError } from "./providers.js";
 export { PythonRuntimeProvider } from "./providers/python.js";
 export { redactEnv } from "./redact.js";
+export { CPU_PREP_TYPE_IDS, CPU_POD_MAX_CONTAINER_DISK_GB } from "./cloud/types.js";
 export { RunpodProvider, RUNPOD_API_BASE, RUNPOD_USER_AGENT } from "./cloud/runpod.js";
 export {
   CredentialStore,

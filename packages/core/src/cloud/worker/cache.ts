@@ -100,8 +100,11 @@ export async function publishCache(params: { root: string; key: string; stagingD
   };
   fs.writeFileSync(path.join(params.stagingDir, READY_FILE), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
   const final = cacheDirFor(params.root, params.key);
-  if (fs.existsSync(final)) fs.renameSync(final, `${final}.replaced-${randomUUID()}`);
+  const replaced = `${final}.replaced-${randomUUID()}`;
+  if (fs.existsSync(final)) fs.renameSync(final, replaced);
   fs.renameSync(params.stagingDir, final);
+  // The superseded copy is dead weight on a billed volume; best effort, the new cache is already in place.
+  fs.rmSync(replaced, { recursive: true, force: true });
   return metadata;
 }
 
@@ -109,8 +112,8 @@ export type CacheVerification =
   | { ok: true; metadata: CacheReadyMetadata; assetsDir: string }
   | { ok: false; code: "CLOUD_CACHE_MISSING" | "CLOUD_CACHE_INVALID"; message: string };
 
-/** Verifies the on-volume cache before use: metadata matches this job, and every file hashes as recorded. */
-export async function verifyCache(params: { root: string; key: string; manifestDigest: string; layoutRevision: string }): Promise<CacheVerification> {
+/** Reads and checks `ready.json` against this job, without hashing any file. */
+async function verifyCacheMetadata(params: { root: string; key: string; manifestDigest: string; layoutRevision: string }): Promise<{ ok: true; metadata: CacheReadyMetadata } | { ok: false; code: "CLOUD_CACHE_MISSING" | "CLOUD_CACHE_INVALID"; message: string }> {
   const dir = cacheDirFor(params.root, params.key);
   const readyPath = path.join(dir, READY_FILE);
   if (!fs.existsSync(readyPath)) return { ok: false, code: "CLOUD_CACHE_MISSING", message: "No prepared cache exists on the volume." };
@@ -126,6 +129,15 @@ export async function verifyCache(params: { root: string; key: string; manifestD
   if (checksumDigest(metadata.files) !== metadata.checksumManifestSha256) {
     return { ok: false, code: "CLOUD_CACHE_INVALID", message: "The cache checksum manifest was altered." };
   }
+  return { ok: true, metadata };
+}
+
+/** Verifies the on-volume cache before use: metadata matches this job, and every file hashes as recorded. */
+export async function verifyCache(params: { root: string; key: string; manifestDigest: string; layoutRevision: string }): Promise<CacheVerification> {
+  const header = await verifyCacheMetadata(params);
+  if (!header.ok) return header;
+  const { metadata } = header;
+  const dir = cacheDirFor(params.root, params.key);
   let actual: CacheFileEntry[];
   try {
     actual = await hashTree(dir, new Set([READY_FILE]));
@@ -136,6 +148,61 @@ export async function verifyCache(params: { root: string; key: string; manifestD
     return { ok: false, code: "CLOUD_CACHE_INVALID", message: "The cache contents no longer match their recorded checksums." };
   }
   return { ok: true, metadata, assetsDir: path.join(dir, "assets") };
+}
+
+/**
+ * Verifies the on-volume cache and copies its assets to `destDir` in a single read pass: each file is
+ * hashed while it is copied, and the result must match `ready.json` exactly (no missing, extra or
+ * altered file). The model then works on the copy, never on the volume, so nothing it writes (Boltz,
+ * for one, unpacks data next to its checkpoints) can change the cache. On any mismatch `destDir` is removed.
+ */
+export async function materializeCache(params: { root: string; key: string; manifestDigest: string; layoutRevision: string; destDir: string }): Promise<CacheVerification> {
+  const header = await verifyCacheMetadata(params);
+  if (!header.ok) return header;
+  const { metadata } = header;
+  const dir = cacheDirFor(params.root, params.key);
+  const source = path.join(dir, "assets");
+  fs.rmSync(params.destDir, { recursive: true, force: true });
+  const copied: CacheFileEntry[] = [];
+  const fail = (message: string): CacheVerification => {
+    fs.rmSync(params.destDir, { recursive: true, force: true });
+    return { ok: false, code: "CLOUD_CACHE_INVALID", message };
+  };
+  try {
+    const walk = async (current: string, prefix: string): Promise<void> => {
+      for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+        const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const full = path.join(current, entry.name);
+        const stat = fs.lstatSync(full);
+        if (stat.isSymbolicLink() || !isSafeRelativePath(relative)) throw cacheError("CLOUD_CACHE_UNSAFE", `Cache contains an unsafe entry: ${relative}.`, "The cache is rejected and will be rebuilt.");
+        const target = path.join(params.destDir, ...relative.split("/"));
+        if (stat.isDirectory()) {
+          fs.mkdirSync(target, { recursive: true });
+          await walk(full, relative);
+        } else if (stat.isFile()) {
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          const hash = createHash("sha256");
+          const out = fs.createWriteStream(target, { mode: 0o644 });
+          for await (const chunk of fs.createReadStream(full)) {
+            hash.update(chunk as Buffer);
+            if (!out.write(chunk)) await new Promise<void>((resolve) => out.once("drain", resolve));
+          }
+          await new Promise<void>((resolve, reject) => out.end((error?: Error | null) => (error ? reject(error) : resolve())));
+          copied.push({ path: `assets/${relative}`, sizeBytes: stat.size, sha256: hash.digest("hex") });
+        } else throw cacheError("CLOUD_CACHE_UNSAFE", `Cache contains a non-regular file: ${relative}.`, "The cache is rejected and will be rebuilt.");
+      }
+    };
+    fs.mkdirSync(params.destDir, { recursive: true });
+    await walk(source, "");
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
+  }
+  const expected = metadata.files.filter((file) => file.path.startsWith("assets/"));
+  const actual = copied.sort((a, b) => a.path.localeCompare(b.path));
+  if (metadata.files.length !== expected.length || checksumDigest(actual) !== checksumDigest(expected)) {
+    return fail("The cache contents no longer match their recorded checksums.");
+  }
+  return { ok: true, metadata, assetsDir: params.destDir };
 }
 
 export interface VolumeLock {

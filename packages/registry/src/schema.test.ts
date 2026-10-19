@@ -397,6 +397,9 @@ describe("cloud capability block", () => {
     const { volumeGb: _omit, ...missing } = cloud();
     expect(() => parseManifest(withCloud(missing), "x/manifest.yaml")).toThrow();
     expect(() => parseManifest(withCloud({ ...cloud(), minVramGb: 0 }), "x/manifest.yaml")).toThrow();
+    expect(() => parseManifest(withCloud({ ...cloud(), gpuAllowList: [] }), "x/manifest.yaml")).toThrow();
+    expect(() => parseManifest(withCloud({ ...cloud(), gpuAllowList: ["NVIDIA A40", "NVIDIA A40"] }), "x/manifest.yaml")).toThrow(/repeat/);
+    expect(parseManifest(withCloud({ ...cloud(), gpuAllowList: ["NVIDIA A40"] }), "x/manifest.yaml").cloud?.gpuAllowList).toEqual(["NVIDIA A40"]);
     expect(() => parseManifest(withCloud({ ...cloud(), schemaVersion: 2 }), "x/manifest.yaml")).toThrow();
   });
 

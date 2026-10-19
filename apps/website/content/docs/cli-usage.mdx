@@ -1,6 +1,6 @@
 export const metadata = {
   title: "CLI usage",
-  description: "The moldesk doctor, install, list, and uninstall workflow, with flags and examples.",
+  description: "The moldesk doctor, install, list, uninstall and run workflow, including Runpod cloud runs, with flags and examples.",
 };
 
 # CLI usage
@@ -59,6 +59,32 @@ moldesk run proteinmpnn structure.pdb --json               # machine-readable re
 ```
 
 MoleculeDesk prints the run status and the path to each declared output as the run completes, plus the run directory it used. Pass `--output <dir>` to also copy the output files into a directory of your choice.
+
+### Running on Runpod
+
+Boltz-2 and ProteinMPNN can run on your own Runpod account instead of locally. Connect once, preview the quote, then run:
+
+```bash
+moldesk cloud connect runpod
+moldesk run proteinmpnn structure.pdb --compute runpod --cache-policy ephemeral \
+  --max-budget 2 --max-lifetime 3600 --dry-run   # print the quote only
+moldesk run proteinmpnn structure.pdb --compute runpod --cache-policy ephemeral \
+  --max-budget 2 --max-lifetime 3600             # asks for each acknowledgment, then approval
+```
+
+`--cache-policy` is required: `ephemeral` keeps nothing after the run (supported), `persistent` keeps a reusable model cache on a billed network volume (experimental). `--max-budget` and `--max-lifetime` are required too. `--gpu`, `--max-gpu-price`, `--datacenter`, `--gpu-image` and `--cpu-image` tune where and on what the run happens. Without a terminal, pass `--yes --accept-lifetime-risk`; `--yes` alone is refused. If your job file references other files on your computer, the quote lists them and you must also acknowledge copying them to Runpod (answer the prompt, or pass `--accept-file-upload`).
+
+Shutdown is best effort: if MoleculeDesk closes or loses connection, your Pod may keep running and charging. Inspect or clean up with:
+
+```bash
+moldesk cloud status
+moldesk cloud resources
+moldesk cloud recover <run-id>
+moldesk cloud cache list
+moldesk cloud cache delete boltz
+```
+
+See the [Runpod cloud execution guide](/docs/guides/runpod-cloud-execution) for costs, limits and what was validated.
 
 ## What's next
 

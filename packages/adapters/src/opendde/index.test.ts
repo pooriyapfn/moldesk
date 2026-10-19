@@ -448,6 +448,20 @@ describe("openddeAdapter.collectOutputs", () => {
     expect(errors["tiny/seed_101/predictions/tiny_sample_0.cif"]).toContain("ModuleNotFoundError: biotite");
   });
 
+  it("skips the PDB export and records it when there is no local runtime (cloud runs)", async () => {
+    const dir = tempDir();
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const context = runContext(dir, tinyJob(dir), { runtimeExecutable: "", runner: fakePdbExporter([], calls) });
+    writePrediction(context.outputDir, "tiny", 101);
+    const outputs = await openddeAdapter.collectOutputs(context);
+    expect(calls).toHaveLength(0);
+    expect(outputs.filter((o) => o.id === "structures")).toHaveLength(1);
+    expect(outputs.some((o) => o.id === "structures_pdb")).toBe(false);
+    const errors = JSON.parse(fs.readFileSync(outputs.find((o) => o.id === "pdb_export_errors")!.path, "utf8"));
+    expect(Object.keys(errors)).toEqual(["tiny/seed_101/predictions/tiny_sample_0.cif"]);
+    expect(errors["tiny/seed_101/predictions/tiny_sample_0.cif"]).toContain("cloud run");
+  });
+
   it("does not accept unrelated .cif/.json files elsewhere under output", async () => {
     const dir = tempDir();
     const context = runContext(dir, tinyJob(dir));
@@ -595,7 +609,9 @@ describe("opendde manifest consistency", () => {
 
   it("stays beta and advertises only live-verified platforms", () => {
     expect(manifest.status).toBe("beta");
-    expect(manifest.hardware.platforms).toEqual(["darwin-arm64"]);
+    // linux-x64 was added after the Runpod CUDA runs recorded in models/opendde/README.md.
+    expect(manifest.hardware.platforms).toEqual(["darwin-arm64", "linux-x64"]);
+    expect(manifest.adapterVerification.platforms).toEqual(["darwin-arm64", "linux-x64"]);
   });
 
   it("pins opendde 1.1.1 and torch 2.7.1 by artifact hash on every runtime, CUDA via the closed torchBackend field", () => {

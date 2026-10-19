@@ -36,7 +36,7 @@ jobs:
         id: check
         run: node scripts/release-check.mjs "$GITHUB_REF_NAME"
 
-      - run: node --test scripts/release-lib.test.mjs
+      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs
 
       - uses: pnpm/action-setup@v4
 
@@ -51,8 +51,58 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
-  publish-npm:
+      # A release must ship the cloud worker bundle the CLI was built to trust: recorded checksum equals
+      # what these sources build, and the recorded URL is this tag's release asset.
+      - name: Recorded worker bundle must match the sources and this tag
+        run: node scripts/worker-release.mjs check --require --tag "$GITHUB_REF_NAME"
+
+  # The CLI fetches the worker bundle from this release's assets and verifies its SHA-256 before
+  # running it, so the asset must exist before the npm packages that point at it.
+  publish-worker-bundle:
     needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the worker bundle
+        run: pnpm --filter @moldesk/core build:worker -- --out "$RUNNER_TEMP/worker-release"
+
+      - name: Attach it to the release
+        run: |
+          assets=("$RUNNER_TEMP/worker-release/worker.tar" "$RUNNER_TEMP/worker-release/worker.tar.sha256")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes
+          fi
+
+      - name: The published asset must be exactly what the CLI expects
+        run: |
+          expected=$(cut -d' ' -f1 "$RUNNER_TEMP/worker-release/worker.tar.sha256")
+          for attempt in 1 2 3 4 5; do
+            got=$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/worker.tar" | sha256sum | cut -d' ' -f1) || got=""
+            [ "$got" = "$expected" ] && { echo "Published worker.tar matches $expected"; exit 0; }
+            sleep 10
+          done
+          echo "::error::The published worker.tar does not match the built bundle ($expected)."
+          exit 1
+
+  publish-npm:
+    needs: [verify, publish-worker-bundle]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

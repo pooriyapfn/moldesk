@@ -50,13 +50,17 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
     .option("--json", "print the run result as JSON")
     .option("--compute <kind>", "where to run: local (default) or runpod", "local")
     .option("--cache-policy <policy>", "cloud: ephemeral (nothing retained) or persistent (a billed volume is kept)")
-    .option("--gpu <id>", "cloud: GPU type id (default: cheapest eligible)")
+    .option("--gpu <id>", "cloud: pin one GPU type id (default: cheapest eligible, falling back to any available GPU in the price range)")
+    .option("--gpu-image <ref>", "cloud: container image for the GPU machine (default: the model's validated image)")
+    .option("--cpu-image <ref>", "cloud: container image for the asset-preparation machine (default: the model's validated image)")
+    .option("--max-gpu-price <usd>", "cloud: highest GPU hourly rate to accept (default: twice the cheapest eligible GPU, capped by the budget)")
     .option("--datacenter <id>", "cloud: datacenter id")
     .option("--max-budget <usd>", "cloud: maximum budget in USD (a guard on the quote, not a provider cap)")
     .option("--max-lifetime <seconds>", "cloud: lifetime limit in seconds, enforced by MoleculeDesk only while it is running and connected (shutdown is not guaranteed)")
     .option("--yes", "cloud: approve exactly the quote shown (required without a terminal)")
     .option("--accept-lifetime-risk", "cloud: acknowledge that machines may keep running and charging if MoleculeDesk closes or disconnects")
     .option("--accept-storage-charges", "cloud: acknowledge that a persistent cache keeps billing until you delete it")
+    .option("--accept-file-upload", "cloud: acknowledge that files your job file references will be copied to the cloud machine")
     .option("--dry-run", "cloud: print the quote and exit without uploading or provisioning")
     .action(
       async (
@@ -71,6 +75,9 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
           compute: string;
           cachePolicy?: string;
           gpu?: string;
+          maxGpuPrice?: string;
+          gpuImage?: string;
+          cpuImage?: string;
           datacenter?: string;
           maxBudget?: string;
           maxLifetime?: string;
@@ -78,6 +85,7 @@ export function registerRunCommand(program: Command, cloudHooks: CloudRunHooks =
           dryRun?: boolean;
           acceptLifetimeRisk?: boolean;
           acceptStorageCharges?: boolean;
+          acceptFileUpload?: boolean;
         },
       ) => {
         if (options.compute !== "local") {

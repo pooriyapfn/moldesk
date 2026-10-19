@@ -6,6 +6,7 @@ import {
   redactEnv,
   PythonRuntimeProvider,
   type MoldeskPaths,
+  type RemoteResourceUsage,
   type RuntimeProvider,
   type SystemReport,
 } from "@moldesk/runtime";
@@ -98,6 +99,8 @@ export interface RunCompute {
   pythonVersion?: string;
   dependencyFreeze?: string[];
   sourceRevision?: string;
+  /** Peak GPU memory and disk the worker observed; the basis for a manifest's measured `cloud` sizes. */
+  usage?: RemoteResourceUsage;
   cleanup: "confirmed" | "pending";
   /** Warnings the user explicitly acknowledged before approval, e.g. "lifetime-risk". */
   acknowledgedRisks?: string[];

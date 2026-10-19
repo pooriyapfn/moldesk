@@ -17,6 +17,9 @@ export interface CloudRunFlags {
   compute: string;
   cachePolicy?: string;
   gpu?: string;
+  maxGpuPrice?: string;
+  gpuImage?: string;
+  cpuImage?: string;
   datacenter?: string;
   maxBudget?: string;
   maxLifetime?: string;
@@ -24,6 +27,7 @@ export interface CloudRunFlags {
   dryRun?: boolean;
   acceptLifetimeRisk?: boolean;
   acceptStorageCharges?: boolean;
+  acceptFileUpload?: boolean;
   output?: string;
   runtime?: string;
   param: Record<string, string>;
@@ -42,6 +46,18 @@ function usage(code: string, message: string, remediation: string): MoldeskError
   return new MoldeskError({ code, message, remediation });
 }
 
+const ACCEPT_FLAG: Record<CloudAcknowledgment, string> = {
+  "lifetime-risk": "--accept-lifetime-risk",
+  "storage-charges": "--accept-storage-charges",
+  "upload-files": "--accept-file-upload",
+};
+
+function acceptedByFlag(id: CloudAcknowledgment, flags: Partial<CloudRunFlags>): boolean {
+  if (id === "lifetime-risk") return flags.acceptLifetimeRisk === true;
+  if (id === "storage-charges") return flags.acceptStorageCharges === true;
+  return flags.acceptFileUpload === true;
+}
+
 /** Printed first and again at the prompt: there is no independent shutdown service. */
 export function formatWarnings(quote: CloudQuote): string {
   const bar = "!".repeat(72);
@@ -55,8 +71,12 @@ export function formatQuote(quote: CloudQuote): string {
     "",
     `Cloud quote (${quote.provider}, prices as of ${quote.retrievedAt})`,
     `  Model:        ${quote.model} ${quote.modelVersion}`,
-    `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h`,
+    `  GPU:          ${quote.gpu.name} (${quote.gpu.memoryGb} GB) in ${quote.datacenterId} at ${money(quote.gpu.priceUsdPerHour)}/h (first choice)`,
+    quote.gpuRange.pinnedGpuId
+      ? `  GPU range:    only ${quote.gpuRange.pinnedGpuId} (pinned with --gpu); no substitute is used`
+      : `  GPU range:    if unavailable, any available ${quote.gpuRange.allowedGpuIds ? "validated " : ""}GPU >= ${quote.gpuRange.minVramGb} GB up to ${money(quote.gpuRange.maxUsdPerHour)}/h${quote.gpuRange.lockDatacenter ? ` in ${quote.datacenterId}` : ""}: ${quote.gpuRange.candidates.map((c) => `${c.name} ${money(c.priceUsdPerHour)}`).join(", ")}`,
     ...(quote.cpu ? [`  Prep CPU:     ${quote.cpu.id} x${quote.cpu.vcpuCount} at ${money(quote.cpu.priceUsdPerHour)}/h (asset preparation only)`] : []),
+    `  Images:       gpu ${quote.images.gpu}${quote.cpu ? `; cpu ${quote.images.cpu}` : ""}`,
     `  Cache policy: ${quote.cachePolicy}`,
     `  Limits:       lifetime ${quote.maxLifetimeSeconds}s, budget ${money(quote.maxBudgetUsd)}`,
     `  Compute:      worst case ${money(quote.cost.worstCaseComputeUsd)} (hourly rate x lifetime limit; a ceiling for this estimate, not a provider-enforced spend cap)`,
@@ -68,6 +88,7 @@ export function formatQuote(quote: CloudQuote): string {
     ...(quote.budgetCoverage.unknown.length > 0 ? [`    unknown:    ${quote.budgetCoverage.unknown.join("; ")}`] : []),
     `  Timing:       no measured estimate available`,
     `  Upload:       ${quote.upload.files} file(s), ${quote.upload.bytes} bytes`,
+    ...quote.upload.items.map((item) => `    ${item.role === "job" ? "input" : item.role}: ${item.localPath ?? item.fileName} (${item.sizeBytes} bytes, sha256 ${item.sha256.slice(0, 12)}...)`),
     ...quote.disclosures.map((line) => `  - ${line}`),
   ];
   return lines.join("\n");
@@ -76,6 +97,12 @@ export function formatQuote(quote: CloudQuote): string {
 function parseBudget(raw: string | undefined): number {
   const value = Number(raw);
   if (raw === undefined || !Number.isFinite(value) || value <= 0) throw usage("CLOUD_BUDGET_REQUIRED", "A positive --max-budget (USD) is required.", "Pass --max-budget <usd>.");
+  return value;
+}
+
+function parseGpuPrice(raw: string): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) throw usage("CLOUD_GPU_PRICE_RANGE_INVALID", "--max-gpu-price must be a positive USD amount per hour.", "Pass --max-gpu-price <usd-per-hour>.");
   return value;
 }
 
@@ -91,12 +118,15 @@ export function assertNoCloudFlagsForLocal(flags: Partial<CloudRunFlags>): void 
     [
       ["--cache-policy", flags.cachePolicy],
       ["--gpu", flags.gpu],
+      ["--max-gpu-price", flags.maxGpuPrice],
+      ["--gpu-image", flags.gpuImage],
+      ["--cpu-image", flags.cpuImage],
       ["--datacenter", flags.datacenter],
       ["--max-budget", flags.maxBudget],
       ["--max-lifetime", flags.maxLifetime],
     ] as const
   ).filter(([, value]) => value !== undefined);
-  if (flags.yes || flags.dryRun || flags.acceptLifetimeRisk || flags.acceptStorageCharges) used.push(["--yes/--dry-run/--accept-*", "set"]);
+  if (flags.yes || flags.dryRun || flags.acceptLifetimeRisk || flags.acceptStorageCharges || flags.acceptFileUpload) used.push(["--yes/--dry-run/--accept-*", "set"]);
   if (used.length > 0) {
     throw usage("CLOUD_OPTIONS_WITHOUT_CLOUD", `${used.map(([name]) => name).join(", ")} only apply with --compute runpod.`, "Add --compute runpod, or remove those options.");
   }
@@ -115,6 +145,9 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
       cachePolicy,
       ...(flags.gpu ? { gpuId: flags.gpu } : {}),
       ...(flags.datacenter ? { datacenterId: flags.datacenter } : {}),
+      ...(flags.maxGpuPrice !== undefined ? { maxGpuUsdPerHour: parseGpuPrice(flags.maxGpuPrice) } : {}),
+      ...(flags.gpuImage ? { gpuImage: flags.gpuImage } : {}),
+      ...(flags.cpuImage ? { cpuImage: flags.cpuImage } : {}),
       maxBudgetUsd: parseBudget(flags.maxBudget),
       maxLifetimeSeconds: parseLifetime(flags.maxLifetime),
     };
@@ -136,7 +169,7 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
     // Each warning needs its own explicit acknowledgment: a flag, or an answered prompt. `--yes` alone never counts.
     const acknowledged: CloudAcknowledgment[] = [];
     for (const warning of plan.quote.warnings) {
-      const flagged = warning.id === "lifetime-risk" ? flags.acceptLifetimeRisk === true : flags.acceptStorageCharges === true;
+      const flagged = acceptedByFlag(warning.id, flags);
       if (flagged) {
         acknowledged.push(warning.id);
         continue;
@@ -145,11 +178,11 @@ export async function runCloudCommand(model: string, input: string, flags: Cloud
         throw usage(
           "CLOUD_ACKNOWLEDGMENT_REQUIRED",
           `You must acknowledge: ${warning.text}`,
-          `Re-run with ${warning.id === "lifetime-risk" ? "--accept-lifetime-risk" : "--accept-storage-charges"} (and --yes) to accept this risk without a terminal.`,
+          `Re-run with ${ACCEPT_FLAG[warning.id]} (and --yes) to accept without a terminal.`,
         );
       }
       console.error(`\n${warning.text}`);
-      if (!(await ask("Do you understand and accept this risk?"))) {
+      if (!(await ask(warning.id === "upload-files" ? "Copy these files to Runpod?" : "Do you understand and accept this risk?"))) {
         if (flags.json) out({ status: "declined", quoteId: plan.quote.id, reason: `warning not acknowledged: ${warning.id}` });
         else console.error("Not acknowledged. Nothing was uploaded or provisioned.");
         process.exitCode = 2;

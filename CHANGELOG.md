@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- OpenDDE is now advertised on Linux x64 with NVIDIA CUDA. Verified on Runpod Pods (A40 and RTX 3090)
+  with `examples/opendde/tiny.json`; a local Linux install, the no-GPU refusal path and ligand-file jobs
+  are not yet verified.
+- Cloud OpenDDE runs no longer fail when collecting results: the `.pdb` copy of each structure needs a
+  local OpenDDE install, so it is skipped and recorded in `moldesk-pdb-export-errors.json` (the mmCIF is
+  the result).
 - DiffDock-L and BindCraft2 are now `beta`, so `moldesk install diffdock` and
   `moldesk install bindcraft2` work on Linux/NVIDIA. Verified live on an A40
   (DiffDock-L) and on RTX 3090 and A40 (BindCraft2). Cancellation behaviour and
@@ -18,11 +24,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Runpod cloud execution code (`moldesk run --compute runpod`, `moldesk cloud ...`), **disabled
-  and not usable yet**: no model declares a cloud block and no worker bundle is published, pending
-  live validation. When enabled, shutdown is best effort and every run requires explicit
-  acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Adds
-  `better-sqlite3` and `@napi-rs/keyring` as runtime dependencies. See `docs/cloud-execution.md`.
+- Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2,
+  ProteinMPNN, DiffDock-L and OpenDDE. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
+  but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and
+  RTX A5000 Pods, including the in-Pod watchdog. Shutdown is still best effort and every run requires
+  explicit acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Other
+  models are not enabled for cloud execution yet. Adds `better-sqlite3` and `@napi-rs/keyring` as
+  runtime dependencies. See `docs/cloud-execution.md`.
+- Cloud GPU choice: a price range with fallback (`--max-gpu-price`) instead of waiting on one GPU,
+  digest-pinned stock Runpod images with `--gpu-image` / `--cpu-image` overrides, and an optional
+  `cloud.gpuAllowList` in a model's manifest so a fallback never lands on a GPU generation the
+  model's pinned framework cannot run (ProteinMPNN's torch 2.2.1 has no kernels for Blackwell GPUs).
+- Cloud runs can upload the files a job file references (a protein structure, a ligand file, binder
+  targets). The quote lists each file with its path and checksum and the run needs a separate
+  `upload-files` acknowledgment (a prompt answer, or `--accept-file-upload` without a terminal);
+  files must sit inside the job file's folder, with at most 16 extra files and 4 GiB in total. No
+  model uses this today: DiffDock-L (its protein structure). BindCraft2 still needs a cloud block
+  and a live run, and OpenDDE jobs that reference ligand files have not been run.
+- Cloud runs record the peak GPU memory and disk the worker observed in `run.json`
+  (`compute.usage`), so a model's cloud sizes can be set from measured runs.
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a
   fullscreen, always-dark Mol* 3D view, a floating toolbox, and a colored sequence
   strip in blocks of ten, no network access.

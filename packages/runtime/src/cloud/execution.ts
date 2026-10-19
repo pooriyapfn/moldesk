@@ -27,8 +27,16 @@ export interface ApprovedJob {
   modelVersion: string;
   manifestDigest: string;
   cachePolicy: CachePolicy;
+  /** The quote's preferred GPU and datacenter; the first choice, not a promise (capacity is never reserved). */
   gpuId: string;
   datacenterId: string;
+  /**
+   * Capacity-tolerant selection. At provisioning time the backend re-reads the catalog and may use any
+   * currently available GPU within these limits, cheapest first, instead of waiting on one model.
+   */
+  gpuPolicy: GpuPolicy;
+  /** Asset-preparation machine limits for persistent runs: any available CPU type up to this hourly rate. */
+  cpuPolicy?: { maxUsdPerHour: number };
   /** Digest-pinned worker images from the manifest's `cloud` block. */
   images: { gpu: string; cpu: string };
   containerDiskGb: number;
@@ -46,12 +54,27 @@ export interface ApprovedJob {
   reuseVolumeId?: string;
 }
 
+export interface GpuPolicy {
+  minVramGb: number;
+  /** Highest GPU hourly rate the approved quote covers. */
+  maxUsdPerHour: number;
+  /** Set only when the user asked for one specific GPU; nothing else is substituted. */
+  pinnedGpuId?: string;
+  /** The manifest's validated GPU ids; when set, no other GPU is tried, whatever the price range allows. */
+  allowedGpuIds?: string[];
+  /** True when the Pod must stay in `datacenterId` (a retained volume, a pinned datacenter, or a volume just created). */
+  lockDatacenter: boolean;
+}
+
 /** What a backend returns once the worker is executing; JSON-serializable. */
 export interface JobHandle {
   version: typeof EXECUTION_CONTRACT_VERSION;
   runId: string;
   podId: string;
   volumeId?: string;
+  /** The GPU and datacenter actually obtained, which can differ from the quote's first choice. */
+  gpuId?: string;
+  datacenterId?: string;
   /** Verified HTTPS worker endpoint. The per-job token is held in the credential store, not here. */
   endpoint: string;
 }
@@ -68,6 +91,17 @@ export type JobStage =
 
 export type JobState = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
+/** Peaks the worker observed while preparing and running one job; used to size a manifest's `cloud` block. */
+export interface RemoteResourceUsage {
+  /** Highest GPU memory in use, MiB. Absent when no GPU could be read. */
+  peakVramMb?: number;
+  /**
+   * Used bytes of each distinct filesystem the job touched. These include the image's own files, so the
+   * job's footprint is `peakUsedBytes - startUsedBytes`.
+   */
+  disk: Array<{ path: string; totalBytes: number; startUsedBytes: number; peakUsedBytes: number }>;
+}
+
 export interface RemoteRuntimeReport {
   pythonVersion?: string;
   /** `uv pip freeze` output lines. */
@@ -77,6 +111,7 @@ export interface RemoteRuntimeReport {
   /** The command the worker ran; `cwd` is a POSIX path on the worker. */
   command?: { executable: string; args: string[]; cwd: string };
   installationFingerprint?: string;
+  usage?: RemoteResourceUsage;
   /** Persistent-cache details reported by `prepare-assets` jobs. */
   cache?: { checksumManifestSha256: string; sizeBytes: number; fileCount: number; reused: boolean };
 }
@@ -123,6 +158,8 @@ export interface ResourceLedger {
 export interface CacheLedger {
   /** A cache the journal believes is READY for this job's key, if any. */
   lookup(): { volumeId: string; datacenterId: string } | undefined;
+  /** A volume left behind by an earlier failed preparation of this key, to rebuild into rather than create another. */
+  reusable?(): { volumeId: string; datacenterId: string } | undefined;
   /** Record the volume and a PREPARING cache row. */
   begin(volume: { volumeId: string; datacenterId: string }): void;
   verifying(): void;
@@ -159,7 +196,7 @@ export interface ExecutionBackend {
 export type WorkerMode = "execute" | "prepare-assets";
 
 /** Job description sent to the worker: the approved job without client-local paths. */
-export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId"> & {
+export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId" | "gpuPolicy" | "cpuPolicy"> & {
   inputs: Array<Omit<JobInputFile, "sourcePath">>;
   /** `prepare-assets` runs only asset preparation (CPU Pod); `execute` runs the model. */
   mode: WorkerMode;
@@ -170,7 +207,7 @@ export type WireJob = Omit<ApprovedJob, "inputs" | "reuseVolumeId"> & {
 };
 
 export function toWireJob(job: ApprovedJob, extra: { mode?: WorkerMode; volumeMount?: string; reclaimStaleLock?: boolean } = {}): WireJob {
-  const { inputs, reuseVolumeId: _reuse, ...rest } = job;
+  const { inputs, reuseVolumeId: _reuse, gpuPolicy: _policy, cpuPolicy: _cpuPolicy, ...rest } = job;
   return {
     ...rest,
     inputs: inputs.map(({ sourcePath: _sourcePath, ...file }) => file),
