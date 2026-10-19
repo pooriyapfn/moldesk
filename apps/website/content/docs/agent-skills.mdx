@@ -1,0 +1,70 @@
+import { CopyCommand } from "@/components/copy-command";
+
+export const metadata = {
+  title: "Agent skills for Claude Code and Codex",
+  description:
+    "Install the MoleculeDesk skill in Claude Code or Codex so your coding agent can install moldesk, check model compatibility, prepare inputs, and run molecular AI models.",
+};
+
+# Agent skills for Claude Code and Codex
+
+The MoleculeDesk skill teaches a coding agent how to use the `moldesk` CLI. Ask in plain language, for example "predict the structure of this sequence" or "which models can my Mac run?", and the agent:
+
+- installs MoleculeDesk if it's missing (after asking you);
+- checks your hardware with `moldesk doctor` and `moldesk list` before choosing a model;
+- prepares input files from your data or the shipped examples, and runs the model;
+- summarizes outputs, confidence scores, and where the 3D report is;
+- follows workflows such as design-then-fold (ProteinMPNN → Boltz-2) and ligand docking.
+
+The skill is written to keep you in control. The agent asks before installing models (some are over 15 GB), before sending sequences to a public MSA server, and before anything that costs money. It never asks for or handles cloud API keys.
+
+## Claude Code
+
+<CopyCommand command="claude plugin install moldesk --marketplace pooriyapfn/moldesk" />
+
+On Claude Code older than 2.1.275, use two steps instead:
+
+```bash
+claude plugin marketplace add pooriyapfn/moldesk
+claude plugin install moldesk@moldesk
+```
+
+Start a new session. Claude uses the skill automatically when a task matches; you can also call it directly with `/moldesk:moldesk`. Inside a session, `/plugin install moldesk --marketplace pooriyapfn/moldesk` does the same.
+
+Update later with `claude plugin marketplace update moldesk`, then `claude plugin update moldesk@moldesk`.
+
+## Codex
+
+<CopyCommand command="codex plugin marketplace add pooriyapfn/moldesk" />
+
+Then open Codex, enter `/plugins`, choose the MoleculeDesk marketplace, and install **moldesk**. The skill is available in the next session. Mention it explicitly with `$moldesk`, or just describe the task.
+
+## Without a plugin manager
+
+The skill is a plain folder with a `SKILL.md` file, so you can copy it directly. For Codex:
+
+<CopyCommand command="mkdir -p ~/.agents/skills && curl -fsSL https://codeload.github.com/pooriyapfn/moldesk/tar.gz/main | tar -xz -C ~/.agents/skills --strip-components=4 moldesk-main/plugins/moldesk/skills/moldesk" />
+
+For Claude Code, use the same command with `~/.claude/skills` instead of `~/.agents/skills`. Run it again to update.
+
+The source is in the repository under [`plugins/moldesk/skills/moldesk`](https://github.com/pooriyapfn/moldesk/tree/main/plugins/moldesk/skills/moldesk).
+
+## What the skill covers
+
+| Topic | What the agent learns |
+| --- | --- |
+| Installation | The one-command installer, `MOLDESK_HOME` for GPU servers, updating |
+| CLI | Every command and flag, `--json` output, exit codes |
+| Compatibility | Reading `moldesk doctor` and `moldesk list`, which models run on Apple Silicon and which need Linux + NVIDIA |
+| Models | Input formats, parameters, and example inputs for Boltz-2, OpenDDE, DiffDock-L, BindCraft2, ProteinMPNN, and LigandMPNN |
+| Workflows | Smoke test, structure prediction, complex and affinity, docking, design-then-fold, binder campaigns, viewing structures |
+| Cloud | Runpod quotes, explicit cost approval, and cleanup. Cloud execution is [still disabled](/docs/guides/runpod-cloud-execution), and the skill says so |
+
+## Safety rules in the skill
+
+- Ask before installing MoleculeDesk or a model, and show download and disk sizes.
+- Ask before sending sequences off the machine (MSA server options, cloud uploads).
+- For cloud runs: quote with `--dry-run` first, show the cost and the shutdown warning, and only continue after an explicit yes. Never pass the risk acknowledgment flags on its own.
+- Never ask for, type, or store API keys. You run `moldesk cloud connect runpod` yourself.
+- Report predictions as predictions, with confidence scores and the need for experimental validation.
+- Respect model licenses, such as BindCraft2's hosting restriction.

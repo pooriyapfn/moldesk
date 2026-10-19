@@ -65,6 +65,20 @@ Set these before `sh` as shown above:
 
 You can read the script before running it: [moleculedesk.com/install.sh](/install.sh).
 
+## Claude Code and Codex
+
+Prefer to work through a coding agent? Install the MoleculeDesk skill, then ask the agent to set things up. It installs the CLI and models after asking you.
+
+```bash
+# Claude Code
+claude plugin install moldesk --marketplace pooriyapfn/moldesk
+
+# Codex: add the marketplace, then open /plugins in Codex and install moldesk
+codex plugin marketplace add pooriyapfn/moldesk
+```
+
+See [Agent skills](/docs/agent-skills) for what the skill does and how to install it without a plugin manager.
+
 ## Docker
 
 ```bash
@@ -105,4 +119,5 @@ export MOLDESK_HOME=/path/to/moldesk-data
 ## Next steps
 
 - [CLI usage](/docs/cli-usage) — the full day-to-day workflow.
+- [Agent skills](/docs/agent-skills) — use MoleculeDesk from Claude Code or Codex.
 - [Model compatibility & registry](/docs/model-compatibility) — what "beta" and "planned" mean for a model.

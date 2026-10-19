@@ -1,0 +1,20 @@
+{
+  "name": "moldesk",
+  "interface": {
+    "displayName": "MoleculeDesk"
+  },
+  "plugins": [
+    {
+      "name": "moldesk",
+      "source": {
+        "source": "local",
+        "path": "./plugins/moldesk"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

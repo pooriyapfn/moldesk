@@ -20,6 +20,19 @@ The installer works on macOS and Linux with nothing installed beforehand: no Nod
 
 Instead of manually setting up Python environments, CUDA dependencies, containers, model weights, and model-specific commands, MoleculeDesk provides a consistent interface across supported models.
 
+## Use it from Claude Code or Codex
+
+The MoleculeDesk skill lets a coding agent install the CLI, check compatibility, prepare inputs, and run models for you. It asks before large downloads and before anything that costs money.
+
+```bash
+# Claude Code
+claude plugin install moldesk --marketplace pooriyapfn/moldesk
+
+# Codex: add the marketplace, then open /plugins in Codex and install moldesk
+codex plugin marketplace add pooriyapfn/moldesk
+```
+ See [plugins/moldesk](plugins/moldesk) and the [agent skills guide](https://moleculedesk.com/docs/agent-skills).
+
 ## Status
 
 MoleculeDesk is currently in early development.

@@ -1,0 +1,6 @@
+{
+  "name": "moldesk",
+  "version": "0.1.0",
+  "description": "Install, check, and run molecular AI models (Boltz-2, OpenDDE, DiffDock-L, BindCraft2, ProteinMPNN, LigandMPNN) with the MoleculeDesk CLI.",
+  "skills": "./skills/"
+}
