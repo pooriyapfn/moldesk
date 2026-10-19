@@ -33,7 +33,7 @@ Which models are enabled, and why the others are not:
 | LigandMPNN | Not enabled: its live run could not download the weights from the upstream host |
 | DiffDock-L | Supported (`ephemeral`), on the Ampere GPUs in its allow-list. The protein file is uploaded, so the run needs `--accept-file-upload` (see below) |
 | BindCraft2 | Not enabled yet: its job references extra files, which can now be uploaded (see below), but it has no cloud block or live run |
-| OpenDDE | Not enabled: its Linux/CUDA path has not been checked live |
+| OpenDDE | Supported (`ephemeral`), on the Ampere, Ada and Hopper GPUs in its allow-list with at least 24 GB. No `.pdb` copy of the structure is made in cloud runs (the mmCIF is returned). Jobs that reference ligand files have not been run |
 
 ## Cache policies
 

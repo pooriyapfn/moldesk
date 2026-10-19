@@ -44,14 +44,12 @@ yet intended for production pipelines." MoleculeDesk therefore keeps it at
 | Platform | Runtime entry | Status in this manifest |
 | --- | --- | --- |
 | `darwin-arm64` (Apple Silicon) | native PyPI torch 2.7.1 with MPS, no CUDA/cuEquivariance extra, never the NVIDIA Docker image | **Advertised** — live gate below |
-| `linux-x64` + NVIDIA | upstream's `--torch-backend cu126 "opendde[gpu]"` install (Triton + cuEquivariance 0.10.0), CUDA probe on verify | Implemented and unit-tested, **not advertised** — no NVIDIA hardware was available to run the CUDA gate |
+| `linux-x64` + NVIDIA | upstream's `--torch-backend cu126 "opendde[gpu]"` install (Triton + cuEquivariance 0.10.0), CUDA probe on verify | **Advertised** — ran on Runpod Pods (A40, RTX 3090); a local Linux install, the no-GPU refusal and ligand-file jobs were not run, see below |
 | CPU | `--param device=cpu` on either install | Allowed explicitly, documented as slow; never selected implicitly |
 
-The Linux entry is present in `runtimes:` but `linux-x64` is deliberately
-absent from `hardware.platforms`, so the compatibility check rejects Linux
-hosts before that entry can be selected. To enable it, run the CUDA gate
-below on a real NVIDIA host, record the evidence here, then add `linux-x64` to
-`hardware.platforms`.
+`linux-x64` was added to `hardware.platforms` on 2026-10-19 after the Runpod
+runs recorded under "Linux x64 + NVIDIA CUDA" below. Until then the
+compatibility check rejected Linux hosts before the Linux entry could be selected.
 
 ### Reusable installer field: `torchBackend`
 
@@ -214,7 +212,7 @@ records), and each confidence summary to parse as a JSON object.
   less accurate than a full run — fine for smoke tests, not for science.
 - No template search, no RNA-MSA search, no ABAG checkpoint (see above).
 - Multi-GPU Fold-CP (`torchrun`) is not exposed.
-- Linux/CUDA not live-verified, therefore not advertised.
+- Linux/CUDA was verified only on Runpod Pods with a 9-residue input: a local Linux install, the no-GPU refusal and jobs that reference ligand files (companion upload) were not run.
 
 ## Live verification
 
@@ -291,10 +289,22 @@ Known MPS notes: upstream always uses the PyTorch triangle kernels on MPS
 (cuEquivariance is CUDA-only), and this run recorded no per-operator CPU
 fallback.
 
-### Linux x64 + NVIDIA CUDA — NOT run
+### Linux x64 + NVIDIA CUDA — passed on Runpod Pods, 2026-10-19
 
-No NVIDIA hardware was available. Exact gate to run before adding `linux-x64`
-to `hardware.platforms`:
+Run through `moldesk run opendde examples/opendde/tiny.json --compute runpod --cache-policy ephemeral`,
+which installs the same `linux-x64` runtime entry on a stock `runpod/pytorch` Pod (digest-pinned) and runs the
+adapter's command there. Development worker bundles built from this manifest were used (worker-9 for the A40 run, worker-10 for the RTX 3090 run).
+
+| Pod GPU (datacenter) | Result | Evidence |
+| --- | --- | --- |
+| NVIDIA A40 (CA-MTL-1) | Inference succeeded in 16 s, then the local result collection failed (fixed afterwards) | `verifyInstallation` passed (CUDA probe, pinned versions, CLI flags); upstream logged triangle kernels `cuequivariance`; peak GPU memory 5,729 MiB |
+| NVIDIA GeForce RTX 3090 (EU-CZ-1) | **Succeeded**, 171 s end to end, exit 0, 3D report built, cleanup confirmed | mmCIF, summary confidence and atom confidence files returned; peak GPU memory 5,724 MiB; disk growth 15.76 GB |
+
+The input was the 9-residue `tiny.json`, so GPU memory is a floor. The mmCIF-to-PDB copy is skipped in cloud runs
+(no local runtime); the skip is recorded in `moldesk-pdb-export-errors.json`.
+
+Not run: `moldesk install opendde` on a Linux host (the Pod install used the same plan, not the local CLI
+path), the no-GPU refusal check below, and a job that references ligand files. Gate for a Linux NVIDIA host:
 
 ```bash
 nvidia-smi

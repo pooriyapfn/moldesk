@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- OpenDDE is now advertised on Linux x64 with NVIDIA CUDA. Verified on Runpod Pods (A40 and RTX 3090)
+  with `examples/opendde/tiny.json`; a local Linux install, the no-GPU refusal path and ligand-file jobs
+  are not yet verified.
+- Cloud OpenDDE runs no longer fail when collecting results: the `.pdb` copy of each structure needs a
+  local OpenDDE install, so it is skipped and recorded in `moldesk-pdb-export-errors.json` (the mmCIF is
+  the result).
 - DiffDock-L and BindCraft2 are now `beta`, so `moldesk install diffdock` and
   `moldesk install bindcraft2` work on Linux/NVIDIA. Verified live on an A40
   (DiffDock-L) and on RTX 3090 and A40 (BindCraft2). Cancellation behaviour and
@@ -19,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2,
-  ProteinMPNN and DiffDock-L. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
+  ProteinMPNN, DiffDock-L and OpenDDE. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
   but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and
   RTX A5000 Pods, including the in-Pod watchdog. Shutdown is still best effort and every run requires
   explicit acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Other
@@ -33,8 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   targets). The quote lists each file with its path and checksum and the run needs a separate
   `upload-files` acknowledgment (a prompt answer, or `--accept-file-upload` without a terminal);
   files must sit inside the job file's folder, with at most 16 extra files and 4 GiB in total. No
-  model uses this today: DiffDock-L (its protein structure). BindCraft2 and OpenDDE still need a
-  cloud block and a live run.
+  model uses this today: DiffDock-L (its protein structure). BindCraft2 still needs a cloud block
+  and a live run, and OpenDDE jobs that reference ligand files have not been run.
 - Cloud runs record the peak GPU memory and disk the worker observed in `run.json`
   (`compute.usage`), so a model's cloud sizes can be set from measured runs.
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a

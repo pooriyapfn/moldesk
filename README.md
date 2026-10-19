@@ -31,7 +31,7 @@ Available:
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
 * beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
-* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS; the Linux x64/CUDA path ran successfully on an NVIDIA RTX 3090 in testing but is not yet advertised in the registry
+* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
 * `moldesk list --installed`, reinstall, and uninstall state management
 * offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
 * `moldesk --version`
@@ -140,7 +140,7 @@ Model support is being added incrementally.
 | LigandMPNN | Beta |
 | DiffDock-L | Beta; Linux/NVIDIA CUDA verified on an A40 |
 | BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
-| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified |
+| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
 | ColabFold | Planned |
 | AlphaFold | Planned |
 | Chai | Planned |

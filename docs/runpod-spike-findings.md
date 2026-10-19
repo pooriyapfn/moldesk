@@ -3,13 +3,13 @@ Format: evidence report with a direct-answer summary, question-led sections and 
 GEO: generative engine optimization. Uses explicit product, GPU and datacenter names, units, a
 results table, source links and stated limits. No ranking guarantees.
 Suggested slug: runpod-molecular-ai-validation-findings
-Meta description: What running Boltz-2, ProteinMPNN and DiffDock-L on Runpod GPUs showed in October 2026: timings, disk and GPU memory measured, a Blackwell GPU that crashed, Pod billing after exit, and a watchdog that worked.
+Meta description: What running Boltz-2, ProteinMPNN, DiffDock-L and OpenDDE on Runpod GPUs showed in October 2026: timings, disk and GPU memory measured, a Blackwell GPU that crashed, Pod billing after exit, and a watchdog that worked.
 Last reviewed: 2026-10-19
 -->
 
-# Runpod for molecular AI: provider findings and live validation (Boltz-2, ProteinMPNN, DiffDock-L)
+# Runpod for molecular AI: provider findings and live validation (Boltz-2, ProteinMPNN, DiffDock-L, OpenDDE)
 
-**Short answer.** MoleculeDesk ran Boltz-2, ProteinMPNN and DiffDock-L on Runpod GPU Pods between 2026-10-14 and 2026-10-19 and returned verified results to a local machine. A Boltz-2 run took 235 s on an NVIDIA GeForce RTX 3090. ProteinMPNN took 63 to 95 s per run on an NVIDIA A40 and an NVIDIA RTX A5000, grew the Pod's disk by 10.7 GB and used under 400 MiB of GPU memory on a 46-residue protein. DiffDock-L took 515 s on an NVIDIA A40, grew the disk by 12.5 GB and peaked at 3.7 GiB of GPU memory on one small complex. Three things matter most for anyone building on Runpod: a Pod whose container exits keeps billing, a newer GPU generation can pass a memory check and still crash an older PyTorch build, and Runpod's HTTPS proxy sometimes returns a transient 404 right after a Pod reports healthy.
+**Short answer.** MoleculeDesk ran Boltz-2, ProteinMPNN, DiffDock-L and OpenDDE on Runpod GPU Pods between 2026-10-14 and 2026-10-19 and returned verified results to a local machine. A Boltz-2 run took 235 s on an NVIDIA GeForce RTX 3090. ProteinMPNN took 63 to 95 s per run on an NVIDIA A40 and an NVIDIA RTX A5000, grew the Pod's disk by 10.7 GB and used under 400 MiB of GPU memory on a 46-residue protein. DiffDock-L took 515 s on an NVIDIA A40, grew the disk by 12.5 GB and peaked at 3.7 GiB of GPU memory on one small complex. OpenDDE took 171 s on an NVIDIA GeForce RTX 3090 and grew the disk by 15.8 GB on a 9-residue input. Three things matter most for anyone building on Runpod: a Pod whose container exits keeps billing, a newer GPU generation can pass a memory check and still crash an older PyTorch build, and Runpod's HTTPS proxy sometimes returns a transient 404 right after a Pod reports healthy.
 
 These are single-run observations on small inputs, not benchmarks. The first provider spike (2026-10-13) is kept below, unchanged, with dated updates where later runs answered its open questions. See also the [cloud execution documentation](./cloud-execution.md) and the [implementation plan](./runpod-execution-implementation-plan.md).
 
@@ -23,6 +23,7 @@ These are single-run observations on small inputs, not benchmarks. The first pro
 | How much disk does ProteinMPNN need on Runpod? | **10.7 GB** of growth (PyTorch 2.2.1 and CUDA wheels); about half of a 20 GB container disk, which was not itself tested as a limit | 2026-10-15 |
 | How much GPU memory does ProteinMPNN use? | **379 MiB** (A40) and **315 MiB** (RTX A5000) peak, on a 46-residue protein | 2026-10-15 |
 | How long and how much disk does DiffDock-L need on Runpod? | **515 s** on an A40 (CA-MTL-1), **12.5 GB** of disk growth, **3,719 MiB** peak GPU memory on one small complex; its protein file is uploaded with the job | 2026-10-19 |
+| How long and how much disk does OpenDDE need on Runpod? | **171 s** on an RTX 3090 (EU-CZ-1), **15.76 GB** of disk growth, **5,724 MiB** peak GPU memory on a 9-residue input | 2026-10-19 |
 | Does a CPU-prepared network volume remount on a GPU Pod? | **Yes**, end to end, in the persistent Boltz-2 runs | 2026-10-14/15 |
 | Is `persistent` caching faster than `ephemeral`? | **Not for one run.** The cold Boltz-2 run took about 43 min on a standard volume | 2026-10-14 |
 | Do all GPUs with enough memory work? | **No.** An RTX PRO 4000 Blackwell failed with "no kernel image is available" under PyTorch 2.2.1 | 2026-10-15 |
@@ -67,6 +68,17 @@ Measured the same way as above (`compute.usage` in `run.json`), on the repositor
 | DiffDock-L, automatic choice | NVIDIA A40 (CA-MTL-1) | 515 s | 3,719 MiB | 12.50 GB |
 
 The 515 s include Pod start, downloading the weights, installing the runtime (which builds DiffDock-L's lookup tables), 10 poses of inference, download and cleanup. Ten ranked poses and a summary came back. Disk growth is dominated by the runtime and weights, not the input. MoleculeDesk's manifest sets a 25 GB container disk (about twice the measured growth, not itself tested as a limit), keeps a 16 GB GPU memory floor (an earlier local run on an A40 peaked at 8.3 GiB), and lists only Ampere GPUs: its PyTorch 1.13.1 (CUDA 11.7) build has no native kernels for Hopper or Blackwell. Only the A40 has been run live.
+
+## How much disk and GPU memory does OpenDDE need on Runpod?
+
+Same measurement as above, on the 9-residue `tiny.json` (one protein chain, one seed), with no MSA. The Linux runtime (PyTorch 2.7.1 with CUDA 12.6, Triton and cuEquivariance) was installed on the Pod; upstream logged that it resolved both triangle kernels to `cuequivariance`.
+
+| Run | GPU (datacenter) | Total time | Peak GPU memory | Disk growth | Result |
+|---|---|---|---|---|---|
+| OpenDDE, automatic choice | NVIDIA A40 (CA-MTL-1) | about 3.5 min | 5,729 MiB | 15.76 GB | Inference succeeded in 16 s; MoleculeDesk then reported a failure |
+| OpenDDE, automatic choice | NVIDIA GeForce RTX 3090 (EU-CZ-1) | 171 s | 5,724 MiB | 15.76 GB | Succeeded; 3D report built |
+
+The first run exposed a MoleculeDesk bug, not a Runpod problem: after the files were downloaded, the adapter tried to make a `.pdb` copy of each structure with a local OpenDDE install that a cloud run does not have, and the run was marked failed with `The argument 'file' cannot be empty`. Cloud runs now skip that copy and record it. MoleculeDesk's manifest sets a 32 GB container disk (about twice the measured growth, not itself tested as a limit), a 24 GB GPU memory floor (the 9-residue input peaks far below real inputs) and lists the same Ampere, Ada and Hopper GPUs as ProteinMPNN, because PyTorch 2.7.1 with CUDA 12.6 has no Blackwell kernels. Only the A40 and RTX 3090 have been run.
 
 ## Which GPUs can run ProteinMPNN on Runpod?
 
@@ -115,9 +127,10 @@ Observed and not fixed: the worker's `[assets] Downloading` progress writes abou
 - Real stall and timeout behavior on large proxy transfers (unit-tested only).
 - A billing audit after terminate. Pods and volumes were confirmed absent through the API after each run, but actual charges were not reconciled, and the spend figure (about $1.5 before the ProteinMPNN and LigandMPNN runs, plus a few cents each, out of a $10 cap) is an estimate.
 - Real container-disk and network-volume rates; Runpod's catalog publishes none.
-- Larger inputs: ProteinMPNN sizes come from a 46-residue protein and DiffDock-L's from one small complex, so GPU memory is a floor for both.
+- Larger inputs: ProteinMPNN sizes come from a 46-residue protein, DiffDock-L's from one small complex and OpenDDE's from a 9-residue chain, so GPU memory is a floor for all three.
 - The local 3D report was not created for the cloud DiffDock-L run (`VISUALIZATION_RECEPTOR_MISSING`: the staged receptor was not available); the poses themselves were downloaded.
-- DiffDock-L on any GPU other than the A40.
+- DiffDock-L on any GPU other than the A40, and OpenDDE on any GPU other than the A40 and RTX 3090.
+- OpenDDE jobs that reference ligand files (the companion upload path), and the OpenDDE no-GPU refusal path.
 - The worker bundle attached to a GitHub Release; development bundles hosted by the maintainer were used and verified by SHA-256.
 
 ## How these runs were made

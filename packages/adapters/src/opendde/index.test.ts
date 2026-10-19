@@ -609,7 +609,9 @@ describe("opendde manifest consistency", () => {
 
   it("stays beta and advertises only live-verified platforms", () => {
     expect(manifest.status).toBe("beta");
-    expect(manifest.hardware.platforms).toEqual(["darwin-arm64"]);
+    // linux-x64 was added after the Runpod CUDA runs recorded in models/opendde/README.md.
+    expect(manifest.hardware.platforms).toEqual(["darwin-arm64", "linux-x64"]);
+    expect(manifest.adapterVerification.platforms).toEqual(["darwin-arm64", "linux-x64"]);
   });
 
   it("pins opendde 1.1.1 and torch 2.7.1 by artifact hash on every runtime, CUDA via the closed torchBackend field", () => {

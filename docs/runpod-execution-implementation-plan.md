@@ -282,7 +282,7 @@ Still open (not claimed as done):
    warm, experimental because it was slower) and ProteinMPNN (`ephemeral`, A40 and RTX A5000) ran on real
    compute with real image digests and measured disk and timings. Still open: the worker bundle attached to a
    GitHub Release (development bundles were used), and sizes come from short runs. LigandMPNN's live run failed on
-   its upstream weights host; extra-file upload is built behind the `upload-files` acknowledgment; DiffDock-L has a cloud block and passed a live ephemeral run (A40, 2026-10-19); BindCraft2 has no cloud block or live run yet; OpenDDE is unchecked.
+   its upstream weights host; extra-file upload is built behind the `upload-files` acknowledgment; DiffDock-L has a cloud block and passed a live ephemeral run (A40, 2026-10-19); BindCraft2 has no cloud block or live run yet; OpenDDE passed a live ephemeral run (RTX 3090, 2026-10-19) after its local result collection was fixed.
 3. **Still untested against the real provider:** real stall/timeout behavior on large transfers, a billing audit
    after terminate, and the actual cost of container disk and volumes. Observed and not yet handled: Runpod's proxy
    sometimes returns a transient 404 to the first calls after a Pod is healthy (no retry).
