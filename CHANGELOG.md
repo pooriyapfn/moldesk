@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2 and
-  ProteinMPNN. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
+- Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2,
+  ProteinMPNN and DiffDock-L. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
   but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and
   RTX A5000 Pods, including the in-Pod watchdog. Shutdown is still best effort and every run requires
   explicit acknowledgment that a Pod may keep charging if MoleculeDesk closes or disconnects. Other
@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   targets). The quote lists each file with its path and checksum and the run needs a separate
   `upload-files` acknowledgment (a prompt answer, or `--accept-file-upload` without a terminal);
   files must sit inside the job file's folder, with at most 16 extra files and 4 GiB in total. No
-  model uses this yet: DiffDock-L, BindCraft2 and OpenDDE still need a cloud block and a live run.
+  model uses this today: DiffDock-L (its protein structure). BindCraft2 and OpenDDE still need a
+  cloud block and a live run.
 - Cloud runs record the peak GPU memory and disk the worker observed in `run.json`
   (`compute.usage`), so a model's cloud sizes can be set from measured runs.
 - Offline molecular reports (`@moldesk/visualizer`): self-contained HTML with a

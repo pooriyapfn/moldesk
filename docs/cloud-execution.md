@@ -31,7 +31,8 @@ Which models are enabled, and why the others are not:
 | Boltz-2 | Supported (`ephemeral`); `persistent` experimental |
 | ProteinMPNN | Supported (`ephemeral`), on the GPUs in its allow-list |
 | LigandMPNN | Not enabled: its live run could not download the weights from the upstream host |
-| DiffDock-L, BindCraft2 | Not enabled yet: their jobs reference extra files, which can now be uploaded (see below), but neither has a cloud block or a live run |
+| DiffDock-L | Supported (`ephemeral`), on the Ampere GPUs in its allow-list. The protein file is uploaded, so the run needs `--accept-file-upload` (see below) |
+| BindCraft2 | Not enabled yet: its job references extra files, which can now be uploaded (see below), but it has no cloud block or live run |
 | OpenDDE | Not enabled: its Linux/CUDA path has not been checked live |
 
 ## Cache policies
