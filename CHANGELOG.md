@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk analyze <pdb|cif>`: chains with auth and label ids, entity types, sequences, numbering
+  gaps, mmCIF unobserved residues, secondary structure (file records or DSSP), geometry and pLDDT
+  only from a known source (ModelCIF metrics, a MoleculeDesk Boltz run, or `--bfactor-is-plddt`).
+  `--fasta` writes the chain sequences; `--validate-fasta` checks a FASTA file. Runs Mol* in Node, so
+  `@moldesk/core` now depends on `molstar` (about 95 MB installed). See `docs/analyze.md`.
 - Analysis JSON contract: a versioned `--json` envelope for structure-intelligence commands,
   `moldesk schema [kind]` to print its JSON Schema, and a shared residue selector grammar
   (`A`, `A:45`, `A:40-60`, `A:52A`). See `docs/analysis-json.md`.

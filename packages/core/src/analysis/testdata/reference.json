@@ -1,0 +1,89 @@
+{
+  "1AAY.pdb": {
+    "centerOfMass": [
+      3.1778427494614854,
+      10.864848531566043,
+      48.1188311976277
+    ],
+    "radiusOfGyration": 15.805778511044004,
+    "sequences": {
+      "A:protein": "RPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPFACDICGRKFARSDERKRHTKIHLR",
+      "B:dna": "AGCGTGGGCGT",
+      "C:dna": "TACGCCCACGC"
+    },
+    "waterResidues": 148
+  },
+  "1BNA.pdb": {
+    "centerOfMass": [
+      14.708107076505053,
+      20.97617723937817,
+      8.837664626280564
+    ],
+    "radiusOfGyration": 13.228169019115393,
+    "sequences": {
+      "A:dna": "CGCGAATTCGCG",
+      "B:dna": "CGCGAATTCGCG"
+    },
+    "waterResidues": 80
+  },
+  "1CRN.cif": {
+    "centerOfMass": [
+      9.300266156989467,
+      9.774881442013811,
+      6.977755201679594
+    ],
+    "radiusOfGyration": 9.602983316198369,
+    "sequences": {
+      "A:protein": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN"
+    },
+    "waterResidues": 0
+  },
+  "1CRN.pdb": {
+    "centerOfMass": [
+      9.300266156989467,
+      9.774881442013811,
+      6.977755201679594
+    ],
+    "radiusOfGyration": 9.602983316198369,
+    "sequences": {
+      "A:protein": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN"
+    },
+    "waterResidues": 0
+  },
+  "1D3Z-3models.pdb": {
+    "centerOfMass": [
+      51.64774619769514,
+      -81.16554136965951,
+      -2.4056316557599637
+    ],
+    "radiusOfGyration": 11.97191354108612,
+    "sequences": {
+      "A:protein": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+    },
+    "waterResidues": 0
+  },
+  "1IGT-VH.pdb": {
+    "centerOfMass": [
+      16.287048275447816,
+      -70.5248426809342,
+      48.04682676389621
+    ],
+    "radiusOfGyration": 14.940071593606085,
+    "sequences": {
+      "B:protein": "EVKLQESGGGLVQPGGSLKLSCATSGFTFSDYYMYWVRQTPEKRLEWVAYISNGGGSTYYPDTVKGRFTISRDNAKNTLYLQMSRLKSEDTAMYYCARHGGYYAMDYWGQGTTVTVSSAKTTAPSV"
+    },
+    "waterResidues": 0
+  },
+  "3HZ7.pdb": {
+    "centerOfMass": [
+      34.44520804806021,
+      14.324462497697354,
+      31.253424159594495
+    ],
+    "radiusOfGyration": 11.298311782496157,
+    "sequences": {
+      "A:protein": "XITIDALGQVXPIPVIRAKKALAELGEAGGVVTVLVDNDISRQNLQKXAEGXGYQSEYLEKDNGVIEVTIVAGE"
+    },
+    "waterResidues": 41
+  }
+}

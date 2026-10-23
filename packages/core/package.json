@@ -27,7 +27,8 @@
     "@moldesk/runtime": "workspace:*",
     "@moldesk/registry": "workspace:*",
     "@moldesk/visualizer": "workspace:*",
-    "better-sqlite3": "~12.11.1"
+    "better-sqlite3": "~12.11.1",
+    "molstar": "5.12.0"
   },
   "devDependencies": {
     "esbuild": "^0.25",

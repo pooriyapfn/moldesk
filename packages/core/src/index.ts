@@ -136,4 +136,8 @@ export type { AnalysisEnvelope, EnvelopeKind } from "./schemas/envelope.js";
 export { parseSelector } from "./schemas/selector.js";
 export type { Selector, SelectorNamespace } from "./schemas/selector.js";
 
+export { analyzeStructureFile } from "./analysis/analyze.js";
+export type { AnalysisResult, AnalyzeOptions, ChainAnalysis, ResidueId } from "./analysis/analyze.js";
+export { chainsToFasta, validateFasta, writeFastaFile } from "./analysis/fasta.js";
+
 export { VERSION } from "./version.js";

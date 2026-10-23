@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "kind": "moldesk.analysis",
+  "status": "ok",
+  "input": {
+    "path": "1CRN.cif",
+    "format": "mmcif",
+    "sha256": "23787562c427d7c1abe5420e86d5f1d0a6c7007dec1e8ce85645a6d69c32e8ba"
+  },
+  "result": {
+    "modelCount": 1,
+    "analyzedModel": 0,
+    "chains": [
+      {
+        "authId": "A",
+        "labelId": "A",
+        "entityId": "1",
+        "type": "protein",
+        "residueCount": 46,
+        "residues": [
+          {
+            "authSeqId": 1,
+            "labelSeqId": 1,
+            "name": "THR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 2,
+            "labelSeqId": 2,
+            "name": "THR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 3,
+            "labelSeqId": 3,
+            "name": "CYS",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 4,
+            "labelSeqId": 4,
+            "name": "CYS",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 5,
+            "labelSeqId": 5,
+            "name": "PRO",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 6,
+            "labelSeqId": 6,
+            "name": "SER",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 7,
+            "labelSeqId": 7,
+            "name": "ILE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 8,
+            "labelSeqId": 8,
+            "name": "VAL",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 9,
+            "labelSeqId": 9,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 10,
+            "labelSeqId": 10,
+            "name": "ARG",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 11,
+            "labelSeqId": 11,
+            "name": "SER",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 12,
+            "labelSeqId": 12,
+            "name": "ASN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 13,
+            "labelSeqId": 13,
+            "name": "PHE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 14,
+            "labelSeqId": 14,
+            "name": "ASN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 15,
+            "labelSeqId": 15,
+            "name": "VAL",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 16,
+            "labelSeqId": 16,
+            "name": "CYS",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 17,
+            "labelSeqId": 17,
+            "name": "ARG",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 18,
+            "labelSeqId": 18,
+            "name": "LEU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 19,
+            "labelSeqId": 19,
+            "name": "PRO",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 20,
+            "labelSeqId": 20,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 21,
+            "labelSeqId": 21,
+            "name": "THR",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 22,
+            "labelSeqId": 22,
+            "name": "PRO",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 23,
+            "labelSeqId": 23,
+            "name": "GLU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 24,
+            "labelSeqId": 24,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 25,
+            "labelSeqId": 25,
+            "name": "ILE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 26,
+            "labelSeqId": 26,
+            "name": "CYS",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 27,
+            "labelSeqId": 27,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 28,
+            "labelSeqId": 28,
+            "name": "THR",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 29,
+            "labelSeqId": 29,
+            "name": "TYR",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 30,
+            "labelSeqId": 30,
+            "name": "THR",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 31,
+            "labelSeqId": 31,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 32,
+            "labelSeqId": 32,
+            "name": "CYS",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 33,
+            "labelSeqId": 33,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 34,
+            "labelSeqId": 34,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 35,
+            "labelSeqId": 35,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 36,
+            "labelSeqId": 36,
+            "name": "PRO",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 37,
+            "labelSeqId": 37,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 38,
+            "labelSeqId": 38,
+            "name": "ALA",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 39,
+            "labelSeqId": 39,
+            "name": "THR",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 40,
+            "labelSeqId": 40,
+            "name": "CYS",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 41,
+            "labelSeqId": 41,
+            "name": "PRO",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 42,
+            "labelSeqId": 42,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 43,
+            "labelSeqId": 43,
+            "name": "ASP",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 44,
+            "labelSeqId": 44,
+            "name": "TYR",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 45,
+            "labelSeqId": 45,
+            "name": "ALA",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 46,
+            "labelSeqId": 46,
+            "name": "ASN",
+            "secondaryStructure": "C"
+          }
+        ],
+        "sequence": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN",
+        "gaps": [],
+        "secondaryStructure": {
+          "helix": 0.4565,
+          "strand": 0.1739,
+          "coil": 0.3696
+        }
+      }
+    ],
+    "secondaryStructure": {
+      "source": "file"
+    },
+    "geometry": {
+      "centerOfMass": [
+        9.3003,
+        9.7749,
+        6.9778
+      ],
+      "radiusOfGyration": 9.603,
+      "boundingBox": {
+        "min": [
+          -3.097,
+          -0.516,
+          -7.422
+        ],
+        "max": [
+          24.284,
+          20.937,
+          19.58
+        ]
+      }
+    },
+    "confidence": null
+  },
+  "warnings": [
+    {
+      "code": "NO_CONFIDENCE_SOURCE",
+      "message": "No known pLDDT source (ModelCIF metrics or a Boltz run output), so confidence is null. B-factors are not assumed to be pLDDT; pass --bfactor-is-plddt if they are."
+    }
+  ],
+  "provenance": {
+    "moldeskVersion": "x",
+    "tool": {
+      "name": "molstar",
+      "version": "5.12.0"
+    }
+  }
+}

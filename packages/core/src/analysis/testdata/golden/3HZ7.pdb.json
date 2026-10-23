@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 1,
+  "kind": "moldesk.analysis",
+  "status": "ok",
+  "input": {
+    "path": "3HZ7.pdb",
+    "format": "pdb",
+    "sha256": "0d625b3184cd182899f8df717c0ac5fff480c976e5bbd4cab5b83673b5f4711f"
+  },
+  "result": {
+    "modelCount": 1,
+    "analyzedModel": 0,
+    "chains": [
+      {
+        "authId": "A",
+        "labelId": "A",
+        "entityId": "1",
+        "type": "protein",
+        "residueCount": 74,
+        "residues": [
+          {
+            "authSeqId": 1,
+            "labelSeqId": 1,
+            "name": "MSE",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 2,
+            "labelSeqId": 2,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 3,
+            "labelSeqId": 3,
+            "name": "THR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 4,
+            "labelSeqId": 4,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 5,
+            "labelSeqId": 5,
+            "name": "ASP",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 6,
+            "labelSeqId": 6,
+            "name": "ALA",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 7,
+            "labelSeqId": 7,
+            "name": "LEU",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 8,
+            "labelSeqId": 8,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 9,
+            "labelSeqId": 9,
+            "name": "GLN",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 10,
+            "labelSeqId": 10,
+            "name": "VAL",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 11,
+            "labelSeqId": 11,
+            "name": "CSS",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 12,
+            "labelSeqId": 12,
+            "name": "PRO",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 13,
+            "labelSeqId": 13,
+            "name": "ILE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 14,
+            "labelSeqId": 14,
+            "name": "PRO",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 15,
+            "labelSeqId": 15,
+            "name": "VAL",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 16,
+            "labelSeqId": 16,
+            "name": "ILE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 17,
+            "labelSeqId": 17,
+            "name": "ARG",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 18,
+            "labelSeqId": 18,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 19,
+            "labelSeqId": 19,
+            "name": "LYS",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 20,
+            "labelSeqId": 20,
+            "name": "LYS",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 21,
+            "labelSeqId": 21,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 22,
+            "labelSeqId": 22,
+            "name": "LEU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 23,
+            "labelSeqId": 23,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 24,
+            "labelSeqId": 24,
+            "name": "GLU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 25,
+            "labelSeqId": 25,
+            "name": "LEU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 26,
+            "labelSeqId": 26,
+            "name": "GLY",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 27,
+            "labelSeqId": 27,
+            "name": "GLU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 28,
+            "labelSeqId": 28,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 29,
+            "labelSeqId": 29,
+            "name": "GLY",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 30,
+            "labelSeqId": 30,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 31,
+            "labelSeqId": 31,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 32,
+            "labelSeqId": 32,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 33,
+            "labelSeqId": 33,
+            "name": "THR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 34,
+            "labelSeqId": 34,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 35,
+            "labelSeqId": 35,
+            "name": "LEU",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 36,
+            "labelSeqId": 36,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 37,
+            "labelSeqId": 37,
+            "name": "ASP",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 38,
+            "labelSeqId": 38,
+            "name": "ASN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 39,
+            "labelSeqId": 39,
+            "name": "ASP",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 40,
+            "labelSeqId": 40,
+            "name": "ILE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 41,
+            "labelSeqId": 41,
+            "name": "SER",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 42,
+            "labelSeqId": 42,
+            "name": "ARG",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 43,
+            "labelSeqId": 43,
+            "name": "GLN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 44,
+            "labelSeqId": 44,
+            "name": "ASN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 45,
+            "labelSeqId": 45,
+            "name": "LEU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 46,
+            "labelSeqId": 46,
+            "name": "GLN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 47,
+            "labelSeqId": 47,
+            "name": "LYS",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 48,
+            "labelSeqId": 48,
+            "name": "MSE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 49,
+            "labelSeqId": 49,
+            "name": "ALA",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 50,
+            "labelSeqId": 50,
+            "name": "GLU",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 51,
+            "labelSeqId": 51,
+            "name": "GLY",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 52,
+            "labelSeqId": 52,
+            "name": "MSE",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 53,
+            "labelSeqId": 53,
+            "name": "GLY",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 54,
+            "labelSeqId": 54,
+            "name": "TYR",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 55,
+            "labelSeqId": 55,
+            "name": "GLN",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 56,
+            "labelSeqId": 56,
+            "name": "SER",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 57,
+            "labelSeqId": 57,
+            "name": "GLU",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 58,
+            "labelSeqId": 58,
+            "name": "TYR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 59,
+            "labelSeqId": 59,
+            "name": "LEU",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 60,
+            "labelSeqId": 60,
+            "name": "GLU",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 61,
+            "labelSeqId": 61,
+            "name": "LYS",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 62,
+            "labelSeqId": 62,
+            "name": "ASP",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 63,
+            "labelSeqId": 63,
+            "name": "ASN",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 64,
+            "labelSeqId": 64,
+            "name": "GLY",
+            "secondaryStructure": "H"
+          },
+          {
+            "authSeqId": 65,
+            "labelSeqId": 65,
+            "name": "VAL",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 66,
+            "labelSeqId": 66,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 67,
+            "labelSeqId": 67,
+            "name": "GLU",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 68,
+            "labelSeqId": 68,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 69,
+            "labelSeqId": 69,
+            "name": "THR",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 70,
+            "labelSeqId": 70,
+            "name": "ILE",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 71,
+            "labelSeqId": 71,
+            "name": "VAL",
+            "secondaryStructure": "E"
+          },
+          {
+            "authSeqId": 72,
+            "labelSeqId": 72,
+            "name": "ALA",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 73,
+            "labelSeqId": 73,
+            "name": "GLY",
+            "secondaryStructure": "C"
+          },
+          {
+            "authSeqId": 74,
+            "labelSeqId": 74,
+            "name": "GLU",
+            "secondaryStructure": "C"
+          }
+        ],
+        "sequence": "XITIDALGQVXPIPVIRAKKALAELGEAGGVVTVLVDNDISRQNLQKXAEGXGYQSEYLEKDNGVIEVTIVAGE",
+        "gaps": [],
+        "secondaryStructure": {
+          "helix": 0.5,
+          "strand": 0.2973,
+          "coil": 0.2027
+        }
+      },
+      {
+        "authId": "A",
+        "labelId": "A",
+        "entityId": "2",
+        "type": "water",
+        "residueCount": 41
+      }
+    ],
+    "secondaryStructure": {
+      "source": "file"
+    },
+    "geometry": {
+      "centerOfMass": [
+        34.4452,
+        14.3245,
+        31.2534
+      ],
+      "radiusOfGyration": 11.2983,
+      "boundingBox": {
+        "min": [
+          15.141,
+          1.25,
+          18.778
+        ],
+        "max": [
+          53.309,
+          26.535,
+          44.686
+        ]
+      }
+    },
+    "confidence": null
+  },
+  "warnings": [
+    {
+      "code": "NO_CONFIDENCE_SOURCE",
+      "message": "No known pLDDT source (ModelCIF metrics or a Boltz run output), so confidence is null. B-factors are not assumed to be pLDDT; pass --bfactor-is-plddt if they are."
+    }
+  ],
+  "provenance": {
+    "moldeskVersion": "x",
+    "tool": {
+      "name": "molstar",
+      "version": "5.12.0"
+    }
+  }
+}
