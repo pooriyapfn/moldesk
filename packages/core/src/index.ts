@@ -125,4 +125,15 @@ export type {
   UpdateResult,
 } from "./visualization.js";
 
+export {
+  ENVELOPE_KINDS,
+  ENVELOPE_SCHEMA_VERSION,
+  envelopeSchema,
+  schemaForKind,
+  validateEnvelope,
+} from "./schemas/envelope.js";
+export type { AnalysisEnvelope, EnvelopeKind } from "./schemas/envelope.js";
+export { parseSelector } from "./schemas/selector.js";
+export type { Selector, SelectorNamespace } from "./schemas/selector.js";
+
 export { VERSION } from "./version.js";

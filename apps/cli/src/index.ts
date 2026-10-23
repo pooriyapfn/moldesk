@@ -6,6 +6,7 @@ import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerListCommand } from "./commands/list.js";
 import { registerInstallCommand } from "./commands/install.js";
 import { registerRunCommand } from "./commands/run.js";
+import { registerSchemaCommand } from "./commands/schema.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
 import { registerViewCommand } from "./commands/view.js";
 import { registerVisualizerCommand } from "./commands/visualizer.js";
@@ -23,6 +24,7 @@ registerInstallCommand(program);
 registerUninstallCommand(program);
 registerRunCommand(program);
 registerViewCommand(program);
+registerSchemaCommand(program);
 registerCloudCommand(program);
 registerVisualizerCommand(program);
 

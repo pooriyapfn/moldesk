@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Analysis JSON contract: a versioned `--json` envelope for structure-intelligence commands,
+  `moldesk schema [kind]` to print its JSON Schema, and a shared residue selector grammar
+  (`A`, `A:45`, `A:40-60`, `A:52A`). See `docs/analysis-json.md`.
 - Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2,
   ProteinMPNN, DiffDock-L and OpenDDE. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
   but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and
