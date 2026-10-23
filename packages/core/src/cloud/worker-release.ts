@@ -8,7 +8,10 @@ import { MoldeskError } from "../errors.js";
  * checksum no longer matches the sources, and the release workflow publishes the asset.
  * See packages/core/scripts/build-worker.mjs.
  */
-export const RELEASED_WORKER_BUNDLE: WorkerBundle | undefined = undefined;
+export const RELEASED_WORKER_BUNDLE: WorkerBundle | undefined = {
+  url: "https://github.com/pooriyapfn/moldesk/releases/download/v0.0.7/worker.tar",
+  sha256: "ae57b112bf2e2dc2940fc8f1ef496a926fa094a3faa423cc783dd743c0929ecb",
+};
 
 /**
  * Environment override for development and self-hosting: both values are required, the URL must be

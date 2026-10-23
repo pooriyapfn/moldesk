@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { RELEASED_WORKER_BUNDLE, resolveWorkerBundle } from "./worker-release.js";
 
 describe("resolveWorkerBundle", () => {
-  it("has no released bundle yet, so cloud runs refuse by default", () => {
-    expect(RELEASED_WORKER_BUNDLE).toBeUndefined();
-    expect(resolveWorkerBundle({})).toBeUndefined();
+  it("uses the recorded release bundle by default: an https release asset with a full SHA-256", () => {
+    expect(RELEASED_WORKER_BUNDLE).toBeDefined();
+    expect(RELEASED_WORKER_BUNDLE!.url).toMatch(/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+[^/]*\/worker\.tar$/);
+    expect(RELEASED_WORKER_BUNDLE!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(resolveWorkerBundle({})).toEqual(RELEASED_WORKER_BUNDLE);
   });
 
   it("accepts an https URL with a SHA-256 override and normalizes case", () => {

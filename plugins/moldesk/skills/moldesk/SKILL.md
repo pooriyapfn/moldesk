@@ -51,7 +51,7 @@ Add `--json` to `doctor`, `list`, `install`, `run`, and `view` for machine-reada
 | Goal | Model | Input | Runs on |
 | --- | --- | --- | --- |
 | Structure of a protein or complex, binding affinity | `boltz` | `.yaml` / `.fasta` | Apple Silicon (MPS), Linux + NVIDIA |
-| All-atom co-folding (protein, DNA, RNA, ligand, ions) | `opendde` | OpenDDE `.json` | Apple Silicon (MPS) |
+| All-atom co-folding (protein, DNA, RNA, ligand, ions) | `opendde` | OpenDDE `.json` | Apple Silicon (MPS), Linux + NVIDIA |
 | Blind docking of a small molecule into a protein | `diffdock` | `.json` job | Linux + NVIDIA only |
 | Protein binder design campaign | `bindcraft2` | `.json` campaign | Linux + NVIDIA only |
 | Sequence design for a backbone | `proteinmpnn` | `.pdb` | Apple Silicon, Linux |
