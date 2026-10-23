@@ -19,6 +19,8 @@ export interface ParsedResidue {
   /** One-letter code for polymer residues (`X` when non-standard). */
   letter?: string;
   secondaryStructure?: SecondaryStructureCode;
+  /** Heavy atoms kept (first alternate location only). */
+  atomCount: number;
   /** Mean B-factor of the residue's kept atoms; the caller decides whether it means anything. */
   bfactor: number | null;
 }
@@ -40,6 +42,8 @@ export interface ParsedStructure {
   secondaryStructureSource: "file" | "computed" | "none";
   /** Heavy, non-water atoms of the first model (first alternate location only). */
   atoms: { x: Float64Array; y: Float64Array; z: Float64Array; mass: Float64Array };
+  /** The same heavy atoms with names and owners, for neighbour searches. `chain`/`residue` index into `chains[]` / `chains[].residues`. */
+  heavyAtoms: { x: Float64Array; y: Float64Array; z: Float64Array; name: string[]; chain: Int32Array; residue: Int32Array };
   /** Atoms left out of the geometry because their element has no known mass. */
   atomsWithoutMass: number;
   /** mmCIF `pdbx_unobs_or_zero_occ_residues` rows for the first model. */
@@ -127,6 +131,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
   const ys: number[] = [];
   const zs: number[] = [];
   const ms: number[] = [];
+  const heavy = { x: [] as number[], y: [] as number[], z: [] as number[], name: [] as string[], chain: [] as number[], residue: [] as number[] };
   let atomsWithoutMass = 0;
 
   const chains: ParsedChain[] = [];
@@ -174,6 +179,12 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         if (element === "H" || element === "D") continue;
         bSum += conf.B_iso_or_equiv.value(a);
         bCount++;
+        heavy.x.push(conf.x[a]);
+        heavy.y.push(conf.y[a]);
+        heavy.z.push(conf.z[a]);
+        heavy.name.push(h.atoms.label_atom_id.value(a));
+        heavy.chain.push(c);
+        heavy.residue.push(chain.residues.length);
         const number = (AtomicNumbers as Record<string, number | undefined>)[element];
         const mass = number === undefined ? undefined : (ElementAtomWeights as Record<number, number>)[number];
         if (mass === undefined) {
@@ -203,6 +214,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         ...(kind === "dna" ? { letter: getDnaOneLetterCode(name) } : {}),
         ...(kind === "rna" ? { letter: getRnaOneLetterCode(name) } : {}),
         ...(kind === "protein" ? { secondaryStructure: secondaryOf(r) } : {}),
+        atomCount: bCount,
         bfactor: bCount > 0 ? bSum / bCount : null,
       });
     }
@@ -214,6 +226,14 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
     chains,
     secondaryStructureSource: chains.some((c) => c.residues.some((r) => r.secondaryStructure)) ? (hasFileSs ? "file" : "computed") : "none",
     atoms: { x: Float64Array.from(xs), y: Float64Array.from(ys), z: Float64Array.from(zs), mass: Float64Array.from(ms) },
+    heavyAtoms: {
+      x: Float64Array.from(heavy.x),
+      y: Float64Array.from(heavy.y),
+      z: Float64Array.from(heavy.z),
+      name: heavy.name,
+      chain: Int32Array.from(heavy.chain),
+      residue: Int32Array.from(heavy.residue),
+    },
     atomsWithoutMass,
     unobserved: block ? readUnobserved(block) : [],
     modelcifPlddt: block ? readModelcifPlddt(block) : undefined,

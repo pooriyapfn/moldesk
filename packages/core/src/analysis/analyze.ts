@@ -1,13 +1,19 @@
 import { ENVELOPE_SCHEMA_VERSION, type AnalysisEnvelope } from "../schemas/envelope.js";
 import { VERSION } from "../version.js";
 import { resolveConfidence } from "./confidence.js";
-import { MOLSTAR_VERSION, parseStructure, type ParsedChain, type ParsedStructure } from "./molstar-model.js";
+import { MOLSTAR_VERSION, parseStructure, type ParsedChain, type ParsedResidue, type ParsedStructure } from "./molstar-model.js";
 import { readStructureInput } from "./structure-input.js";
 
 export interface ResidueId {
   authSeqId: number;
   labelSeqId: number | null;
   insertionCode?: string;
+}
+
+export interface ResidueSummary extends ResidueId {
+  name: string;
+  secondaryStructure?: "H" | "E" | "C";
+  plddt?: number;
 }
 
 export interface ChainAnalysis {
@@ -27,7 +33,7 @@ export interface ChainAnalysis {
   /** Mean pLDDT (0-100) over residues that have one. */
   meanPlddt?: number;
   /** Everything except water, in file order. */
-  residues?: Array<ResidueId & { name: string; secondaryStructure?: "H" | "E" | "C"; plddt?: number }>;
+  residues?: ResidueSummary[];
 }
 
 export interface AnalysisResult {
@@ -45,15 +51,34 @@ export interface AnalysisResult {
   confidence: { source: string; detail: string; scale: "0-100"; mean: number | null; summary?: Record<string, unknown> } | null;
 }
 
+export const NO_CONFIDENCE_WARNING = {
+  code: "NO_CONFIDENCE_SOURCE",
+  message:
+    "No known pLDDT source (ModelCIF metrics or a Boltz run output), so confidence is null. B-factors are not assumed to be pLDDT; pass --bfactor-is-plddt if they are.",
+};
+
 export interface AnalyzeOptions {
   /** The user states that the file's B-factor column holds pLDDT. */
   bfactorIsPlddt?: boolean;
 }
 
-const round = (value: number, digits = 4): number => Number(value.toFixed(digits));
+export const round = (value: number, digits = 4): number => Number(value.toFixed(digits));
 const mean = (values: number[]): number | null => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
 
-function chainType(chain: ParsedChain): ChainAnalysis["type"] {
+export function residueId(r: ParsedResidue): ResidueId {
+  return { authSeqId: r.authSeqId, labelSeqId: r.labelSeqId, ...(r.insertionCode ? { insertionCode: r.insertionCode } : {}) };
+}
+
+export function summarizeResidue(r: ParsedResidue, plddt: number | null): ResidueSummary {
+  return {
+    ...residueId(r),
+    name: r.name,
+    ...(r.secondaryStructure ? { secondaryStructure: r.secondaryStructure } : {}),
+    ...(plddt !== null ? { plddt: round(plddt, 2) } : {}),
+  };
+}
+
+export function chainType(chain: ParsedChain): ChainAnalysis["type"] {
   switch (chain.entityType) {
     case "water":
       return "water";
@@ -121,14 +146,7 @@ export async function analyzeStructureFile(file: string, options: AnalyzeOptions
     out.residues = chain.residues.map((r) => {
       const value = confidence?.plddt(chain, r) ?? null;
       if (value !== null) plddt.push(value);
-      return {
-        authSeqId: r.authSeqId,
-        labelSeqId: r.labelSeqId,
-        ...(r.insertionCode ? { insertionCode: r.insertionCode } : {}),
-        name: r.name,
-        ...(r.secondaryStructure ? { secondaryStructure: r.secondaryStructure } : {}),
-        ...(value !== null ? { plddt: round(value, 2) } : {}),
-      };
+      return summarizeResidue(r, value);
     });
     allPlddt.push(...plddt);
     const chainMean = mean(plddt);
@@ -140,12 +158,7 @@ export async function analyzeStructureFile(file: string, options: AnalyzeOptions
       for (let i = 1; i < chain.residues.length; i++) {
         const [a, b] = [chain.residues[i - 1], chain.residues[i]];
         if (b.authSeqId - a.authSeqId > 1) {
-          const id = (r: typeof a): ResidueId => ({
-            authSeqId: r.authSeqId,
-            labelSeqId: r.labelSeqId,
-            ...(r.insertionCode ? { insertionCode: r.insertionCode } : {}),
-          });
-          out.gaps.push({ after: id(a), before: id(b), missing: b.authSeqId - a.authSeqId - 1 });
+          out.gaps.push({ after: residueId(a), before: residueId(b), missing: b.authSeqId - a.authSeqId - 1 });
         }
       }
       const unobserved = parsed.unobserved.filter((u) => u.authChainId === chain.authId);
@@ -171,10 +184,7 @@ export async function analyzeStructureFile(file: string, options: AnalyzeOptions
     warnings.push({ code: "MULTIPLE_MODELS", message: `The file has ${parsed.modelCount} models; only model 0 was analyzed.` });
   }
   if (!confidence) {
-    warnings.push({
-      code: "NO_CONFIDENCE_SOURCE",
-      message: "No known pLDDT source (ModelCIF metrics or a Boltz run output), so confidence is null. B-factors are not assumed to be pLDDT; pass --bfactor-is-plddt if they are.",
-    });
+    warnings.push(NO_CONFIDENCE_WARNING);
   }
   if (parsed.atomsWithoutMass > 0) {
     warnings.push({ code: "UNKNOWN_ELEMENT", message: `${parsed.atomsWithoutMass} atoms with an unknown element were left out of the geometry.` });

@@ -138,6 +138,8 @@ export type { Selector, SelectorNamespace } from "./schemas/selector.js";
 
 export { analyzeStructureFile } from "./analysis/analyze.js";
 export type { AnalysisResult, AnalyzeOptions, ChainAnalysis, ResidueId } from "./analysis/analyze.js";
+export { DEFAULT_INSPECT_RADIUS, inspectStructureFile } from "./analysis/inspect.js";
+export type { InspectedResidue, InspectOptions, InspectResult, NeighborResidue } from "./analysis/inspect.js";
 export { chainsToFasta, validateFasta, writeFastaFile } from "./analysis/fasta.js";
 
 export { VERSION } from "./version.js";

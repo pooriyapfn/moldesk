@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk inspect <file> <selector>`: per-residue name, auth/label ids, secondary structure, pLDDT
+  (when known) and heavy-atom count for a chain, residue or range, plus neighbouring residues within
+  `--radius` Å (default 5) with the minimum distance and atom pair. A selector that matches nothing
+  exits 2. See `docs/inspect.md`.
 - `moldesk analyze <pdb|cif>`: chains with auth and label ids, entity types, sequences, numbering
   gaps, mmCIF unobserved residues, secondary structure (file records or DSSP), geometry and pLDDT
   only from a known source (ModelCIF metrics, a MoleculeDesk Boltz run, or `--bfactor-is-plddt`).
