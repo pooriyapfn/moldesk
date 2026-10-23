@@ -78,6 +78,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The worker bundle is built from the workspace packages' compiled output.
+      - run: pnpm build
+
       - name: Build the worker bundle
         run: pnpm --filter @moldesk/core build:worker -- --out "$RUNNER_TEMP/worker-release"
 
