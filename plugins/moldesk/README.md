@@ -1,6 +1,6 @@
 # MoleculeDesk agent plugin
 
-One skill, `moldesk`, packaged for both Claude Code and Codex. It teaches a coding agent to install the `moldesk` CLI, check hardware compatibility, prepare inputs, run models, and handle cloud runs with explicit cost approval.
+One skill, `moldesk`, packaged for both Claude Code and Codex. It teaches a coding agent to install the `moldesk` CLI, check hardware compatibility, prepare inputs, run models, handle cloud runs with explicit cost approval, and fetch, analyze, inspect, highlight and compare protein structures.
 
 ## Install
 
@@ -33,10 +33,10 @@ plugins/moldesk/
     agents/openai.yaml         Codex UI metadata
     references/                loaded on demand
       install.md               installer, MOLDESK_HOME, update, removal
-      cli.md                   commands, flags, --json fields, exit codes
+      cli.md                   commands, flags, --json fields, exit codes (every CLI command must appear here)
       compatibility.md         doctor/list, platform matrix, alternatives
       models.md                inputs, params, examples for each model
-      workflows.md             multi-step recipes
+      workflows.md             multi-step recipes, including fetch -> analyze -> predict -> compare
       cloud-runpod.md          quote, approval, cleanup (Boltz-2, ProteinMPNN, DiffDock-L, OpenDDE)
 ```
 
@@ -54,4 +54,7 @@ Bump `version` in both `plugin.json` files when the skill changes, so installed 
 
 ```bash
 claude plugin validate .
+pnpm build && node scripts/check-skill-commands.mjs   # from the repository root
 ```
+
+`scripts/check-skill-commands.mjs` reads every `moldesk` command and `--flag` in the skill's Markdown and checks it against the built CLI's `--help` (including subcommands), and requires `references/cli.md` to mention every CLI command. CI runs it, so a renamed flag or a new command fails the build until the skill is updated.

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Agent skill (`plugins/moldesk`, now 0.2.0): covers `fetch`, `analyze`, `inspect`, `view --highlight`,
+  `compare`, `describe` and `schema`, adds ground rules for network fetches, building US-align and
+  never inventing confidence, and two recipes (understand a structure; compare a Boltz prediction with an
+  experimental structure, the EGFR kinase domain). `scripts/check-skill-commands.mjs` checks that every
+  `moldesk` command and flag the skill mentions exists in the built CLI's `--help` and that `cli.md`
+  documents every command; CI runs it.
 - `moldesk describe <model> [--json]`: one document per model with its inputs, outputs, parameters (from the
   adapter's own list, with per-platform defaults such as Boltz's `accelerator`), runtimes and hardware
   needs, assets and licenses, cloud availability and the verdict for this machine (the same check as

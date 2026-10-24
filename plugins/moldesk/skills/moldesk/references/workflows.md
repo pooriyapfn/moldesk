@@ -2,7 +2,7 @@
 
 Start every workflow with `moldesk doctor` and `moldesk list`. Use a working folder per task, for example `./moldesk-work/<task>/`, and keep inputs, a short `NOTES.md` of what you ran, and `--output` results there.
 
-Ask before each install. Prefer small test runs first (one sample, small budget), then scale up with the user's agreement.
+Ask before each install and before each download (`moldesk fetch`, `moldesk install usalign`). Prefer small test runs first (one sample, small budget), then scale up with the user's agreement.
 
 ---
 
@@ -62,9 +62,30 @@ Use LigandMPNN instead of ProteinMPNN when a ligand or partner chain in the PDB 
 
 ```bash
 moldesk view structure.cif --open
+moldesk view structure.cif --highlight A:40-60 --highlight B:12 --color '#ff5500' --open
+moldesk view alphafold-model.cif --color-by plddt --open     # needs a known pLDDT source
 ```
 
-Works for any PDB/mmCIF, including RCSB downloads and outputs of earlier runs. Every `moldesk run` also writes a report unless `--no-visualize` is passed.
+Works for any PDB/mmCIF, including RCSB downloads and outputs of earlier runs. Every `moldesk run` also writes a report unless `--no-visualize` is passed. Highlights are drawn as sticks over the normal chain-colored cartoon; a highlight that matches nothing fails with the list of chains and residue ranges that exist.
+
+## 8. Understand a structure you were given (or fetched)
+
+1. If the user gives an id instead of a file, ask, then fetch it: `moldesk fetch pdb:1M17 --output ./work --json` (use `afdb:<accession>` for an AlphaFold DB model, `uniprot:<accession>` for a sequence). Use `result.files[].path`. Tell the user the license from `result.provenance.license`; AlphaFold and UniProt need attribution.
+2. `moldesk analyze <file> --json`. Report chains and their types, the sequence of each polymer chain, `gaps[]` and `unobserved[]` (residues missing from the experiment), the secondary-structure source, and the radius of gyration. Quote every entry of `warnings[]`.
+3. Zoom in on a region the user cares about: `moldesk inspect <file> A:40-60 --radius 5 --json`. Each residue lists its `neighbors[]` with the closest atom pair. Use the ids the analysis gave you, with `--label` only if you read label ids.
+4. Show it: `moldesk view <file> --highlight A:40-60 --open`. For an AlphaFold DB model, `analyze` reports pLDDT (from its ModelCIF metrics) and `moldesk view <file> --color-by plddt --open` colors by confidence class. For an experimental structure there is no pLDDT: do not substitute B-factors.
+
+## 9. Compare a prediction with an experimental structure (EGFR kinase domain end to end)
+
+Fetch, analyze, predict, compare, inspect. The repository's `examples/egfr-end-to-end/` has the same flow as a script. Use the kinase domain, not full-length EGFR: it is far smaller. Ask before each download, install and long run.
+
+1. **Fetch** the experimental structure (RCSB, CC0): `moldesk fetch pdb:1M17 --output ./egfr --json`. The file is `./egfr/1M17.cif`.
+2. **Analyze** it: `moldesk analyze ./egfr/1M17.cif --json`. Take the `result.chains[]` entry with `type: "protein"` and `authId: "A"` and read its `sequence`. Note its `gaps[]` and `unobserved[]`: the experiment is missing those residues, so they cannot be compared. 1M17 also holds a ligand and waters; the prediction below has neither.
+3. **Predict** that sequence with Boltz-2. Write `./egfr/egfr.yaml` (see [models.md](models.md)) with `id: A`, the sequence, and `msa: empty` for an offline first pass. Say that single-sequence mode is lower accuracy and that `--param use_msa_server=true` would send the sequence off the machine (ask). Run `moldesk run boltz ./egfr/egfr.yaml --output ./egfr/prediction --json`. The structure is the `record.outputs[]` entry with `id: "structures"`; the confidence JSON is `id: "confidence"`.
+4. **Install US-align once**, with approval: `moldesk install usalign` (downloads about 263 KB of pinned source and builds it with the local C++ compiler; pass `--yes` only after the user agrees).
+5. **Compare**: `moldesk compare <prediction.cif> ./egfr/1M17.cif --chain-a A --chain-b A --report ./egfr/overlay.html --json`. The prediction is structure A and the experiment is the reference, B. Report `tmScore.normalizedByB` (normalized by the experimental structure), `rmsd` over `alignedLength` residues, `sequenceIdentity`, and `lengths`. As a rule of thumb a TM-score above about 0.5 means the same fold. The report overlays both structures (B moved onto A), charts the deviation per aligned residue, and highlights residues above 2 Å.
+6. **Inspect the biggest deviation**: in `result.mapping[]` (aligned pairs in order, each with `distance` in Å) find the run of consecutive pairs with the largest distances. Read the experimental residue numbers from `mapping[].b.authSeqId`, then `moldesk inspect ./egfr/1M17.cif A:<first>-<last> --json` and say what the neighbors are. Optionally `moldesk view ./egfr/1M17.cif --highlight A:<first>-<last> --open`.
+7. **Report honestly**: which files, the commands and parameters, the scores, the pLDDT of the prediction (`confidence.mean` from `moldesk analyze` on the prediction, which is known because it is a MoleculeDesk Boltz output), the report path, that the prediction used no MSA (if so), and that a prediction is not an experimental result.
 
 ---
 

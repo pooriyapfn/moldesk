@@ -23,6 +23,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs
+      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs scripts/check-skill-commands.test.mjs
+      # Every moldesk command and flag the agent skill mentions must exist in the built CLI, and be documented.
+      - run: node scripts/check-skill-commands.mjs
       # The cloud worker bundle recorded in the CLI must match what these sources build.
       - run: node scripts/worker-release.mjs check
