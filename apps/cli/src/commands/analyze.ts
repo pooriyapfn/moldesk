@@ -1,12 +1,5 @@
 import type { Command } from "commander";
-import {
-  analyzeStructureFile,
-  ENVELOPE_SCHEMA_VERSION,
-  MoldeskError,
-  VERSION,
-  validateFasta,
-  writeFastaFile,
-} from "@moldesk/core";
+import { analyzeStructureFile, fastaValidationEnvelope, MoldeskError, validateFasta, writeFastaFile } from "@moldesk/core";
 import { reportFailure } from "../utils/report-errors.js";
 
 interface AnalyzeOptions {
@@ -40,20 +33,7 @@ export function registerAnalyzeCommand(program: Command): void {
           }
           const checked = validateFasta(options.validateFasta);
           if (options.json) {
-            console.log(
-              JSON.stringify(
-                {
-                  schemaVersion: ENVELOPE_SCHEMA_VERSION,
-                  kind: "moldesk.analysis",
-                  status: "ok",
-                  result: { fasta: { path: checked.path, sha256: checked.sha256, valid: true, records: checked.records } },
-                  warnings: [],
-                  provenance: { moldeskVersion: VERSION },
-                },
-                null,
-                2,
-              ),
-            );
+            console.log(JSON.stringify(fastaValidationEnvelope(checked), null, 2));
           } else {
             console.log(`${checked.path}: valid FASTA, ${checked.records.length} record(s).`);
           }

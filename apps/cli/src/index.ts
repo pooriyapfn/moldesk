@@ -4,6 +4,7 @@ import { VERSION } from "@moldesk/core";
 import { registerAnalyzeCommand } from "./commands/analyze.js";
 import { registerCloudCommand } from "./commands/cloud.js";
 import { registerCompareCommand } from "./commands/compare.js";
+import { registerDescribeCommand } from "./commands/describe.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerListCommand } from "./commands/list.js";
 import { registerFetchCommand } from "./commands/fetch.js";
@@ -24,6 +25,7 @@ program
 
 registerDoctorCommand(program);
 registerListCommand(program);
+registerDescribeCommand(program);
 registerInstallCommand(program);
 registerUninstallCommand(program);
 registerRunCommand(program);

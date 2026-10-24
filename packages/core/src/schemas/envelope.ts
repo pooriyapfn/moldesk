@@ -1,4 +1,5 @@
 import { MoldeskError } from "../errors.js";
+import { RESULT_SCHEMAS } from "./results.js";
 
 /** Versioned envelope shared by every structure-intelligence command's `--json` output. */
 export const ENVELOPE_SCHEMA_VERSION = 1;
@@ -32,11 +33,11 @@ function isKind(value: unknown): value is EnvelopeKind {
   return typeof value === "string" && (ENVELOPE_KINDS as readonly string[]).includes(value);
 }
 
-/** JSON Schema (draft 2020-12) for one envelope kind. */
+/** JSON Schema (draft-07) for one envelope kind, including that kind's `result` shape. */
 export function envelopeSchema(kind: EnvelopeKind): Record<string, unknown> {
   const string = { type: "string", minLength: 1 };
   return {
-    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $schema: "http://json-schema.org/draft-07/schema#",
     $id: `https://moldesk.dev/schemas/${kind}/v${ENVELOPE_SCHEMA_VERSION}`,
     title: kind,
     type: "object",
@@ -56,7 +57,7 @@ export function envelopeSchema(kind: EnvelopeKind): Record<string, unknown> {
           sha256: { type: "string", pattern: SHA256_PATTERN.source },
         },
       },
-      result: { type: "object" },
+      result: RESULT_SCHEMAS[kind] ?? { type: "object" },
       warnings: {
         type: "array",
         items: {

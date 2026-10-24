@@ -21,7 +21,7 @@ moldesk schema                    # list the kinds
 moldesk schema moldesk.analysis   # JSON Schema (draft 2020-12) for one kind
 ```
 
-Each schema pins `schemaVersion` and `kind`. `result` is an open object for now; each command tightens its own `result` schema when it lands. In code, `validateEnvelope()` from `@moldesk/core` rejects unknown `kind` or `schemaVersion`, unknown keys and `__proto__`-style keys.
+Each schema (JSON Schema draft-07) pins `schemaVersion`, `kind` and the shape of that kind's `result`: required fields and their types are fixed, extra fields may be added in later releases, so readers should ignore fields they do not know. `moldesk.analysis` is either a structure analysis or, for `analyze --validate-fasta`, a `{ "fasta": … }` check. Tests validate the real `--json` output of every command against its schema with an independent validator (ajv) and check that mutated output (missing or mistyped fields) is rejected. In code, `validateEnvelope()` from `@moldesk/core` rejects unknown `kind` or `schemaVersion`, unknown keys and `__proto__`-style keys.
 
 ## Selectors
 

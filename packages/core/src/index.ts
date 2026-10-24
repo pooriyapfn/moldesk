@@ -159,10 +159,12 @@ export {
   USALIGN_VERSION,
 } from "./tools/usalign.js";
 export type { Compiler, UsalignInstallation, UsalignInstallOptions, UsalignInstallPlan, UsalignReceipt, UsalignStatus } from "./tools/usalign.js";
+export { describeModel } from "./describe/describe.js";
+export type { DescribeOptions, ModelDescription, ModelParameter } from "./describe/describe.js";
 export { fetchCacheDir, fetchStructure } from "./fetch/fetch.js";
 export type { FetchedFile, FetchOptions, FetchProvenance, FetchResult } from "./fetch/fetch.js";
 export { parseFetchSpec } from "./fetch/sources.js";
 export type { FetchFormat, FetchSource, FetchSpec } from "./fetch/sources.js";
-export { chainsToFasta, validateFasta, writeFastaFile } from "./analysis/fasta.js";
+export { chainsToFasta, fastaValidationEnvelope, validateFasta, writeFastaFile } from "./analysis/fasta.js";
 
 export { VERSION } from "./version.js";

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { writeFileExclusive } from "@moldesk/visualizer";
 import { MoldeskError } from "../errors.js";
-import type { AnalysisEnvelope } from "../schemas/envelope.js";
+import { ENVELOPE_SCHEMA_VERSION, type AnalysisEnvelope } from "../schemas/envelope.js";
+import { VERSION } from "../version.js";
 import type { AnalysisResult } from "./analyze.js";
 import { asMoldeskError } from "../visualization.js";
 import { readTextInput } from "./structure-input.js";
@@ -38,6 +39,18 @@ export async function writeFastaFile(envelope: AnalysisEnvelope<AnalysisResult>,
     throw asMoldeskError(error);
   }
   return resolved;
+}
+
+/** The `moldesk.analysis` envelope for a FASTA file that passed validation. */
+export function fastaValidationEnvelope(checked: { path: string; sha256: string; records: FastaRecord[] }): AnalysisEnvelope {
+  return {
+    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    kind: "moldesk.analysis",
+    status: "ok",
+    result: { fasta: { path: checked.path, sha256: checked.sha256, valid: true, records: checked.records } },
+    warnings: [],
+    provenance: { moldeskVersion: VERSION },
+  };
 }
 
 export interface FastaRecord {

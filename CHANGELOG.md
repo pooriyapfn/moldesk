@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk describe <model> [--json]`: one document per model with its inputs, outputs, parameters (from the
+  adapter's own list, with per-platform defaults such as Boltz's `accelerator`), runtimes and hardware
+  needs, assets and licenses, cloud availability and the verdict for this machine (the same check as
+  `list`/`install`, from the same report as `doctor`). See `docs/describe.md`.
+- `moldesk schema <kind>` now prints the full `result` shape of every kind (JSON Schema draft-07, was
+  draft 2020-12 with an open `result`); real output of every command is validated against it in tests.
 - `moldesk fetch pdb:1M17 | afdb:P00533 | uniprot:P00533` (`--format`, `--output`, `--refresh`): downloads into
   `~/.moldesk/cache/fetch/<source>/<id>/` with a provenance sidecar (URL, retrieval time, SHA-256, source
   version, license). Ids are validated before any request; HTTPS to one allowed host per source, no
