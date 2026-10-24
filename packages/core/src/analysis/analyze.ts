@@ -22,8 +22,10 @@ export interface ChainAnalysis {
   entityId: string;
   type: "protein" | "dna" | "rna" | "polymer" | "ligand" | "water" | "other";
   residueCount: number;
-  /** Polymer chains only; `X` marks a non-standard residue. */
+  /** Polymer chains only: the modeled residues. `X` marks a non-standard residue. */
   sequence?: string;
+  /** Polymer chains only: the complete entity sequence from the file (SEQRES / entity_poly_seq), including residues that were not modeled. This is the sequence to predict or search with. */
+  fullSequence?: string;
   /** Polymer chains only: jumps in author numbering. `missing` residues sit between the two. */
   gaps?: Array<{ after: ResidueId; before: ResidueId; missing: number }>;
   /** Polymer chains of mmCIF files that list unobserved residues. */
@@ -154,6 +156,7 @@ export async function analyzeStructureFile(file: string, options: AnalyzeOptions
 
     if (chain.entityType === "polymer") {
       out.sequence = chain.residues.map((r) => r.letter ?? "X").join("");
+      if (chain.entitySequence) out.fullSequence = chain.entitySequence;
       out.gaps = [];
       for (let i = 1; i < chain.residues.length; i++) {
         const [a, b] = [chain.residues[i - 1], chain.residues[i]];

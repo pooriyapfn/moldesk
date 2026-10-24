@@ -80,6 +80,7 @@
           }
         ],
         "sequence": "CGCGAATTCGCG",
+        "fullSequence": "CGCGAATTCGCG",
         "gaps": []
       },
       {
@@ -151,6 +152,7 @@
           }
         ],
         "sequence": "CGCGAATTCGCG",
+        "fullSequence": "CGCGAATTCGCG",
         "gaps": []
       },
       {

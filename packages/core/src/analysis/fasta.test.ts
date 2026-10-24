@@ -30,6 +30,10 @@ describe("chainsToFasta / writeFastaFile", () => {
       ">1AAY|chain A|label A|protein",
     ]);
 
+    // the protein record is the entity's complete sequence (90), not just the 85 modeled residues
+    const sequences = text.split("\n").filter((l) => l && !l.startsWith(">"));
+    expect(sequences.map((s) => s.length)).toEqual([11, 11, 90]);
+
     const dest = path.join(dir, "sub", "out.fa");
     await writeFastaFile(envelope, dest);
     expect(fs.readFileSync(dest, "utf8")).toBe(text);

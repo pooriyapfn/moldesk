@@ -75,6 +75,7 @@
           }
         ],
         "sequence": "AGCGTGGGCGT",
+        "fullSequence": "AGCGTGGGCGT",
         "gaps": []
       },
       {
@@ -141,6 +142,7 @@
           }
         ],
         "sequence": "TACGCCCACGC",
+        "fullSequence": "TACGCCCACGC",
         "gaps": []
       },
       {
@@ -662,6 +664,7 @@
           }
         ],
         "sequence": "RPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPFACDICGRKFARSDERKRHTKIHLR",
+        "fullSequence": "MERPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPFACDICGRKFARSDERKRHTKIHLRQKD",
         "gaps": [],
         "secondaryStructure": {
           "helix": 0.4118,

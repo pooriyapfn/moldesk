@@ -31,6 +31,7 @@ const analysisStructure = object(
         { authId: string, labelId: string, entityId: string, type: oneOf("protein", "dna", "rna", "polymer", "ligand", "water", "other"), residueCount: integer },
         {
           sequence: string,
+          fullSequence: string,
           gaps: array(object({ after: object(residueId, insertionCode), before: object(residueId, insertionCode), missing: integer })),
           unobserved: array(object({ ...residueId, name: string }, insertionCode)),
           secondaryStructure: object({ helix: number, strand: number, coil: number }),

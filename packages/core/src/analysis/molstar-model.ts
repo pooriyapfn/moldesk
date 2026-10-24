@@ -37,6 +37,8 @@ export interface ParsedChain {
   entityId: string;
   entityType: "polymer" | "non-polymer" | "branched" | "water" | "unknown";
   residueCount: number;
+  /** The entity's complete sequence from the file (SEQRES / entity_poly_seq), including residues that were not modeled. */
+  entitySequence?: string;
   /** Empty for water chains. */
   residues: ParsedResidue[];
 }
@@ -140,6 +142,18 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
   const heavy = { x: [] as number[], y: [] as number[], z: [] as number[], name: [] as string[], chain: [] as number[], residue: [] as number[] };
   let atomsWithoutMass = 0;
 
+  const entitySequences = new Map<number, string | undefined>();
+  const entitySequenceOf = (entityIndex: number): string | undefined => {
+    if (!entitySequences.has(entityIndex)) {
+      const sequence = model.sequence.byEntityKey[entityIndex]?.sequence;
+      entitySequences.set(
+        entityIndex,
+        sequence && sequence.length > 0 ? Array.from({ length: sequence.length }, (_, i) => (sequence.code.value(i) as string).replace(/^-$/, "X")).join("") : undefined,
+      );
+    }
+    return entitySequences.get(entityIndex);
+  };
+
   const chains: ParsedChain[] = [];
   for (let c = 0; c < h.chains._rowCount; c++) {
     const entityId = h.chains.label_entity_id.value(c);
@@ -156,6 +170,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
       residueCount: 0,
       residues: [],
     };
+    if (entityType === "polymer" && entityIndex >= 0) chain.entitySequence = entitySequenceOf(entityIndex);
     let previous = "";
     for (let r = rStart; r < rEnd; r++) {
       const first = h.residueAtomSegments.offsets[r];

@@ -99,6 +99,44 @@ describe("structure details", () => {
   });
 });
 
+describe("the complete entity sequence", () => {
+  it("is longer than the modeled sequence when the file's sequence has residues that were not modeled", async () => {
+    const [, , protein] = (await analyzeStructureFile(fixture("1AAY.pdb"))).result.chains;
+    expect([protein.sequence!.length, protein.fullSequence!.length]).toEqual([85, 90]);
+    expect(protein.fullSequence!.startsWith("MERPYACPV")).toBe(true);
+    // the modeled residues are the full sequence minus the ones that are not in the coordinates
+    let at = 0;
+    for (const letter of protein.sequence!) at = protein.fullSequence!.indexOf(letter, at) + 1;
+    expect(at).toBeGreaterThan(0);
+  });
+
+  it("is a protein's whole sequence even when a loop is missing from the coordinates (PDB)", async () => {
+    const original = (await analyzeStructureFile(fixture("1CRN.pdb"))).result.chains[0];
+    const text = fs.readFileSync(fixture("1CRN.pdb"), "utf8").split("\n").filter((l) => !(l.startsWith("ATOM") && [10, 11, 12].includes(Number(l.slice(22, 26))))).join("\n");
+    const [chain] = (await analyzeStructureFile(write("loop.pdb", text))).result.chains;
+    expect(chain.sequence).toHaveLength(43);
+    expect(chain.gaps).toEqual([{ after: { authSeqId: 9, labelSeqId: 9 }, before: { authSeqId: 13, labelSeqId: 13 }, missing: 3 }]);
+    expect(chain.fullSequence).toBe(original.sequence);
+  });
+
+  it("is a protein's whole sequence even when a loop is missing from the coordinates (mmCIF)", async () => {
+    const original = (await analyzeStructureFile(fixture("1CRN.cif"))).result.chains[0];
+    const lines = fs.readFileSync(fixture("1CRN.cif"), "utf8").split("\n");
+    const columns = lines.filter((l) => l.startsWith("_atom_site.")).map((l) => l.trim());
+    const labelSeq = columns.indexOf("_atom_site.label_seq_id");
+    const text = lines.filter((l) => !(l.startsWith("ATOM ") && [10, 11, 12].includes(Number(l.trim().split(/\s+/)[labelSeq])))).join("\n");
+    const [chain] = (await analyzeStructureFile(write("loop.cif", text))).result.chains;
+    expect(chain.sequence).toHaveLength(43);
+    expect(chain.fullSequence).toBe(original.sequence);
+  });
+
+  it("falls back to what is modeled when the file has no sequence records", async () => {
+    const text = fs.readFileSync(fixture("1CRN.pdb"), "utf8").split("\n").filter((l) => !l.startsWith("SEQRES")).join("\n");
+    const [chain] = (await analyzeStructureFile(write("noseqres.pdb", text))).result.chains;
+    expect(chain.fullSequence ?? chain.sequence).toBe(chain.sequence);
+  });
+});
+
 describe("mmCIF unobserved residues", () => {
   it("lists them per chain for model 1", async () => {
     const cif = `${fs.readFileSync(fixture("1CRN.cif"), "utf8")}

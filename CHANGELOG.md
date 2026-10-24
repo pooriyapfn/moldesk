@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk analyze` now reports `fullSequence` for polymer chains: the entity's complete sequence from the
+  file (SEQRES / `entity_poly_seq`), including residues with no coordinates. `sequence` stays the modeled
+  residues, and `--fasta` now writes the full sequences, since predicting the modeled-only sequence would
+  silently drop missing loops (1M17: 312 modeled of 333 residues).
 - Agent skill (`plugins/moldesk`, now 0.2.0): covers `fetch`, `analyze`, `inspect`, `view --highlight`,
   `compare`, `describe` and `schema`, adds ground rules for network fetches, building US-align and
   never inventing confidence, and two recipes (understand a structure; compare a Boltz prediction with an

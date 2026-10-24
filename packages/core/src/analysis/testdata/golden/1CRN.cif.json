@@ -296,6 +296,7 @@
           }
         ],
         "sequence": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN",
+        "fullSequence": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN",
         "gaps": [],
         "secondaryStructure": {
           "helix": 0.4565,

@@ -12,12 +12,15 @@ import { readTextInput } from "./structure-input.js";
 const ALPHABET = /^[ACDEFGHIKLMNPQRSTVWYBXZUO*-]+$/i;
 const MAX_REPORTED_ISSUES = 10;
 
-/** One FASTA record per polymer chain; the header carries both chain ids so it is unique. */
+/**
+ * One FASTA record per polymer chain; the header carries both chain ids so it is unique. The record is the chain's
+ * full entity sequence (so residues that were not modeled are kept), or the modeled residues when the file has none.
+ */
 export function chainsToFasta(envelope: AnalysisEnvelope<AnalysisResult>): string {
   const stem = path.basename(envelope.input?.path ?? "structure").replace(/\.[^.]*$/, "");
   return envelope.result.chains
-    .filter((chain) => chain.sequence)
-    .map((chain) => `>${stem}|chain ${chain.authId}|label ${chain.labelId}|${chain.type}\n${chain.sequence}\n`)
+    .filter((chain) => chain.fullSequence ?? chain.sequence)
+    .map((chain) => `>${stem}|chain ${chain.authId}|label ${chain.labelId}|${chain.type}\n${chain.fullSequence ?? chain.sequence}\n`)
     .join("");
 }
 

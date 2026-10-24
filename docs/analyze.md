@@ -5,7 +5,7 @@ A structural summary of a PDB or mmCIF file. With `--json` it prints one [`molde
 ```sh
 moldesk analyze protein.pdb                          # short text summary
 moldesk analyze model.cif --json                     # full result as JSON
-moldesk analyze protein.pdb --fasta chains.fa        # also write polymer sequences (never overwrites)
+moldesk analyze protein.pdb --fasta chains.fa        # also write the complete polymer sequences (never overwrites)
 moldesk analyze --validate-fasta chains.fa           # check a FASTA file instead
 moldesk analyze model.pdb --bfactor-is-plddt         # only if you know the B-factor column is pLDDT
 ```
@@ -20,9 +20,10 @@ Mol* 5.12.0, the same library behind the offline viewer, runs headless in Node, 
 | --- | --- |
 | `modelCount`, `analyzedModel` | Only the first model (`0`) is analyzed; more models add a `MULTIPLE_MODELS` warning. |
 | `chains[]` | One entry per Mol* chain: `authId`, `labelId`, `entityId`, `type` (`protein`, `dna`, `rna`, `polymer`, `ligand`, `water`, `other`) and `residueCount`. In PDB files `label` ids are inferred by Mol*; in mmCIF they are the file's. |
-| `chains[].sequence` | One-letter sequence of polymer chains; `X` for any non-standard residue (for example selenomethionine). |
+| `chains[].sequence` | One-letter sequence of the **modeled** residues of a polymer chain; `X` for any non-standard residue (for example selenomethionine). Loops and tails that have no coordinates are not in it. |
+| `chains[].fullSequence` | The entity's **complete** sequence from the file (SEQRES, or mmCIF `entity_poly_seq`), including residues that were not modeled; `X` for non-standard residues. This is the sequence to predict or search with: for EGFR 1M17 it has 333 residues while `sequence` has 312. When the file has no sequence records it equals the modeled sequence. |
 | `chains[].gaps[]` | Jumps in author numbering between neighbouring residues, with the count of missing numbers. |
-| `chains[].unobserved[]` | mmCIF `pdbx_unobs_or_zero_occ_residues` rows for model 1. |
+| `chains[].unobserved[]` | mmCIF `pdbx_unobs_or_zero_occ_residues` rows for model 1: residues missing from the coordinates, plus residues whose atoms have zero occupancy (those are still in `residues[]`). |
 | `chains[].residues[]` | Every non-water residue with `authSeqId`, `labelSeqId` (null for non-polymers), `insertionCode`, `name`, `secondaryStructure` (`H`/`E`/`C`, protein) and `plddt` (when known). |
 | `chains[].secondaryStructure` | Helix, strand and coil fractions of a protein chain. |
 | `secondaryStructure.source` | `file` when the file has HELIX/SHEET (or `struct_conf`) records, otherwise `computed` (DSSP). |

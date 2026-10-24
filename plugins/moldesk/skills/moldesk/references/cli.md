@@ -59,9 +59,9 @@ Downloads `pdb:<4-character id>` (RCSB), `afdb:<UniProt accession>` (AlphaFold D
 
 ## `moldesk analyze <file> [--fasta <file>] [--bfactor-is-plddt] [--json]`
 
-Summarizes a `.pdb`, `.ent`, `.cif` or `.mmcif` file (first model). `result`: `modelCount`, `chains[]` (`authId`, `labelId`, `type` of `protein|dna|rna|ligand|water|other`, `residueCount`, `sequence` with `X` for non-standard residues, `gaps[]`, `unobserved[]` for mmCIF, `secondaryStructure` fractions, `meanPlddt`, `residues[]` with `secondaryStructure` and `plddt`), `secondaryStructure.source` (`file` or `computed`), `geometry` (center of mass, radius of gyration, bounding box in Å) and `confidence`.
+Summarizes a `.pdb`, `.ent`, `.cif` or `.mmcif` file (first model). `result`: `modelCount`, `chains[]` (`authId`, `labelId`, `type` of `protein|dna|rna|ligand|water|other`, `residueCount`, `sequence` (modeled residues, `X` for non-standard) and `fullSequence` (the complete entity sequence including residues with no coordinates: use this to predict or search), `gaps[]`, `unobserved[]` for mmCIF, `secondaryStructure` fractions, `meanPlddt`, `residues[]` with `secondaryStructure` and `plddt`), `secondaryStructure.source` (`file` or `computed`), `geometry` (center of mass, radius of gyration, bounding box in Å) and `confidence`.
 
-`confidence` is `null` with a `NO_CONFIDENCE_SOURCE` warning unless the file has ModelCIF pLDDT, is a MoleculeDesk Boltz output, or `--bfactor-is-plddt` was passed. `--fasta` writes the polymer chains and never overwrites.
+`confidence` is `null` with a `NO_CONFIDENCE_SOURCE` warning unless the file has ModelCIF pLDDT, is a MoleculeDesk Boltz output, or `--bfactor-is-plddt` was passed. `--fasta` writes each polymer chain's `fullSequence` (or the modeled residues when the file has none) and never overwrites.
 
 ## `moldesk analyze --validate-fasta <file> [--json]`
 
