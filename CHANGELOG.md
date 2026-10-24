@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk fetch pdb:1M17 | afdb:P00533 | uniprot:P00533` (`--format`, `--output`, `--refresh`): downloads into
+  `~/.moldesk/cache/fetch/<source>/<id>/` with a provenance sidecar (URL, retrieval time, SHA-256, source
+  version, license). Ids are validated before any request; HTTPS to one allowed host per source, no
+  cross-host redirects, size caps on the decompressed stream, content checks and atomic writes. The
+  AlphaFold DB file URL is resolved through its API. A verified cache hit makes no request. See
+  `docs/fetch.md`.
 - `moldesk compare a b --report overlay.html [--deviation-threshold 2]`: an offline overlay report with
   both structures in one scene (B moved onto A through a column-major scene transform), the per-residue
   deviation as a line chart, and residues above the threshold highlighted. `mapping[].distance` is the
