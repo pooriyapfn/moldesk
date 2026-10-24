@@ -1,10 +1,11 @@
+import path from "node:path";
 import { MoldeskError } from "../errors.js";
 import { ENVELOPE_SCHEMA_VERSION, type AnalysisEnvelope } from "../schemas/envelope.js";
 import { parseSelector, type Selector } from "../schemas/selector.js";
 import { VERSION } from "../version.js";
-import { NO_CONFIDENCE_WARNING, residueId, round, summarizeResidue, type ResidueId, type ResidueSummary } from "./analyze.js";
+import { chainType, NO_CONFIDENCE_WARNING, residueId, round, summarizeResidue, type ResidueId, type ResidueSummary } from "./analyze.js";
 import { resolveConfidence } from "./confidence.js";
-import { MOLSTAR_VERSION, parseStructure, type ParsedChain, type ParsedResidue } from "./molstar-model.js";
+import { MOLSTAR_VERSION, parseStructure, type ParsedChain, type ParsedResidue, type ParsedStructure } from "./molstar-model.js";
 import { readStructureInput } from "./structure-input.js";
 
 export const DEFAULT_INSPECT_RADIUS = 5;
@@ -52,13 +53,47 @@ function usage(message: string): MoldeskError {
   });
 }
 
-function matches(selector: Selector, chain: ParsedChain, residue: ParsedResidue): boolean {
+export function matches(selector: Selector, chain: ParsedChain, residue: ParsedResidue): boolean {
   if ((selector.namespace === "auth" ? chain.authId : chain.labelId) !== selector.chainId) return false;
   if (selector.start === undefined || selector.end === undefined) return true;
   const number = selector.namespace === "auth" ? residue.authSeqId : residue.labelSeqId;
   if (number === null || number < selector.start || number > selector.end) return false;
   // A single-residue selector names one residue exactly, insertion code included (none = blank).
   return selector.start !== selector.end || (residue.insertionCode ?? "") === (selector.insertionCode ?? "");
+}
+
+/**
+ * The error for a selector that selects nothing: says which part failed (no such chain, or no such
+ * residue in an existing chain) and lists what the file does have, in both text and `details`.
+ */
+export function selectorNoMatch(what: string, text: string, selector: Selector, parsed: ParsedStructure, file: string): MoldeskError {
+  const ns = selector.namespace;
+  const chainId = (c: ParsedChain): string => (ns === "auth" ? c.authId : c.labelId);
+  const available = parsed.chains
+    .filter((c) => c.entityType !== "water")
+    .map((c) => {
+      const numbers = c.residues.map((r) => (ns === "auth" ? r.authSeqId : r.labelSeqId)).filter((n): n is number => n !== null);
+      return {
+        chainId: chainId(c),
+        type: chainType(c),
+        residueCount: c.residues.length,
+        residues: numbers.length > 0 ? `${Math.min(...numbers)}-${Math.max(...numbers)}` : null,
+      };
+    });
+  const known = available.filter((c) => c.chainId === selector.chainId);
+  const reason = known.length === 0 ? "no-chain" : "no-residue";
+  const wanted =
+    selector.start === undefined ? "" : selector.start === selector.end ? `residue ${selector.start}${selector.insertionCode ?? ""}` : `residues ${selector.start}-${selector.end}`;
+  const why =
+    reason === "no-chain"
+      ? `there is no chain "${selector.chainId}" (${ns} ids)`
+      : `chain "${selector.chainId}" (${ns} ids) has ${known.map((c) => `${c.type} residues ${c.residues ?? "(unnumbered)"}`).join(" and ")}, but no ${wanted}`;
+  return new MoldeskError({
+    code: "SELECTOR_NO_MATCH",
+    message: `${what} "${text}" matches nothing in ${path.basename(file)}: ${why}.`,
+    remediation: `Available chains (${ns} ids): ${available.map((c) => `${c.chainId} (${c.type}, ${c.residues ?? "no numbering"})`).join("; ")}.${ns === "auth" ? " Use --label to read ids as label ids." : ""}`,
+    details: { selector: text, namespace: ns, reason, available },
+  });
 }
 
 /** Per-residue details and heavy-atom neighbours for a chain, residue or range, as a `moldesk.inspect` envelope. */
@@ -83,11 +118,7 @@ export async function inspectStructureFile(
     }),
   );
   if (selected.length === 0) {
-    throw new MoldeskError({
-      code: "SELECTOR_NO_MATCH",
-      message: `Selector "${selectorText}" matches no residue in ${input.path}.`,
-      remediation: `Check the chain and residue ids${options.label ? "" : " (use --label for label ids)"} with \`moldesk analyze\`.`,
-    });
+    throw selectorNoMatch("Selector", selectorText, selector, parsed, input.path);
   }
 
   // Uniform grid over all heavy atoms (cell = radius), so each lookup touches 27 cells.

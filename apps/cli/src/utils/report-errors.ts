@@ -13,6 +13,9 @@ const EXIT_CODES: Record<string, number> = {
   INVALID_ANALYZE_ARGS: 2,
   INVALID_INSPECT_ARGS: 2,
   SELECTOR_NO_MATCH: 2,
+  INVALID_SCENE: 2,
+  PLDDT_UNAVAILABLE: 2,
+  SCENE_TOO_LARGE: 2,
   INPUT_NOT_FOUND: 2,
   INPUT_EMPTY: 2,
   INPUT_TOO_LARGE: 2,
@@ -28,7 +31,7 @@ const EXIT_CODES: Record<string, number> = {
 export function reportFailure(error: unknown, json: boolean | undefined): void {
   const err = asMoldeskError(error);
   if (json) {
-    console.log(JSON.stringify({ status: "error", code: err.code, message: err.message, remediation: err.remediation }, null, 2));
+    console.log(JSON.stringify({ status: "error", code: err.code, message: err.message, remediation: err.remediation, ...(err.details ? { details: err.details } : {}) }, null, 2));
   } else {
     console.error(err.message);
     if (err.remediation) console.error(err.remediation);

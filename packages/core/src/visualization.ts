@@ -14,6 +14,7 @@ import {
   type UpdateResult,
   type ViewerBundle,
 } from "@moldesk/visualizer";
+import { buildSceneComponents, type ViewSpec } from "./analysis/scene.js";
 import { MoldeskError } from "./errors.js";
 
 export interface StandaloneReportOptions {
@@ -21,6 +22,8 @@ export interface StandaloneReportOptions {
   outputPath?: string;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
+  /** Highlights and/or coloring; adds scene components to the report. */
+  view?: ViewSpec;
   /** Test seam; defaults to the installed viewer bundle. */
   bundle?: ViewerBundle;
 }
@@ -109,6 +112,9 @@ export async function createStandaloneReport(
   preflight(bytes.toString("utf8"), format, path.basename(file));
   throwIfAborted(options.signal);
 
+  const components = options.view ? await buildSceneComponents(file, options.view) : undefined;
+  throwIfAborted(options.signal);
+
   const id = randomUUID();
   const name = path.basename(file);
   let exported;
@@ -118,7 +124,14 @@ export async function createStandaloneReport(
         id,
         title: name,
         resources: [{ id: "structure", label: name, format, bytes }],
-        scenes: [{ id: "scene-1", title: name, structures: [{ id: "structure-1", resourceId: "structure" }] }],
+        scenes: [
+          {
+            id: "scene-1",
+            title: name,
+            structures: [{ id: "structure-1", resourceId: "structure" }],
+            ...(components ? { components } : {}),
+          },
+        ],
         panels: [{ id: "structure-panel", kind: "structure", sceneIds: ["scene-1"] }],
         provenance: {},
       },

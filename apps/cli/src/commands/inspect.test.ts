@@ -42,6 +42,23 @@ describe("moldesk inspect", () => {
     expect(out[1]).toMatch(/^ {4}A:\d+ \w+ {2}[\d.]+ Å {2}\(\w+ - \w+\)$/);
   });
 
+  it("puts the available chains in the --json error and in the text error", async () => {
+    await run(CRN, "A:999", "--json");
+    expect(JSON.parse(out[0])).toMatchObject({
+      status: "error",
+      code: "SELECTOR_NO_MATCH",
+      message: expect.stringContaining("has protein residues 1-46, but no residue 999"),
+      details: { reason: "no-residue", available: [{ chainId: "A", type: "protein", residueCount: 46, residues: "1-46" }] },
+    });
+
+    out.length = 0;
+    await run(CRN, "Q");
+    expect(out).toEqual([]);
+    expect(err.join("\n")).toContain('there is no chain "Q" (auth ids)');
+    expect(err.join("\n")).toContain("Available chains (auth ids): A (protein, 1-46)");
+    expect(process.exitCode).toBe(2);
+  });
+
   it.each([
     ["a selector that matches nothing", [CRN, "A:999"], "SELECTOR_NO_MATCH"],
     ["an invalid selector", [CRN, "A:60-40"], "INVALID_SELECTOR"],

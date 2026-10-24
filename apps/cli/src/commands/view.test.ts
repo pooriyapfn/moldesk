@@ -103,4 +103,72 @@ describe("view", () => {
     expect(fs.readFileSync(target, "utf8")).toBe("keep");
     expect(process.exitCode).toBe(2);
   });
+
+  describe("highlights and coloring", () => {
+    const CRN = path.resolve(import.meta.dirname, "../../../../packages/visualizer/test/fixtures/1CRN.pdb");
+    const components = (file: string) => {
+      const payload = /"payload":"([^"]+)"/.exec(fs.readFileSync(file, "utf8"))![1];
+      return JSON.parse(Buffer.from(payload, "base64").toString()).scenes[0].components as Array<Record<string, any>>;
+    };
+
+    it("adds a colored highlight per --highlight/--color pair", async () => {
+      const target = path.join(dir, "h.html");
+      await run("view", CRN, "--highlight", "A:5-9", "--highlight", "A:20", "--color", "#ff5500", "--color", "#00c2ff", "--output", target, "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "created" });
+      const hl = components(target).filter((c) => c.id.startsWith("highlight-"));
+      expect(hl.map((c) => [c.color, c.selection.residues.length])).toEqual([["#ff5500", 5], ["#00c2ff", 1]]);
+    });
+
+    it("colors by pLDDT only with a known source", async () => {
+      await run("view", CRN, "--color-by", "plddt", "--output", path.join(dir, "no.html"), "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "error", code: "PLDDT_UNAVAILABLE" });
+      expect(process.exitCode).toBe(2);
+      expect(fs.existsSync(path.join(dir, "no.html"))).toBe(false);
+
+      out.length = 0;
+      process.exitCode = undefined;
+      const target = path.join(dir, "p.html");
+      await run("view", CRN, "--color-by", "plddt", "--bfactor-is-plddt", "--output", target, "--json");
+      expect(components(target).some((c) => c.id.startsWith("plddt-"))).toBe(true);
+    });
+
+    it("reads a scene file, including the structure path", async () => {
+      fs.copyFileSync(CRN, path.join(dir, "crn.pdb"));
+      const scene = path.join(dir, "scene.json");
+      fs.writeFileSync(scene, JSON.stringify({ structure: "crn.pdb", components: [{ selector: "A:1-3", color: "#123456" }] }));
+      const target = path.join(dir, "s.html");
+      await run("view", "--scene", scene, "--output", target, "--json");
+      expect(components(target).at(-1)).toMatchObject({ id: "highlight-1", color: "#123456" });
+    });
+
+    it.each([
+      ["a highlight that matches nothing", ["--highlight", "A:999"], "SELECTOR_NO_MATCH"],
+      ["an invalid selector", ["--highlight", "A:9-1"], "INVALID_SELECTOR"],
+      ["--color without --highlight", ["--color", "#ff5500"], "INVALID_VIEW_INPUT"],
+      ["a bad color", ["--highlight", "A", "--color", "orange"], "INVALID_SCENE"],
+      ["a bad --color-by", ["--color-by", "rainbow"], "INVALID_SCENE"],
+    ])("exits 2 for %s and writes nothing", async (_name, args, code) => {
+      const target = path.join(dir, "bad.html");
+      await run("view", CRN, ...args, "--output", target, "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "error", code });
+      expect(process.exitCode).toBe(2);
+      expect(fs.existsSync(target)).toBe(false);
+    });
+
+    it("explains an unmatched highlight with the available chains", async () => {
+      await run("view", CRN, "--highlight", "B:1", "--output", path.join(dir, "n.html"), "--json");
+      expect(JSON.parse(out[0])).toMatchObject({
+        status: "error",
+        code: "SELECTOR_NO_MATCH",
+        message: expect.stringContaining('there is no chain "B"'),
+        details: { reason: "no-chain", available: [{ chainId: "A", type: "protein", residues: "1-46" }] },
+      });
+    });
+
+    it("exits 2 when no structure is given", async () => {
+      await run("view", "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "error", code: "INVALID_VIEW_INPUT" });
+      expect(process.exitCode).toBe(2);
+    });
+  });
 });

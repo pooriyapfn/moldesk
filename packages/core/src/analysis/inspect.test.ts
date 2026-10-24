@@ -132,6 +132,30 @@ describe("selectors", () => {
     await expect(inspectStructureFile(structure(), selector)).rejects.toMatchObject({ code: "SELECTOR_NO_MATCH" });
   });
 
+  it("explains a missing chain and lists what exists", async () => {
+    const error = await inspectStructureFile(structure(), "Z:1").catch((e) => e);
+    expect(error.code).toBe("SELECTOR_NO_MATCH");
+    expect(error.message).toBe('Selector "Z:1" matches nothing in tiny.pdb: there is no chain "Z" (auth ids).');
+    expect(error.remediation).toBe("Available chains (auth ids): A (protein, 1-52). Use --label to read ids as label ids.");
+    expect(error.details).toEqual({
+      selector: "Z:1",
+      namespace: "auth",
+      reason: "no-chain",
+      available: [{ chainId: "A", type: "protein", residueCount: 5, residues: "1-52" }],
+    });
+  });
+
+  it("explains a missing residue in an existing chain", async () => {
+    const range = await inspectStructureFile(structure(), "A:4-9").catch((e) => e);
+    expect(range.message).toBe('Selector "A:4-9" matches nothing in tiny.pdb: chain "A" (auth ids) has protein residues 1-52, but no residues 4-9.');
+    expect(range.details.reason).toBe("no-residue");
+    const single = await inspectStructureFile(structure(), "A:99B").catch((e) => e);
+    expect(single.message).toContain("but no residue 99B");
+    const label = await inspectStructureFile(structure(), "A:99", { label: true }).catch((e) => e);
+    expect(label.details.namespace).toBe("label");
+    expect(label.remediation).not.toContain("--label");
+  });
+
   it("never selects water", async () => {
     await expect(inspectStructureFile(path.join(FIXTURES, "3HZ7.pdb"), "A:2000")).rejects.toMatchObject({ code: "SELECTOR_NO_MATCH" });
   });

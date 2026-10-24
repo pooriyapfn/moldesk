@@ -168,19 +168,45 @@ function buildReports(workDir) {
     },
     bundle,
   );
+  // Same shape `moldesk view --highlight A:10-20 --color-by plddt` produces: v1 components only.
+  const residues = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => ({ chainNamespace: "auth", chainId: "A", residueNamespace: "auth", sequenceId: from + i }));
+  const molecules = ["ligand", "ion"].map((type) => ({ id: type, structureId: "structure-1", selection: { kind: "molecule", type }, representation: "sticks" }));
+  const highlight = { id: "highlight-1", structureId: "structure-1", selection: { kind: "residues", residues: residues(10, 20) }, label: "Highlight A:10-20", representation: "sticks", color: "#ff5500" };
+  const crn = [{ id: "structure-1", resourceId: "crn" }];
+  const highlighted = exportReport(
+    {
+      title: "Highlight smoke",
+      resources: [{ id: "crn", label: "1CRN.pdb", format: "pdb", bytes: bytes("1CRN.pdb") }],
+      scenes: [
+        { id: "plain", title: "Plain", structures: crn },
+        { id: "highlight", title: "Highlight", structures: crn, components: [{ id: "base", structureId: "structure-1", selection: { kind: "all" }, representation: "cartoon" }, ...molecules, highlight] },
+        { id: "plddt", title: "pLDDT", structures: crn, components: [
+          { id: "plddt-very-high", structureId: "structure-1", selection: { kind: "residues", residues: residues(1, 20) }, representation: "cartoon", color: "#0053d6" },
+          { id: "plddt-very-low", structureId: "structure-1", selection: { kind: "residues", residues: residues(21, 46) }, representation: "cartoon", color: "#ff7d45" },
+          ...molecules,
+          { ...highlight, selection: { kind: "chains", namespace: "auth", ids: ["A"] } },
+        ] },
+      ],
+      panels: [{ id: "p", kind: "structure", sceneIds: ["plain", "highlight", "plddt"] }],
+      provenance: {},
+    },
+    bundle,
+  );
   const sourceDir = path.join(workDir, "source dir with 'quote");
   mkdirSync(sourceDir, { recursive: true });
   writeFileSync(path.join(sourceDir, "report.html"), good.html);
   writeFileSync(path.join(sourceDir, "evil.html"), evil.html);
   writeFileSync(path.join(sourceDir, "docking.html"), docking.html);
+  writeFileSync(path.join(sourceDir, "highlight.html"), highlighted.html);
   // Move away from the "creator" location; nothing else may be needed to open it.
   const moved = path.join(workDir, "moved elsewhere 'it's");
   mkdirSync(moved, { recursive: true });
   cpSync(path.join(sourceDir, "report.html"), path.join(moved, "report.html"));
   cpSync(path.join(sourceDir, "evil.html"), path.join(moved, "evil.html"));
   cpSync(path.join(sourceDir, "docking.html"), path.join(moved, "docking.html"));
+  cpSync(path.join(sourceDir, "highlight.html"), path.join(moved, "highlight.html"));
   rmSync(sourceDir, { recursive: true, force: true });
-  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), docking: path.join(moved, "docking.html"), moved };
+  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), docking: path.join(moved, "docking.html"), highlight: path.join(moved, "highlight.html"), moved };
 }
 
 async function openWithProbes(browser, url, { offline }) {
@@ -312,6 +338,34 @@ async function exerciseGood(browser, file, { offline, label }) {
     console.log("  attempts:", JSON.stringify(await page.evaluate(() => [...window.__netAttempts]).catch(() => "n/a")), "csp:", JSON.stringify(await page.evaluate(() => [...window.__cspViolations]).catch(() => "n/a")), "cdp:", JSON.stringify(probe.cdpEvents.slice(-5).map((e) => e.slice(0, 120))));
     console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
     console.log(probe.consoleLines.filter((l) => !/GL Driver/.test(l)).slice(-15).join("\n"));
+  } finally {
+    await probe.context.close();
+  }
+}
+
+async function exerciseHighlight(browser, file) {
+  const url = pathToFileURL(file).href;
+  const probe = await openWithProbes(browser, url, { offline: true });
+  const { page } = probe;
+  const loaded = (scene) =>
+    page.waitForFunction((id) => document.querySelector('[data-testid="viewport"]')?.getAttribute("data-loaded-scene") === id, scene, { timeout: 30000 });
+  const shots = {};
+  try {
+    for (const scene of ["plain", "highlight", "plddt"]) {
+      if (scene !== "plain") await page.getByLabel("Scene").selectOption(scene);
+      await loaded(scene);
+      check((await page.getByRole("alert").count()) === 0, `highlight: no viewer errors in scene "${scene}"`);
+      check((await sequenceText(page)).startsWith(CRAMBIN), `highlight: scene "${scene}" still shows the full sequence`);
+      shots[scene] = await page.locator('[data-testid="viewport"] canvas').first().screenshot();
+      check(shots[scene].length > 8000, `highlight: scene "${scene}" is not blank (${shots[scene].length} bytes)`);
+    }
+    check(!shots.plain.equals(shots.highlight) && !shots.plain.equals(shots.plddt) && !shots.highlight.equals(shots.plddt), "highlight: highlighted, pLDDT and plain scenes render differently");
+    const errors = probe.consoleLines.filter((l) => /^(error|pageerror)/.test(l) && !/GL Driver/.test(l));
+    check(errors.length === 0, `highlight: no console errors ${JSON.stringify(errors)}`);
+    await assertNoNetwork("highlight", probe, url);
+  } catch (error) {
+    check(false, `highlight: ${error.message}`);
+    console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
   } finally {
     await probe.context.close();
   }
@@ -529,10 +583,11 @@ try {
 }
 try {
   console.log(`Browser: Chrome ${browser.version()} on ${process.platform}/${process.arch}`);
-  const { good, evil, docking } = buildReports(workDir);
+  const { good, evil, docking, highlight } = buildReports(workDir);
   await exerciseGood(browser, good, { offline: false });
   await exerciseGood(browser, good, { offline: true });
   await exerciseDocking(browser, docking);
+  await exerciseHighlight(browser, highlight);
   await exerciseEdgeCases(browser, workDir);
   await exerciseUpdated(browser, good);
   await exerciseEvil(browser, evil);

@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk view --highlight A:40-60 [--color '#ff5500'] [--color-by chain|plddt]` and
+  `moldesk view --scene scene.json`: highlights and pLDDT-class coloring in offline reports, encoded
+  with the existing v1 report fields (no schema bump, so older viewers still open the report).
+  `--color-by plddt` needs a known pLDDT source. See `docs/visualizer.md`.
 - `moldesk inspect <file> <selector>`: per-residue name, auth/label ids, secondary structure, pLDDT
   (when known) and heavy-atom count for a chain, residue or range, plus neighbouring residues within
   `--radius` Å (default 5) with the minimum distance and atom pair. A selector that matches nothing

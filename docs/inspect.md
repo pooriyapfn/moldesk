@@ -23,4 +23,4 @@ A single-residue selector names one residue exactly: `A:52` matches only residue
 
 ## Errors
 
-All exit 2: `SELECTOR_NO_MATCH` (nothing selected, never an empty success), `INVALID_SELECTOR`, `INVALID_INSPECT_ARGS` (radius not in (0, 30]), plus the input errors listed in [analyze.md](./analyze.md#errors).
+All exit 2: `SELECTOR_NO_MATCH` (nothing selected, never an empty success; the message says whether the chain or the residue is missing, and `remediation` and `details.available` list the chains, types and residue ranges that exist), `INVALID_SELECTOR`, `INVALID_INSPECT_ARGS` (radius not in (0, 30]), plus the input errors listed in [analyze.md](./analyze.md#errors).

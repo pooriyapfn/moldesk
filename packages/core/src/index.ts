@@ -140,6 +140,8 @@ export { analyzeStructureFile } from "./analysis/analyze.js";
 export type { AnalysisResult, AnalyzeOptions, ChainAnalysis, ResidueId } from "./analysis/analyze.js";
 export { DEFAULT_INSPECT_RADIUS, inspectStructureFile } from "./analysis/inspect.js";
 export type { InspectedResidue, InspectOptions, InspectResult, NeighborResidue } from "./analysis/inspect.js";
+export { buildSceneComponents, parseColor, parseColorBy, parseSceneFile, PLDDT_BINS, readSceneFile, resolveViewRequest } from "./analysis/scene.js";
+export type { ColorBy, HighlightSpec, SceneFile, ViewRequest, ViewSpec } from "./analysis/scene.js";
 export { chainsToFasta, validateFasta, writeFastaFile } from "./analysis/fasta.js";
 
 export { VERSION } from "./version.js";
