@@ -9,6 +9,7 @@ import {
   planUpdate,
   REPORT_LIMITS,
   writeFileExclusive,
+  type ExportedReport,
   type MolecularFormat,
   type UpdatePlan,
   type UpdateResult,
@@ -142,13 +143,40 @@ export async function createStandaloneReport(
   }
   throwIfAborted(options.signal);
 
+  return { ...(await publishReport(exported, id, options)), format };
+}
+
+/** Rejects an unusable `--output`/`--report` path before any work is done. */
+export function checkReportOutput(outputPath: string): void {
+  const dest = path.resolve(outputPath);
+  if (fs.existsSync(dest) && fs.statSync(dest).isDirectory()) {
+    throw invalid(`--output must be a file path, not a directory: ${dest}`, "Pass a file name such as ./report.html.");
+  }
+  if (fs.existsSync(dest)) throw new MoldeskError({ code: "OUTPUT_EXISTS", message: `Refusing to overwrite existing file: ${dest}`, remediation: "Choose a new file name or remove the existing file." });
+}
+
+export interface PublishedReport {
+  id: string;
+  path: string;
+  fileUrl: string;
+  sha256: string;
+  sizeBytes: number;
+  sourceSha256: string[];
+  viewerVersion: string;
+  bundleSha256: string;
+}
+
+/** Writes an exported report to `--output` (which must not exist) or an owned path under the cache. */
+export async function publishReport(
+  exported: ExportedReport,
+  id: string,
+  options: { outputPath?: string; env?: NodeJS.ProcessEnv },
+): Promise<PublishedReport> {
   const dest =
     options.outputPath !== undefined
       ? path.resolve(options.outputPath)
       : path.join(visualizationDir(id, options.env), "viewer.html");
-  if (options.outputPath !== undefined && fs.existsSync(dest) && fs.statSync(dest).isDirectory()) {
-    throw invalid(`--output must be a file path, not a directory: ${dest}`, "Pass a file name such as ./report.html.");
-  }
+  if (options.outputPath !== undefined) checkReportOutput(dest);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   try {
     await writeFileExclusive(dest, exported.html);
@@ -161,7 +189,6 @@ export async function createStandaloneReport(
     fileUrl: pathToFileURL(dest).href,
     sha256: exported.sha256,
     sizeBytes: exported.sizeBytes,
-    format,
     sourceSha256: exported.sourceSha256,
     viewerVersion: exported.viewerVersion,
     bundleSha256: exported.bundleSha256,

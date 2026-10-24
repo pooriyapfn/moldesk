@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compareStructureFiles } from "../analysis/compare.js";
 import { APPLIED, usalignHome } from "../testSupport/usalign.js";
+import { decodeEnvelope, extractEnvelope } from "@moldesk/visualizer";
 import { installUsalign, requireUsalign, uninstallUsalign } from "./usalign.js";
 
 const FIXTURES = path.resolve(import.meta.dirname, "../../../visualizer/test/fixtures");
@@ -62,6 +63,15 @@ describe.runIf(process.env.MOLDESK_LIVE_USALIGN === "1")("US-align, for real", (
         expect(Math.abs(value - (i === j ? 1 : 0))).toBeLessThan(1e-3);
       }
     }
+  });
+
+  it("overlay report: a rigidly moved copy deviates by about zero everywhere, and both structures are in one scene", async () => {
+    const out = path.join(dir, "overlay.html");
+    const { result } = await compareStructureFiles(fx("1CRN.pdb"), path.join(dir, "crn-moved.pdb"), { paths, report: { outputPath: out } });
+    expect(Math.max(...result.mapping.map((p) => p.distance))).toBeLessThan(0.01);
+    expect(result.report).toMatchObject({ deviationThreshold: 2, residuesAboveThreshold: 0 });
+    const report = decodeEnvelope(extractEnvelope(fs.readFileSync(out, "utf8")));
+    expect(report.scenes[0].structures.map((s) => [s.id, s.transform !== undefined])).toEqual([["a", false], ["b", true]]);
   });
 
   it("different proteins, selenomethionine residues, DNA, insertion codes, an NMR ensemble and a complex", async () => {

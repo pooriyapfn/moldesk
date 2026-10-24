@@ -25,6 +25,8 @@ export interface ParsedResidue {
   hetero: boolean;
   /** Has the atom structure alignment tools trace a polymer with: CA for protein, C3' for nucleic acids. */
   hasTraceAtom: boolean;
+  /** Coordinates (Å) of that trace atom. */
+  trace?: [number, number, number];
   /** Mean B-factor of the residue's kept atoms; the caller decides whether it means anything. */
   bfactor: number | null;
 }
@@ -182,6 +184,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
       }
       const traceAtom = kind === "protein" ? "CA" : kind === "other" ? undefined : "C3'";
       let hasTraceAtom = false;
+      let trace: [number, number, number] | undefined;
       let bSum = 0;
       let bCount = 0;
       for (let a = first; a < last; a++) {
@@ -189,7 +192,10 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         if (id !== "" && id !== alt) continue;
         const element = h.atoms.type_symbol.value(a);
         if (element === "H" || element === "D") continue;
-        if (h.atoms.label_atom_id.value(a) === traceAtom) hasTraceAtom = true;
+        if (h.atoms.label_atom_id.value(a) === traceAtom) {
+          hasTraceAtom = true;
+          trace = [conf.x[a], conf.y[a], conf.z[a]];
+        }
         bSum += conf.B_iso_or_equiv.value(a);
         bCount++;
         heavy.x.push(conf.x[a]);
@@ -224,6 +230,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         atomCount: bCount,
         hetero: h.residues.group_PDB.value(r) === "HETATM",
         hasTraceAtom,
+        ...(trace ? { trace } : {}),
         bfactor: bCount > 0 ? bSum / bCount : null,
       });
     }

@@ -98,4 +98,48 @@ describe("moldesk compare", () => {
     expect(JSON.parse(out[0])).toMatchObject({ status: "error", code });
     expect(process.exitCode).toBe(2);
   });
+
+  describe("--report", () => {
+    const reportRows = (file: string) => {
+      const payload = /"payload":"([^"]+)"/.exec(fs.readFileSync(file, "utf8"))![1];
+      const report = JSON.parse(Buffer.from(payload, "base64").toString());
+      return { report, rows: JSON.parse(Buffer.from(report.resources.find((r: { id: string }) => r.id === "deviation").data, "base64").toString()).rows };
+    };
+
+    it("writes the overlay report and says so in the JSON and the text", async () => {
+      await installPlaceholder();
+      const target = path.join(dir, "overlay.html");
+      await run(CRN, CRN, "--report", target, "--deviation-threshold", "1.5", "--json");
+      const envelope = validateEnvelope(JSON.parse(out[0]), "moldesk.compare");
+      expect(envelope.result).toMatchObject({ report: { path: target, deviationThreshold: 1.5 } });
+      const { report, rows } = reportRows(target);
+      expect(report.scenes[0].structures).toHaveLength(2);
+      expect(rows).toHaveLength(46);
+
+      out.length = 0;
+      const second = path.join(dir, "overlay2.html");
+      await run(CRN, CRN, "--report", second);
+      expect(out.join("\n")).toContain(`Report: ${second} (`);
+      expect(out.join("\n")).toContain("Open in your browser: file://");
+    });
+
+    it("refuses an existing file and a bad threshold before running US-align", async () => {
+      await installPlaceholder();
+      let calls = 0;
+      state.runner = async () => { calls++; return { code: 0, stdout: "", stderr: "" }; };
+      const existing = path.join(dir, "exists.html");
+      fs.writeFileSync(existing, "keep");
+      await run(CRN, CRN, "--report", existing, "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "error", code: "OUTPUT_EXISTS" });
+      expect(process.exitCode).toBe(2);
+
+      out.length = 0;
+      process.exitCode = undefined;
+      await run(CRN, CRN, "--report", path.join(dir, "new.html"), "--deviation-threshold", "abc", "--json");
+      expect(JSON.parse(out[0])).toMatchObject({ status: "error", code: "INVALID_COMPARE_ARGS" });
+      expect(process.exitCode).toBe(2);
+      expect(calls).toBe(0);
+      expect(fs.readFileSync(existing, "utf8")).toBe("keep");
+    });
+  });
 });

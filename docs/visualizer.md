@@ -69,6 +69,10 @@ How it maps to the report: a scene with components draws only those components, 
 
 **Compatibility decision.** Per-residue color needs no new contract field: classes are ordinary `residues` components with a `color`. So reports keep `schemaVersion: 1` and `envelopeVersion: 1`, every existing viewer renders them, and `moldesk visualizer update` behaves as before. Reports from an incompatible future version are still refused by the updater (`planUpdate` returns `unsupported`). The trade-off: four classes, not a continuous gradient.
 
+## Charts
+
+A `chart` panel with `type: "line"` is drawn as plain SVG from its JSON or CSV dataset (the `x` and `y` columns, with units; an optional `seriesField` gives one line per value and a legend). The y axis starts at 0 when every value is non-negative. Hover a point for its value; the data stays available under "Data table". Other chart types (`scatter`, `bar`, `heatmap`) are not drawn yet and show their table with a note. `moldesk compare --report` uses a line chart for the per-residue deviation ([compare.md](./compare.md#overlay-report---report)).
+
 ## What a report contains
 
 One HTML file with:

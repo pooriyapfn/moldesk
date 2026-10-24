@@ -10,6 +10,8 @@ import type { ResidueId } from "./analyze.js";
 import { residueId } from "./analyze.js";
 import { parseStructure, type ParsedChain, type ParsedResidue, type ParsedStructure } from "./molstar-model.js";
 import { readStructureInput, type StructureInput } from "./structure-input.js";
+import { checkReportOutput, type PublishedReport } from "../visualization.js";
+import { checkDeviationThreshold, createComparisonReport, DEFAULT_DEVIATION_THRESHOLD } from "./compare-report.js";
 import { parseUsalignOutput } from "./usalign-output.js";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
@@ -21,6 +23,8 @@ export interface CompareOptions {
   chainB?: string;
   /** Align all polymer chains of the first model of each structure (`-mm 1 -ter 1`). */
   multimer?: boolean;
+  /** Also write an overlay report: B moved onto A, a deviation chart, residues above the threshold highlighted. */
+  report?: { outputPath: string; deviationThreshold?: number; env?: NodeJS.ProcessEnv };
   paths?: MoldeskPaths;
   /** Test seam; defaults to spawning the installed binary. */
   runner?: InstallCommandRunner;
@@ -47,8 +51,10 @@ export interface CompareResult {
   /** Maps A onto B: x' = R x + t. Row-major 4x4, Å. */
   transform: { matrix: number[][] };
   /** Aligned residue pairs, A -> B. */
-  mapping: Array<{ a: MappedResidue; b: MappedResidue }>;
+  mapping: Array<{ a: MappedResidue; b: MappedResidue; /** Å between the two trace atoms after superposition. */ distance: number }>;
   citation: string[];
+  /** Present when `report` was requested. */
+  report?: PublishedReport & { deviationThreshold: number; residuesAboveThreshold: number };
 }
 
 function fail(code: string, message: string, remediation: string, details?: Record<string, unknown>): MoldeskError {
@@ -117,6 +123,7 @@ function mapResidues(
   alignedB: string[],
   chainsA: Array<{ chain: ParsedChain; residues: ParsedResidue[] }>,
   chainsB: Array<{ chain: ParsedChain; residues: ParsedResidue[] }>,
+  superpose: (p: [number, number, number]) => [number, number, number],
 ): CompareResult["mapping"] {
   const mismatch = (why: string): MoldeskError =>
     fail("ALIGNMENT_MAPPING_MISMATCH", `Could not map the US-align alignment back to residues: ${why}.`, "The structures may use residues this version does not read the same way. Report this with the files.");
@@ -140,7 +147,15 @@ function mapResidues(
         const expected = resB[ib]?.letter ?? "X";
         if (!resB[ib] || (expected !== "X" && expected.toLowerCase() !== cb.toLowerCase())) throw mismatch(`residue ${ib + 1} of chain ${chainB.authId} in structure B`);
       }
-      if (ca !== "-" && cb !== "-") pairs.push({ a: describe(chainA, resA[ia]), b: describe(chainB, resB[ib]) });
+      if (ca !== "-" && cb !== "-") {
+        const moved = superpose(resA[ia].trace!);
+        const target = resB[ib].trace!;
+        pairs.push({
+          a: describe(chainA, resA[ia]),
+          b: describe(chainB, resB[ib]),
+          distance: Number(Math.hypot(moved[0] - target[0], moved[1] - target[1], moved[2] - target[2]).toFixed(3)),
+        });
+      }
       if (ca !== "-") ia++;
       if (cb !== "-") ib++;
     }
@@ -156,6 +171,10 @@ export async function compareStructureFiles(fileA: string, fileB: string, option
   const multimer = options.multimer === true;
   if (multimer && (options.chainA !== undefined || options.chainB !== undefined)) {
     throw fail("INVALID_COMPARE_ARGS", "--multimer cannot be combined with --chain-a or --chain-b.", "Use --multimer alone to align all chains, or choose one chain from each structure.");
+  }
+  if (options.report) {
+    checkDeviationThreshold(options.report.deviationThreshold ?? DEFAULT_DEVIATION_THRESHOLD);
+    checkReportOutput(options.report.outputPath);
   }
   const usalign = requireUsalign(options.paths ?? getMoldeskPaths());
   const inputA = readStructureInput(fileA);
@@ -195,9 +214,10 @@ export async function compareStructureFiles(fileA: string, fileB: string, option
   const out = parseUsalignOutput(result.stdout);
   // Multimer output puts a `*` after every chain, the last one included.
   const chainsOf = (aligned: string): string[] => aligned.replace(/\*$/, "").split("*");
-  const mapping = mapResidues(chainsOf(out.alignedA), chainsOf(out.alignedB), picked[0], picked[1]);
   const [u, t] = [out.rotation, out.translation];
-  return {
+  const superpose = (p: [number, number, number]): [number, number, number] => [0, 1, 2].map((i) => t[i] + u[i][0] * p[0] + u[i][1] * p[1] + u[i][2] * p[2]) as [number, number, number];
+  const mapping = mapResidues(chainsOf(out.alignedA), chainsOf(out.alignedB), picked[0], picked[1], superpose);
+  const envelope: AnalysisEnvelope<CompareResult> = {
     schemaVersion: ENVELOPE_SCHEMA_VERSION,
     kind: "moldesk.compare",
     status: "ok",
@@ -217,4 +237,8 @@ export async function compareStructureFiles(fileA: string, fileB: string, option
     warnings,
     provenance: { moldeskVersion: VERSION, tool: { name: "usalign", version: usalign.version } },
   };
+  if (options.report) {
+    envelope.result.report = await createComparisonReport(envelope.result, { ...options.report, outputPath: options.report.outputPath });
+  }
+  return envelope;
 }

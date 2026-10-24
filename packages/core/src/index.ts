@@ -144,6 +144,7 @@ export { buildSceneComponents, parseColor, parseColorBy, parseSceneFile, PLDDT_B
 export type { ColorBy, HighlightSpec, SceneFile, ViewRequest, ViewSpec } from "./analysis/scene.js";
 export { compareStructureFiles } from "./analysis/compare.js";
 export type { CompareOptions, CompareResult, MappedResidue } from "./analysis/compare.js";
+export { DEFAULT_DEVIATION_THRESHOLD, deviationRows, invertRigid, overlayTransformForB, toColumnMajor } from "./analysis/compare-report.js";
 export { parseUsalignOutput } from "./analysis/usalign-output.js";
 export type { UsalignResult } from "./analysis/usalign-output.js";
 export {

@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk compare a b --report overlay.html [--deviation-threshold 2]`: an offline overlay report with
+  both structures in one scene (B moved onto A through a column-major scene transform), the per-residue
+  deviation as a line chart, and residues above the threshold highlighted. `mapping[].distance` is the
+  new per-pair deviation in the compare result. The report viewer now draws `line` chart panels as SVG
+  (other chart types still show their table). See `docs/compare.md`.
 - `moldesk compare <a> <b>` (`--chain-a`, `--chain-b`, `--multimer`) with US-align: TM-score
   normalized by each structure, RMSD, aligned length, sequence identity, a 4x4 superposition
   transform and the residue mapping. `moldesk install usalign` builds the pinned release 20260527
