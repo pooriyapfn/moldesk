@@ -21,6 +21,10 @@ export interface ParsedResidue {
   secondaryStructure?: SecondaryStructureCode;
   /** Heavy atoms kept (first alternate location only). */
   atomCount: number;
+  /** HETATM record (modified residues, ligands). */
+  hetero: boolean;
+  /** Has the atom structure alignment tools trace a polymer with: CA for protein, C3' for nucleic acids. */
+  hasTraceAtom: boolean;
   /** Mean B-factor of the residue's kept atoms; the caller decides whether it means anything. */
   bfactor: number | null;
 }
@@ -164,12 +168,20 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
       chain.residueCount++;
       if (entityType === "water") continue;
 
+      const name = h.atoms.label_comp_id.value(first);
+      const kind: ResidueKind =
+        moleculeType === MoleculeType.Protein ? "protein"
+        : moleculeType === MoleculeType.DNA ? "dna"
+        : moleculeType === MoleculeType.RNA ? "rna"
+        : "other";
       // First alternate location only.
       let alt = "";
       for (let a = first; a < last; a++) {
         const id = h.atoms.label_alt_id.value(a);
         if (id !== "" && (alt === "" || id < alt)) alt = id;
       }
+      const traceAtom = kind === "protein" ? "CA" : kind === "other" ? undefined : "C3'";
+      let hasTraceAtom = false;
       let bSum = 0;
       let bCount = 0;
       for (let a = first; a < last; a++) {
@@ -177,6 +189,7 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         if (id !== "" && id !== alt) continue;
         const element = h.atoms.type_symbol.value(a);
         if (element === "H" || element === "D") continue;
+        if (h.atoms.label_atom_id.value(a) === traceAtom) hasTraceAtom = true;
         bSum += conf.B_iso_or_equiv.value(a);
         bCount++;
         heavy.x.push(conf.x[a]);
@@ -197,12 +210,6 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         ms.push(mass);
       }
 
-      const name = h.atoms.label_comp_id.value(first);
-      const kind: ResidueKind =
-        moleculeType === MoleculeType.Protein ? "protein"
-        : moleculeType === MoleculeType.DNA ? "dna"
-        : moleculeType === MoleculeType.RNA ? "rna"
-        : "other";
       const labelSeqId = h.residues.label_seq_id.value(r);
       chain.residues.push({
         authSeqId,
@@ -215,6 +222,8 @@ export async function parseStructure(input: StructureInput): Promise<ParsedStruc
         ...(kind === "rna" ? { letter: getRnaOneLetterCode(name) } : {}),
         ...(kind === "protein" ? { secondaryStructure: secondaryOf(r) } : {}),
         atomCount: bCount,
+        hetero: h.residues.group_PDB.value(r) === "HETATM",
+        hasTraceAtom,
         bfactor: bCount > 0 ? bSum / bCount : null,
       });
     }

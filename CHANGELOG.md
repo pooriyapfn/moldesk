@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `moldesk compare <a> <b>` (`--chain-a`, `--chain-b`, `--multimer`) with US-align: TM-score
+  normalized by each structure, RMSD, aligned length, sequence identity, a 4x4 superposition
+  transform and the residue mapping. `moldesk install usalign` builds the pinned release 20260527
+  (SHA-256 checked, verified on its sample structures) with your own C++ compiler into
+  `~/.moldesk/tools`; `moldesk uninstall usalign` removes it and `moldesk doctor` lists the
+  compiler and install state. There is no fallback when it is not installed. See `docs/compare.md`.
 - `moldesk view --highlight A:40-60 [--color '#ff5500'] [--color-by chain|plddt]` and
   `moldesk view --scene scene.json`: highlights and pLDDT-class coloring in offline reports, encoded
   with the existing v1 report fields (no schema bump, so older viewers still open the report).

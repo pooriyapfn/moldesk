@@ -13,6 +13,7 @@ import {
   shortReason,
 } from "@moldesk/core";
 import type { RuntimeKind } from "@moldesk/core";
+import { installUsalignTool, USALIGN_TOOL } from "./usalign-tool.js";
 
 // TODO: pin by digest (`docker manifest inspect nvidia/cuda:12.4.1-base-ubuntu22.04`)
 // before release — kept as a tag here since resolving a real digest needs a
@@ -117,12 +118,13 @@ async function verifyDockerGpuAccess(
 export function registerInstallCommand(program: Command): void {
   program
     .command("install <model>")
-    .description("Install a model into an isolated, reproducible environment")
+    .description("Install a model into an isolated, reproducible environment (or the usalign tool, built from pinned source)")
     .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
     .option("--yes", "accept downloads and installation without prompting")
     .option("--reinstall", "stage and atomically replace an existing installation")
     .option("--json", "print compatibility/plan result as JSON")
     .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean; reinstall?: boolean }) => {
+      if (model === USALIGN_TOOL) return installUsalignTool(options);
       const available = listAvailableModels();
       const manifest = available.find((m) => m.name === model);
 

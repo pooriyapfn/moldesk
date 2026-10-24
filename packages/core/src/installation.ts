@@ -153,7 +153,7 @@ function resolvePythonRuntimeForInstall(
   return selectPythonRuntime(manifest.runtimes, platform);
 }
 
-async function withModelLock<T>(paths: MoldeskPaths, key: string, operation: () => Promise<T>): Promise<T> {
+export async function withModelLock<T>(paths: MoldeskPaths, key: string, operation: () => Promise<T>): Promise<T> {
   if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(key)) {
     throw installFailure("UNSAFE_MODEL_ID", `Unsafe installation lock key: ${JSON.stringify(key)}.`, "Use a lowercase model id from `moldesk list`.");
   }

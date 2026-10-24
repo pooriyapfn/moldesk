@@ -142,6 +142,22 @@ export { DEFAULT_INSPECT_RADIUS, inspectStructureFile } from "./analysis/inspect
 export type { InspectedResidue, InspectOptions, InspectResult, NeighborResidue } from "./analysis/inspect.js";
 export { buildSceneComponents, parseColor, parseColorBy, parseSceneFile, PLDDT_BINS, readSceneFile, resolveViewRequest } from "./analysis/scene.js";
 export type { ColorBy, HighlightSpec, SceneFile, ViewRequest, ViewSpec } from "./analysis/scene.js";
+export { compareStructureFiles } from "./analysis/compare.js";
+export type { CompareOptions, CompareResult, MappedResidue } from "./analysis/compare.js";
+export { parseUsalignOutput } from "./analysis/usalign-output.js";
+export type { UsalignResult } from "./analysis/usalign-output.js";
+export {
+  detectCompiler,
+  getUsalignStatus,
+  installUsalign,
+  planUsalignInstall,
+  requireCompiler,
+  requireUsalign,
+  uninstallUsalign,
+  USALIGN_CITATION,
+  USALIGN_VERSION,
+} from "./tools/usalign.js";
+export type { Compiler, UsalignInstallation, UsalignInstallOptions, UsalignInstallPlan, UsalignReceipt, UsalignStatus } from "./tools/usalign.js";
 export { chainsToFasta, validateFasta, writeFastaFile } from "./analysis/fasta.js";
 
 export { VERSION } from "./version.js";
