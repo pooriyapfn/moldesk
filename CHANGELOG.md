@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `examples/egfr-end-to-end/`: one script that fetches 1M17, takes its complete chain A sequence, predicts
+  it with Boltz-2, compares the prediction with the experiment (overlay report) and inspects the region
+  that deviates most, with a real Apple M3 (MPS) run recorded in its README (Boltz-2: 244 s; TM-score 0.916,
+  RMSD 1.17 Å over 293 residues). CI runs it with a committed Boltz-2 prediction in place of Boltz.
 - `moldesk analyze` now reports `fullSequence` for polymer chains: the entity's complete sequence from the
   file (SEQRES / `entity_poly_seq`), including residues with no coordinates. `sequence` stays the modeled
   residues, and `--fasta` now writes the full sequences, since predicting the modeled-only sequence would

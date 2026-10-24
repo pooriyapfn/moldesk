@@ -47,6 +47,7 @@ Available:
 * beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
 * `moldesk list --installed`, reinstall, and uninstall state management
 * offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
+* structure intelligence with a stable JSON contract: `moldesk fetch` (PDB, AlphaFold DB, UniProt), `analyze`, `inspect`, `view --highlight`, `compare` (US-align, with an overlay report) and `describe`; see [analysis-json](docs/analysis-json.md) and the [EGFR end-to-end example](examples/egfr-end-to-end/README.md)
 * `moldesk --version`
 * initial CLI and runtime architecture
 
