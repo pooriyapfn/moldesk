@@ -7,6 +7,37 @@ const EXIT_CODES: Record<string, number> = {
   OUTPUT_EXISTS: 2,
   UNSUPPORTED_REPORT: 2,
   REPORT_CONFLICT: 2,
+  INVALID_SELECTOR: 2,
+  INVALID_ENVELOPE: 2,
+  UNKNOWN_SCHEMA_KIND: 2,
+  INVALID_ANALYZE_ARGS: 2,
+  INVALID_INSPECT_ARGS: 2,
+  SELECTOR_NO_MATCH: 2,
+  INVALID_SCENE: 2,
+  PLDDT_UNAVAILABLE: 2,
+  SCENE_TOO_LARGE: 2,
+  INPUT_NOT_FOUND: 2,
+  INPUT_EMPTY: 2,
+  INPUT_TOO_LARGE: 2,
+  INPUT_BINARY: 2,
+  UNSUPPORTED_STRUCTURE_FORMAT: 2,
+  STRUCTURE_PARSE_FAILED: 2,
+  INVALID_FASTA: 2,
+  INVALID_COMPARE_ARGS: 2,
+  INVALID_FETCH_SPEC: 2,
+  INVALID_DESCRIBE_ARGS: 2,
+  UNKNOWN_MODEL: 3,
+  INVALID_FETCH_ARGS: 2,
+  FETCH_NOT_FOUND: 2,
+  FETCH_CANCELLED: 8,
+  INPUT_CHANGED: 2,
+  CHAIN_NOT_FOUND: 2,
+  NO_ALIGNABLE_RESIDUES: 2,
+  USALIGN_NO_RESULT: 2,
+  USALIGN_NOT_INSTALLED: 2,
+  USALIGN_DAMAGED: 2,
+  COMPILER_NOT_FOUND: 2,
+  NO_POLYMER_CHAINS: 2,
   VIEW_CANCELLED: 8,
 };
 
@@ -14,7 +45,7 @@ const EXIT_CODES: Record<string, number> = {
 export function reportFailure(error: unknown, json: boolean | undefined): void {
   const err = asMoldeskError(error);
   if (json) {
-    console.log(JSON.stringify({ status: "error", code: err.code, message: err.message, remediation: err.remediation }, null, 2));
+    console.log(JSON.stringify({ status: "error", code: err.code, message: err.message, remediation: err.remediation, ...(err.details ? { details: err.details } : {}) }, null, 2));
   } else {
     console.error(err.message);
     if (err.remediation) console.error(err.remediation);

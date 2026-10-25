@@ -80,6 +80,25 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { position: sticky; top: 0; background: rgba(20, 22, 26, 0.92); }
 
+/* Line charts: plain SVG on the always-dark background. */
+.md-chart { margin: 0 0 8px; }
+.md-chart svg { width: 100%; height: auto; display: block; }
+.md-chart .md-grid { stroke: var(--line); stroke-width: 1; }
+.md-chart .md-axis { stroke: var(--muted); stroke-width: 1; }
+.md-chart .md-tick { fill: var(--muted); font-size: 11px; }
+.md-series { --series: #5ec4ff; }
+.md-series-1 { --series: #ffb454; }
+.md-series-2 { --series: #7ee081; }
+.md-series-3 { --series: #d19bff; }
+.md-series-4 { --series: #ff7a90; }
+.md-series-5 { --series: #e6e36a; }
+.md-chart polyline { fill: none; stroke: var(--series); stroke-width: 1.75; stroke-linejoin: round; }
+.md-chart circle { fill: var(--series); }
+.md-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.md-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.md-legend i { width: 14px; height: 3px; border-radius: 2px; background: var(--series); }
+.md-chart-data summary { cursor: pointer; color: var(--muted); font-size: 12px; margin: 6px 0; }
+
 /* Footer: one quiet line; version and the Mol* credit sit behind "About". */
 .md-footer { position: relative; align-self: center; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .md-footer-main { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 6px 16px; border-radius: 999px; font-size: 12px; color: var(--muted); }

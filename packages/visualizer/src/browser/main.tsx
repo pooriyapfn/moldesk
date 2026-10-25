@@ -1,7 +1,8 @@
 import { StrictMode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { isMolecularFormat, validateReport, type Column, type MolecularReportV1, type Panel, type Scene } from "../contract";
+import { isMolecularFormat, validateReport, type ChartSpec, type Column, type MolecularReportV1, type Panel, type Scene } from "../contract";
 import { csvRecords, parseCsv } from "../csv";
+import { lineChartLayout } from "./chart";
 import { REPORT_LIMITS } from "../limits";
 import { Viewer, type LoadedResource, type RepresentationKind, type SceneSummary, type SequenceRow } from "./molstar";
 import { updateCommand } from "./shell";
@@ -134,6 +135,60 @@ function cell(row: Record<string, unknown>, field: string): string {
   return typeof v === "object" ? JSON.stringify(v) : String(v);
 }
 
+const CHART = { width: 560, height: 260, left: 48, right: 12, top: 12, bottom: 38 } as const;
+const MAX_CHART_MARKERS = 1500;
+
+/** A line chart drawn as plain SVG from the panel's own dataset; no network, no chart library. */
+function LineChart({ records, chart }: { records: Array<Record<string, unknown>>; chart: Exclude<ChartSpec, { type: "heatmap" }> }) {
+  const layout = useMemo(() => lineChartLayout(records, { x: chart.x.field, y: chart.y.field, seriesField: chart.seriesField }), [records, chart]);
+  const { width, height, left, right, top, bottom } = CHART;
+  const [x0, x1] = layout.xDomain;
+  const [y0, y1] = layout.yDomain;
+  const sx = (v: number) => left + ((v - x0) / (x1 - x0)) * (width - left - right);
+  const sy = (v: number) => height - bottom - ((v - y0) / (y1 - y0)) * (height - top - bottom);
+  const points = layout.series.reduce((n, s) => n + s.points.length, 0);
+  const unit = (c: Column) => (c.unit ? ` ${c.unit}` : "");
+  if (points === 0) return <p className="md-muted">No numeric data to plot.</p>;
+  return (
+    <figure className="md-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${chart.y.label} by ${chart.x.label}`} data-testid="line-chart">
+        {layout.yTicks.map((t) => (
+          <g key={`y${t}`}>
+            <line className="md-grid" x1={left} x2={width - right} y1={sy(t)} y2={sy(t)} />
+            <text className="md-tick" x={left - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle">{t}</text>
+          </g>
+        ))}
+        {layout.xTicks.map((t) => (
+          <text key={`x${t}`} className="md-tick" x={sx(t)} y={height - bottom + 14} textAnchor="middle">{t}</text>
+        ))}
+        <line className="md-axis" x1={left} x2={width - right} y1={height - bottom} y2={height - bottom} />
+        <line className="md-axis" x1={left} x2={left} y1={top} y2={height - bottom} />
+        <text className="md-tick" x={(left + width - right) / 2} y={height - 4} textAnchor="middle">{chart.x.label}{unit(chart.x)}</text>
+        <text className="md-tick" transform={`translate(12 ${(top + height - bottom) / 2}) rotate(-90)`} textAnchor="middle">{chart.y.label}{unit(chart.y)}</text>
+        {layout.series.map((s, i) => (
+          <g key={s.name} className={`md-series md-series-${i % 6}`} data-series={s.name}>
+            <polyline points={s.points.map((p) => `${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(" ")} />
+            {points <= MAX_CHART_MARKERS &&
+              s.points.map((p) => (
+                <circle key={p.x} cx={sx(p.x)} cy={sy(p.y)} r={2.5}>
+                  <title>{`${s.name ? `${s.name}: ` : ""}${chart.x.label} ${p.x}, ${chart.y.label} ${p.y}${unit(chart.y)}`}</title>
+                </circle>
+              ))}
+          </g>
+        ))}
+      </svg>
+      {layout.series.length > 1 && (
+        <figcaption className="md-legend">
+          {layout.series.map((s, i) => (
+            <span key={s.name} className={`md-series md-series-${i % 6}`}><i />{s.name}</span>
+          ))}
+        </figcaption>
+      )}
+      {layout.skipped > 0 && <p className="md-muted">{layout.skipped} rows without numbers were not plotted.</p>}
+    </figure>
+  );
+}
+
 function DataPanel({ panel, loaded }: { panel: Extract<Panel, { kind: "table" | "chart" }>; loaded: Loaded }) {
   const view = useMemo(() => {
     try {
@@ -151,13 +206,8 @@ function DataPanel({ panel, loaded }: { panel: Extract<Panel, { kind: "table" | 
     }
   }, [panel, loaded]);
   const shown = view.records.slice(0, 500);
-  return (
-    <section className="md-panel">
-      <h3>{panel.title ?? (panel.kind === "chart" ? "Chart data" : "Results")}</h3>
-      {panel.kind === "chart" && <p className="md-muted">Chart rendering is not available yet; showing the data table.</p>}
-      {view.error ? (
-        <p className="md-error" role="alert">{view.error}</p>
-      ) : (
+  const line = panel.kind === "chart" && panel.chart.type === "line" ? panel.chart : undefined;
+  const table = (
         <div className="md-table-wrap">
           <table>
             <thead>
@@ -171,6 +221,23 @@ function DataPanel({ panel, loaded }: { panel: Extract<Panel, { kind: "table" | 
           </table>
           {view.records.length > shown.length && <p className="md-muted">Showing the first {shown.length} of {view.records.length} rows.</p>}
         </div>
+  );
+  return (
+    <section className="md-panel">
+      <h3>{panel.title ?? (panel.kind === "chart" ? "Chart data" : "Results")}</h3>
+      {panel.kind === "chart" && !line && <p className="md-muted">This chart type is not drawn yet; showing the data table.</p>}
+      {view.error ? (
+        <p className="md-error" role="alert">{view.error}</p>
+      ) : line ? (
+        <>
+          <LineChart records={view.records} chart={line} />
+          <details className="md-chart-data">
+            <summary>Data table</summary>
+            {table}
+          </details>
+        </>
+      ) : (
+        table
       )}
     </section>
   );

@@ -120,10 +120,17 @@ try {
     throw new Error("Generated report is not a self-contained MoleculeDesk report.");
   }
 
-  // Update lifecycle with the installed CLI: unchanged report is up to date; a stale one is
-  // replaced with a backup, and the embedded data is byte-identical afterwards.
   const run = (args) =>
     JSON.parse(execFileSync(cliBin, args, { cwd: unrelatedCwd, env, encoding: "utf-8" }));
+
+  // Structure analysis runs Mol* in Node, so its runtime dependencies must be installed too.
+  const analysis = run(["analyze", structure, "--json"]);
+  if (analysis.kind !== "moldesk.analysis" || analysis.result.chains[0]?.sequence !== "A") {
+    throw new Error(`Installed moldesk analyze returned an unexpected result: ${JSON.stringify(analysis)}`);
+  }
+
+  // Update lifecycle with the installed CLI: unchanged report is up to date; a stale one is
+  // replaced with a backup, and the embedded data is byte-identical afterwards.
   const payloadOf = (html) => /"payload":"([^"]+)"/.exec(html)?.[1];
   if (run(["visualizer", "update", reportPath, "--json"]).status !== "up-to-date") {
     throw new Error("A freshly generated report should already be up to date.");

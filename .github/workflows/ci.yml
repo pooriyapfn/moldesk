@@ -23,6 +23,15 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs
+      - run: node --test scripts/release-lib.test.mjs scripts/worker-release.test.mjs scripts/check-skill-commands.test.mjs examples/egfr-end-to-end/deviation-window.test.mjs
+      # Every moldesk command and flag the agent skill mentions must exist in the built CLI, and be documented.
+      - run: node scripts/check-skill-commands.mjs
+      # The EGFR example with its committed Boltz-2 prediction: a live RCSB fetch and a US-align build, no Boltz.
+      - name: EGFR example
+        run: |
+          export MOLDESK="node $PWD/apps/cli/dist/index.js" MOLDESK_HOME="$RUNNER_TEMP/moldesk-home"
+          examples/egfr-end-to-end/run.sh --workdir "$RUNNER_TEMP/egfr" --yes --prediction examples/egfr-end-to-end/fixtures/egfr_model_0.cif | tee "$RUNNER_TEMP/egfr.log"
+          awk '/TM-score \(normalized by the experimental structure\)/ { found = 1; exit !($NF >= 0.85) } END { if (!found) exit 1 }' "$RUNNER_TEMP/egfr.log"
+          test -s "$RUNNER_TEMP/egfr/overlay.html"
       # The cloud worker bundle recorded in the CLI must match what these sources build.
       - run: node scripts/worker-release.mjs check
