@@ -9,8 +9,8 @@ import { MoldeskError } from "../errors.js";
  * See packages/core/scripts/build-worker.mjs.
  */
 export const RELEASED_WORKER_BUNDLE: WorkerBundle | undefined = {
-  url: "https://github.com/pooriyapfn/moldesk/releases/download/v0.0.7/worker.tar",
-  sha256: "ae57b112bf2e2dc2940fc8f1ef496a926fa094a3faa423cc783dd743c0929ecb",
+  url: "https://github.com/pooriyapfn/moldesk/releases/download/v0.0.8/worker.tar",
+  sha256: "c29a99655bb149aa69d17a8ca44a0bfdc7ce02a31e436a6ee7734dd6181ffb56",
 };
 
 /**
