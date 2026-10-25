@@ -7,8 +7,10 @@ description: All-atom biomolecular co-folding (proteins, nucleic acids, ligands,
 category: structure-prediction
 # Upstream itself labels this a preview ("CLI flags, input/output JSON fields,
 # and released checkpoints may change between versions ... not yet intended for
-# production pipelines"), so this stays `beta` regardless of verification.
-status: beta
+# production pipelines"). The display name keeps "Preview"; the MoleculeDesk
+# integration is `available` because install and run are verified on Apple
+# Silicon (MPS) and Linux/CUDA (A40, RTX 3090).
+status: available
 license: Apache-2.0
 homepage: https://github.com/aurekaresearch/OpenDDE
 source:

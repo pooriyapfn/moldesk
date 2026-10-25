@@ -607,8 +607,8 @@ describe("openddeAdapter.verifyInstallation", () => {
 describe("opendde manifest consistency", () => {
   const manifest = parseYaml(fs.readFileSync(path.join(repoRoot, "models/opendde/manifest.yaml"), "utf8")) as Record<string, any>;
 
-  it("stays beta and advertises only live-verified platforms", () => {
-    expect(manifest.status).toBe("beta");
+  it("is available and advertises only live-verified platforms", () => {
+    expect(manifest.status).toBe("available");
     // linux-x64 was added after the Runpod CUDA runs recorded in models/opendde/README.md.
     expect(manifest.hardware.platforms).toEqual(["darwin-arm64", "linux-x64"]);
     expect(manifest.adapterVerification.platforms).toEqual(["darwin-arm64", "linux-x64"]);

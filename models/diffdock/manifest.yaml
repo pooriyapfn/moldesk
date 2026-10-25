@@ -5,7 +5,7 @@ modelVersion: "1.1"
 adapterVersion: 0.2.0
 description: Blind small-molecule docking against a protein, returning ranked poses and confidence (not binding affinity).
 category: docking
-status: beta
+status: available
 license: MIT
 homepage: https://github.com/gcorso/DiffDock
 source:
@@ -17,6 +17,17 @@ source:
   # time) — re-verify before promoting this model past `planned`, since `main`
   # moves.
   revision: 85c49b60d3e0b0182a59ee43a34a6d7036981284
+adapterVerification:
+  lastVerifiedAt: "2026-10-19T00:00:00.000Z"
+  platforms:
+    - linux-x64
+  notes: >-
+    Real install (about 10 minutes, including the diffusion lookup tables) and
+    docking runs on an NVIDIA A40 (Runpod, 2026-10-11, MoleculeDesk a4ee635):
+    the Trp-cage + aspirin example and caffeine into the A2A receptor (PDB 5MZP),
+    each producing ranked poses and poses_summary.json. Cloud run on an A40
+    passed 2026-10-19. Not verified: cancellation, malformed inputs, repeated
+    runs for a median timing. Linux x64 + NVIDIA only.
 runtimes:
   # Linux/NVIDIA only. Upstream's pinned dependency stack (torch==1.13.1+cu117
   # plus matching cu117-built torch-geometric extension wheels) is CUDA/Linux
