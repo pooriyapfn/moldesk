@@ -69,7 +69,7 @@ describe("moldesk describe", () => {
   it("prints a readable summary without --json", async () => {
     await describeCmd("boltz");
     const text = out.join("\n");
-    expect(text).toContain("Boltz-2 (boltz 2.2.1, beta): structure-prediction");
+    expect(text).toContain("Boltz-2 (boltz 2.2.1, available): structure-prediction");
     expect(text).toContain("default by platform: gpu on linux-x64, mps on darwin-arm64");
     expect(text).toContain("Cloud: Runpod (at least 24 GB VRAM, 32 GB RAM)");
   });
