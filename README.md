@@ -43,8 +43,8 @@ Available:
 * `moldesk list` for model discovery
 * compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
 * isolated, atomic ProteinMPNN and LigandMPNN installation
-* beta Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
-* beta OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
+* Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
+* OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
 * `moldesk list --installed`, reinstall, and uninstall state management
 * offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
 * structure intelligence with a stable JSON contract: `moldesk fetch` (PDB, AlphaFold DB, UniProt), `analyze`, `inspect`, `view --highlight`, `compare` (US-align, with an overlay report) and `describe`; see [analysis-json](docs/analysis-json.md) and the [EGFR end-to-end example](examples/egfr-end-to-end/README.md)
@@ -149,12 +149,12 @@ Model support is being added incrementally.
 
 | Model | Status |
 | --- | --- |
-| Boltz-2 | Beta; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
-| ProteinMPNN | Beta |
-| LigandMPNN | Beta |
-| DiffDock-L | Beta; Linux/NVIDIA CUDA verified on an A40 |
+| Boltz-2 | Available; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
+| ProteinMPNN | Available; Apple Silicon and Linux/NVIDIA CUDA (RTX 3090) |
+| LigandMPNN | Available; Apple Silicon and Linux/NVIDIA CUDA (RTX 3090) |
+| DiffDock-L | Available; Linux/NVIDIA CUDA only, verified on an A40 |
 | BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
-| OpenDDE Preview | Beta (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
+| OpenDDE Preview | Available (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
 | ColabFold | Planned |
 | AlphaFold | Planned |
 | Chai | Planned |

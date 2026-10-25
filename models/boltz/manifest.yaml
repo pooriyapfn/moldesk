@@ -5,7 +5,7 @@ modelVersion: 2.2.1
 adapterVersion: 0.2.0
 description: Joint biomolecular structure and binding-affinity prediction (Boltz team, MIT).
 category: structure-prediction
-status: beta
+status: available
 license: MIT
 homepage: https://github.com/jwohlwend/boltz
 source:
@@ -13,13 +13,13 @@ source:
   revision: cb04aeccdd480fd4db707f0bbafde538397fa2ac
 # Darwin/MPS was verified end-to-end with a real install + prediction on
 # 2026-09-23 (see models/boltz/README.md for full evidence: process device
-# banner, checksummed outputs, negative-path test). Linux/CUDA is
-# structurally implemented and unit-tested but not live-verified — no NVIDIA
-# hardware was available to run it; do not treat it as verified per rule 13.
+# banner, checksummed outputs, negative-path test). Linux/CUDA was verified
+# with a real install + prediction on an NVIDIA RTX 3090 on 2026-10-06.
 adapterVerification:
-  lastVerifiedAt: "2026-09-23T11:22:33.984Z"
+  lastVerifiedAt: "2026-10-06T00:00:00.000Z"
   platforms:
     - darwin-arm64
+    - linux-x64
   notes: >-
     Real moldesk install + moldesk run on Apple M3 (macOS, Darwin 25.6.0),
     re-verified after fixing two P1 review findings (checkpoints now
@@ -41,8 +41,9 @@ adapterVerification:
     --param accelerator=gpu on this CUDA-less install failed closed
     instantly with an actionable error; (2) a malformed YAML job
     ("sequences: [") was rejected with a real parser error before any run
-    started. Linux/CUDA path not covered by this verification — no NVIDIA
-    hardware available.
+    started. Linux/CUDA: real install of the official boltz 2.2.1 and
+    predictions of examples/boltz/protein.yaml on an NVIDIA RTX 3090 (Runpod,
+    2026-10-06, MoleculeDesk 9b24d51; three runs, warm ~85 s).
 runtimes:
   # Linux/CUDA: official `jwohlwend/boltz`. `--accelerator` on this pinned CLI only
   # accepts gpu|cpu|tpu (no "mps" choice) — verified against src/boltz/main.py at

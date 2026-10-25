@@ -11,15 +11,8 @@ const STATUS_LABEL: Record<DocStatus, string> = {
 };
 
 function StatusBadge({ status }: { status: DocStatus }) {
-  const isBeta = status === "beta";
   return (
-    <span
-      className={
-        isBeta
-          ? "rounded-full border border-accent bg-accent-soft px-[7px] py-[1px] font-mono text-[10px] text-foreground"
-          : "rounded-full border border-border px-[7px] py-[1px] font-mono text-[10px] text-muted"
-      }
-    >
+    <span className="rounded-full border border-border px-[6px] font-mono text-[9px] uppercase tracking-[0.04em] text-muted">
       {STATUS_LABEL[status]}
     </span>
   );

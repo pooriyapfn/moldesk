@@ -1,6 +1,6 @@
 # Model guide: inputs, parameters, examples
 
-All models are `beta`: install and run work, broader verification is ongoing. Check `moldesk list` for what this machine supports; the "Runs on" lines below are what the registry advertises.
+Boltz-2, OpenDDE Preview, DiffDock-L, ProteinMPNN and LigandMPNN are `available`; BindCraft2 is `beta` (install and run work, broader verification is ongoing). Check `moldesk list` for what this machine supports; the "Runs on" lines below are what the registry advertises.
 
 Example inputs ship in the MoleculeDesk repository under `examples/` (https://github.com/pooriyapfn/moldesk/tree/main/examples). Copy them into the user's working folder rather than running from a clone.
 

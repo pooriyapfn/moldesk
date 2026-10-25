@@ -5,12 +5,22 @@ modelVersion: v_48_020
 adapterVersion: 0.1.0
 description: Structure-conditioned protein sequence design (Dauparas et al., Science 2022).
 category: sequence-design
-status: beta
+status: available
 license: MIT
 homepage: https://github.com/dauparas/ProteinMPNN
 source:
   repository: https://github.com/dauparas/ProteinMPNN
   revision: 8907e6671bfbfc92303b5f79c4b5e6ce47cdef57
+adapterVerification:
+  lastVerifiedAt: "2026-10-15T00:00:00.000Z"
+  platforms:
+    - darwin-arm64
+    - linux-x64
+  notes: >-
+    Linux/CUDA: real install and runs on an NVIDIA RTX 3090 (Runpod, 2026-10-06,
+    MoleculeDesk 57776a4; three runs, warm ~8 s) and cloud runs on an NVIDIA A40
+    and RTX A5000 (2026-10-15). Apple Silicon: install and run reported working
+    by the maintainer; no log of that run is recorded in this repository.
 runtimes:
   - kind: python
     python: "3.11"

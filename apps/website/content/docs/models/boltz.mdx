@@ -6,11 +6,11 @@ export const metadata = {
 
 # Run Boltz-2 for protein structure and binding-affinity prediction
 
-[Boltz-2](https://github.com/jwohlwend/boltz) is an open-source biomolecular model that jointly predicts 3D structure and binding affinity, released under the MIT license by the Boltz team. MoleculeDesk manages Boltz-2's Python environment, checkpoints, and commands so you can use it without configuring CUDA, PyTorch, or dependency versions by hand.
+<ModelHero model="boltz" />
 
-<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-  <strong className="text-foreground">Status: beta.</strong> `moldesk install boltz` and `moldesk run boltz` work end-to-end on Apple Silicon (Darwin arm64), verified with a real install and prediction using PyTorch MPS. The Linux x64/NVIDIA CUDA path is now verified too: a real install and prediction ran on an NVIDIA RTX 3090 (see the benchmarks below).
-</div>
+## Overview
+
+[Boltz-2](https://github.com/jwohlwend/boltz) is an open-source biomolecular model that jointly predicts 3D structure and binding affinity, released under the MIT license by the Boltz team. MoleculeDesk manages Boltz-2's Python environment, checkpoints, and commands so you can use it without configuring CUDA, PyTorch, or dependency versions by hand.
 
 ## What Boltz-2 is used for
 
@@ -43,6 +43,13 @@ automatically based on your platform.
 
 <BenchmarkTable model="boltz" />
 
+## Verification status
+
+`moldesk install boltz` and `moldesk run boltz` work end to end on both supported platforms:
+
+- **Apple Silicon (Darwin arm64)**: real install and prediction on an Apple M3 using PyTorch MPS. The 115-residue example finished in about 88 s.
+- **Linux x64 + NVIDIA CUDA**: real install and prediction on an NVIDIA RTX 3090 (see the benchmarks above).
+
 ## Source
 
 MoleculeDesk pins each platform's Boltz-2 distribution to a specific
@@ -59,5 +66,5 @@ Yes. Verified with a real install and prediction on Apple Silicon (MPS) and on L
 **What license is Boltz-2 under?**
 MIT. MoleculeDesk doesn't redistribute Boltz-2's weights; installing it fetches them under Boltz's own terms.
 
-**What models are available today?**
-Boltz-2 (beta, Apple Silicon verified), [ProteinMPNN](/docs/models/proteinmpnn), and [LigandMPNN](/docs/models/ligandmpnn) all have working (beta) installation today.
+**What other models are available today?**
+[OpenDDE Preview](/docs/models/opendde), [DiffDock-L](/docs/models/diffdock), [ProteinMPNN](/docs/models/proteinmpnn), [LigandMPNN](/docs/models/ligandmpnn), and [BindCraft2](/docs/models/bindcraft2) (beta).
