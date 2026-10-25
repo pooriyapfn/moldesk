@@ -32,12 +32,12 @@ export const docsNav: DocNavSection[] = [
   {
     title: "Models",
     items: [
-      { title: "Boltz-2", slug: "models/boltz", status: "beta" },
-      { title: "DiffDock-L", slug: "models/diffdock", status: "beta" },
+      { title: "Boltz-2", slug: "models/boltz" },
+      { title: "DiffDock-L", slug: "models/diffdock" },
       { title: "BindCraft2", slug: "models/bindcraft2", status: "beta" },
-      { title: "OpenDDE Preview", slug: "models/opendde", status: "beta" },
-      { title: "ProteinMPNN", slug: "models/proteinmpnn", status: "beta" },
-      { title: "LigandMPNN", slug: "models/ligandmpnn", status: "beta" },
+      { title: "OpenDDE Preview", slug: "models/opendde" },
+      { title: "ProteinMPNN", slug: "models/proteinmpnn" },
+      { title: "LigandMPNN", slug: "models/ligandmpnn" },
       { title: "AlphaFold", slug: "models/alphafold", status: "soon" },
       { title: "ColabFold", slug: "models/colabfold", status: "soon" },
       { title: "Chai", slug: "models/chai", status: "soon" },

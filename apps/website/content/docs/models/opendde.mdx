@@ -1,16 +1,18 @@
 export const metadata = {
   title: "OpenDDE Preview: all-atom biomolecular co-folding",
   description:
-    "Run OpenDDE Preview locally with MoleculeDesk on Apple Silicon (MPS). Pinned install, input/output formats, params, and limitations.",
+    "Run OpenDDE Preview locally with MoleculeDesk on Apple Silicon (MPS) or Linux with an NVIDIA GPU (CUDA). Pinned install, input/output formats, params, and limitations.",
 };
 
 # Run OpenDDE Preview for all-atom co-folding
 
+<ModelHero model="opendde" />
+
+## Overview
+
 [OpenDDE](https://github.com/aurekaresearch/OpenDDE) is an all-atom biomolecular co-folding model from Aureka AI Research, released under the Apache-2.0 license. It predicts 3D structures of complexes containing proteins, DNA, RNA, small-molecule ligands, and ions, along with per-sample confidence scores. MoleculeDesk installs a pinned OpenDDE release, its checkpoint, and its chemical-component data into a managed location, then runs predictions without touching your home-directory caches.
 
-<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-  <strong className="text-foreground">Status: beta (upstream preview).</strong> OpenDDE's authors label this release a preview: CLI flags, JSON fields, and checkpoints may change between versions, and predictions are not guaranteed to be reproducible across releases. MoleculeDesk advertises Apple Silicon (MPS) only, because that is the platform where a real install and prediction were verified. The Linux/NVIDIA CUDA path also ran successfully on an NVIDIA RTX 3090 in testing (see the benchmarks below), but it is not advertised in the registry yet.
-</div>
+**Upstream preview.** OpenDDE's authors label this release a preview: CLI flags, JSON fields, and checkpoints may change between versions, and predictions are not guaranteed to be reproducible across releases. The MoleculeDesk integration itself is verified on Apple Silicon (MPS) and on Linux with NVIDIA CUDA.
 
 ## What OpenDDE is used for
 
@@ -24,7 +26,7 @@ export const metadata = {
 | Model version | OpenDDE 1.1.1 (`opendde_v1`, ~656M parameters) |
 | License | Apache-2.0 |
 | Python | 3.11, via `uv` |
-| Platforms | `darwin-arm64` (Apple Silicon, MPS). Linux x64 + NVIDIA CUDA 12.6 is implemented but not advertised yet |
+| Platforms | `darwin-arm64` (Apple Silicon, MPS), `linux-x64` + NVIDIA CUDA 12.6 |
 | Disk | ~3.3 GB of model assets plus the Python environment |
 | Input format | OpenDDE `.json` job (a list of jobs) |
 | Output | mmCIF structure(s), a PDB copy of each (pLDDT in the B-factor column), plus confidence JSON per sample |
@@ -105,7 +107,7 @@ Verified end to end on 2026-09-26 on an Apple M3 MacBook Air (24 GB, macOS 26.6.
 - **Reproducibility**: two runs with `seed=101 deterministic=true` differed by 6×10⁻⁵ Å coordinate RMSD. That is fp32 noise on MPS, not bit-identical output.
 - **Fails early**: `device=cuda` and `use_template=true` are rejected with an actionable error before OpenDDE starts.
 
-Linux/NVIDIA CUDA has **not** been run on real hardware, so it is not advertised.
+Linux x64 + NVIDIA CUDA: `examples/opendde/tiny.json` ran with cuEquivariance kernels on an NVIDIA A40 and an NVIDIA RTX 3090 (2026-10-19; see the benchmarks above). Not yet run on Linux: a local `moldesk install opendde` outside Runpod, the no-GPU refusal path, and jobs that reference ligand files.
 
 ## FAQ
 
@@ -113,7 +115,7 @@ Linux/NVIDIA CUDA has **not** been run on real hardware, so it is not advertised
 Yes, on Apple Silicon it runs on the Metal (MPS) backend by default. MoleculeDesk passes an explicit `--device mps`, so if MPS is unavailable the run fails instead of quietly falling back to CPU.
 
 **Can I use it on Linux with an NVIDIA GPU?**
-The CUDA install path (PyTorch 2.7.1 + CUDA 12.6 and cuEquivariance kernels) is implemented and unit-tested, but it will stay unadvertised until a real Linux/NVIDIA run is recorded.
+Yes. The CUDA install (PyTorch 2.7.1 + CUDA 12.6 and cuEquivariance kernels) ran on an NVIDIA A40 and an RTX 3090.
 
 **What license is OpenDDE under?**
 Apache-2.0 for the code and released checkpoints.

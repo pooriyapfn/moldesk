@@ -6,11 +6,11 @@ export const metadata = {
 
 # Run DiffDock-L for blind small-molecule docking
 
-[DiffDock-L](https://github.com/gcorso/DiffDock) is an open-source diffusion model for blind small-molecule docking — predicting how a ligand binds a protein without a known binding pocket — released under the MIT license. It returns ranked 3D poses with a confidence score per pose, not a binding-affinity estimate. MoleculeDesk manages DiffDock-L's pinned CUDA-specific Python environment and model/language-model checkpoints so you don't have to hand-configure PyTorch Geometric's CUDA extension wheels yourself.
+<ModelHero model="diffdock" />
 
-<div className="not-prose my-6 rounded-md border border-border bg-white px-4 py-3 text-[14px] text-muted">
-  <strong className="text-foreground">Status: beta.</strong> `moldesk install diffdock` and `moldesk run diffdock` work end to end on an NVIDIA A40 (Linux x64, CUDA 12.8): the install takes about 10 minutes and a docking job takes about a minute. Cancellation and bad-input behaviour have not been exercised yet. See [Verification status](#verification-status) below.
-</div>
+## Overview
+
+[DiffDock-L](https://github.com/gcorso/DiffDock) is an open-source diffusion model for blind small-molecule docking — predicting how a ligand binds a protein without a known binding pocket — released under the MIT license. It returns ranked 3D poses with a confidence score per pose, not a binding-affinity estimate. MoleculeDesk manages DiffDock-L's pinned CUDA-specific Python environment and model/language-model checkpoints so you don't have to hand-configure PyTorch Geometric's CUDA extension wheels yourself.
 
 ## What DiffDock-L is used for
 
@@ -54,7 +54,7 @@ MoleculeDesk pins DiffDock-L to a specific upstream commit on `main` — which a
 
 ## Verification status
 
-`moldesk install diffdock` and the checked-in example ran end to end on a RunPod NVIDIA A40. The install builds DiffDock-L's diffusion lookup tables once (they are cached under the install, so later runs do not repeat that step) and passes the CUDA check. Two jobs were run: the Trp-cage + aspirin example, and caffeine docked into the adenosine A2A receptor (PDB 5MZP, receptor only). Each produced ranked poses, `poses_summary.json` and the offline 3D report.
+`moldesk install diffdock` and `moldesk run diffdock` work end to end on Linux x64 with an NVIDIA GPU (verified on a RunPod NVIDIA A40, CUDA 12.8): the install takes about 10 minutes and a docking job takes about a minute. The install builds DiffDock-L's diffusion lookup tables once (they are cached under the install, so later runs do not repeat that step) and passes the CUDA check. Two jobs were run: the Trp-cage + aspirin example, and caffeine docked into the adenosine A2A receptor (PDB 5MZP, receptor only). Each produced ranked poses, `poses_summary.json` and the offline 3D report.
 
 ```bash
 moldesk install diffdock

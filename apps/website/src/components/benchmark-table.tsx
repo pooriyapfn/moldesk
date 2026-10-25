@@ -8,7 +8,7 @@ import {
 
 const dash = "—";
 
-function fmtSeconds(s: number | null): string {
+export function fmtSeconds(s: number | null): string {
   if (s === null) return dash;
   if (s < 120) return `${s} s`;
   return `${(s / 60).toFixed(1)} min`;
@@ -18,7 +18,7 @@ function fmtNum(n: number | null, unit: string, digits = 0): string {
   return n === null ? dash : `${n.toFixed(digits)} ${unit}`;
 }
 
-function fmtUsd(n: number | null): string {
+export function fmtUsd(n: number | null): string {
   if (n === null) return dash;
   return n < 0.01 ? `<$0.01` : `$${n.toFixed(n < 1 ? 3 : 2)}`;
 }
