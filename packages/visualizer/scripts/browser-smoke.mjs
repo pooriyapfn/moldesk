@@ -168,19 +168,88 @@ function buildReports(workDir) {
     },
     bundle,
   );
+  // Same shape `moldesk view --highlight A:10-20 --color-by plddt` produces: v1 components only.
+  const residues = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => ({ chainNamespace: "auth", chainId: "A", residueNamespace: "auth", sequenceId: from + i }));
+  const molecules = ["ligand", "ion"].map((type) => ({ id: type, structureId: "structure-1", selection: { kind: "molecule", type }, representation: "sticks" }));
+  const highlight = { id: "highlight-1", structureId: "structure-1", selection: { kind: "residues", residues: residues(10, 20) }, label: "Highlight A:10-20", representation: "sticks", color: "#ff5500" };
+  const crn = [{ id: "structure-1", resourceId: "crn" }];
+  const highlighted = exportReport(
+    {
+      title: "Highlight smoke",
+      resources: [{ id: "crn", label: "1CRN.pdb", format: "pdb", bytes: bytes("1CRN.pdb") }],
+      scenes: [
+        { id: "plain", title: "Plain", structures: crn },
+        { id: "highlight", title: "Highlight", structures: crn, components: [{ id: "base", structureId: "structure-1", selection: { kind: "all" }, representation: "cartoon" }, ...molecules, highlight] },
+        { id: "plddt", title: "pLDDT", structures: crn, components: [
+          { id: "plddt-very-high", structureId: "structure-1", selection: { kind: "residues", residues: residues(1, 20) }, representation: "cartoon", color: "#0053d6" },
+          { id: "plddt-very-low", structureId: "structure-1", selection: { kind: "residues", residues: residues(21, 46) }, representation: "cartoon", color: "#ff7d45" },
+          ...molecules,
+          { ...highlight, selection: { kind: "chains", namespace: "auth", ids: ["A"] } },
+        ] },
+      ],
+      panels: [{ id: "p", kind: "structure", sceneIds: ["plain", "highlight", "plddt"] }],
+      provenance: {},
+    },
+    bundle,
+  );
+  // Same shape `moldesk compare --report` produces: B (a rigidly moved copy of A) carries the inverse of
+  // the A->B matrix as a column-major transform, so it lands back on A; plus line charts from a JSON dataset.
+  const R = [[0.36, 0.48, -0.8], [-0.8, 0.6, 0], [0.48, 0.64, 0.6]];
+  const T = [10, -5, 3];
+  const movedPdb = readFileSync(path.join(fixtures, "1CRN.pdb"), "utf8").split("\n").map((line) => {
+    if (!line.startsWith("ATOM")) return line;
+    const p = [30, 38, 46].map((c) => Number(line.slice(c, c + 8)));
+    const q = [0, 1, 2].map((i) => R[i][0] * p[0] + R[i][1] * p[1] + R[i][2] * p[2] + T[i]);
+    return line.slice(0, 30) + q.map((v) => v.toFixed(3).padStart(8)).join("") + line.slice(54);
+  }).join("\n");
+  const rt = [0, 1, 2].map((i) => [0, 1, 2].map((j) => R[j][i]));
+  const back = [0, 1, 2].map((i) => -[0, 1, 2].reduce((sum, j) => sum + rt[i][j] * T[j], 0));
+  const inverse = [[...rt[0], back[0]], [...rt[1], back[1]], [...rt[2], back[2]], [0, 0, 0, 1]];
+  const columnMajor = Array.from({ length: 16 }, (_, k) => inverse[k % 4][Math.floor(k / 4)]);
+  const rows = Array.from({ length: 46 }, (_, i) => ({ index: i + 1, chainA: i < 30 ? "A" : "B", deviation: Math.abs(Math.sin(i / 5)) * 4 }));
+  const overlay = exportReport(
+    {
+      title: "Overlay smoke",
+      resources: [
+        { id: "a", label: "1CRN.pdb", format: "pdb", bytes: bytes("1CRN.pdb") },
+        { id: "b", label: "moved.pdb", format: "pdb", bytes: new TextEncoder().encode(movedPdb) },
+        { id: "dev", label: "deviation.json", format: "json", bytes: new TextEncoder().encode(JSON.stringify({ rows })) },
+      ],
+      scenes: [{
+        id: "overlay", title: "Overlay",
+        structures: [{ id: "a", resourceId: "a" }, { id: "b", resourceId: "b", transform: columnMajor }],
+        components: [
+          { id: "a", structureId: "a", selection: { kind: "chains", namespace: "auth", ids: ["A"] }, representation: "cartoon", color: "#4ea1ff" },
+          { id: "b", structureId: "b", selection: { kind: "chains", namespace: "auth", ids: ["A"] }, representation: "cartoon", color: "#ffa94d" },
+        ],
+      }],
+      panels: [
+        { id: "s", kind: "structure", sceneIds: ["overlay"] },
+        { id: "c1", kind: "chart", title: "Deviation", dataset: { resourceId: "dev", rowsKey: "rows" }, chart: { type: "line", x: { field: "index", label: "Aligned residue" }, y: { field: "deviation", label: "Deviation", unit: "Å" } } },
+        { id: "c2", kind: "chart", title: "By chain", dataset: { resourceId: "dev", rowsKey: "rows" }, chart: { type: "line", x: { field: "index", label: "Aligned residue" }, y: { field: "deviation", label: "Deviation", unit: "Å" }, seriesField: "chainA" } },
+        { id: "c3", kind: "chart", title: "Scatter", dataset: { resourceId: "dev", rowsKey: "rows" }, chart: { type: "scatter", x: { field: "index", label: "Aligned residue" }, y: { field: "deviation", label: "Deviation" } } },
+      ],
+      provenance: {},
+    },
+    bundle,
+  );
   const sourceDir = path.join(workDir, "source dir with 'quote");
   mkdirSync(sourceDir, { recursive: true });
   writeFileSync(path.join(sourceDir, "report.html"), good.html);
   writeFileSync(path.join(sourceDir, "evil.html"), evil.html);
   writeFileSync(path.join(sourceDir, "docking.html"), docking.html);
+  writeFileSync(path.join(sourceDir, "highlight.html"), highlighted.html);
+  writeFileSync(path.join(sourceDir, "overlay.html"), overlay.html);
   // Move away from the "creator" location; nothing else may be needed to open it.
   const moved = path.join(workDir, "moved elsewhere 'it's");
   mkdirSync(moved, { recursive: true });
   cpSync(path.join(sourceDir, "report.html"), path.join(moved, "report.html"));
   cpSync(path.join(sourceDir, "evil.html"), path.join(moved, "evil.html"));
   cpSync(path.join(sourceDir, "docking.html"), path.join(moved, "docking.html"));
+  cpSync(path.join(sourceDir, "highlight.html"), path.join(moved, "highlight.html"));
+  cpSync(path.join(sourceDir, "overlay.html"), path.join(moved, "overlay.html"));
   rmSync(sourceDir, { recursive: true, force: true });
-  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), docking: path.join(moved, "docking.html"), moved };
+  return { good: path.join(moved, "report.html"), evil: path.join(moved, "evil.html"), docking: path.join(moved, "docking.html"), highlight: path.join(moved, "highlight.html"), overlay: path.join(moved, "overlay.html"), moved };
 }
 
 async function openWithProbes(browser, url, { offline }) {
@@ -312,6 +381,77 @@ async function exerciseGood(browser, file, { offline, label }) {
     console.log("  attempts:", JSON.stringify(await page.evaluate(() => [...window.__netAttempts]).catch(() => "n/a")), "csp:", JSON.stringify(await page.evaluate(() => [...window.__cspViolations]).catch(() => "n/a")), "cdp:", JSON.stringify(probe.cdpEvents.slice(-5).map((e) => e.slice(0, 120))));
     console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
     console.log(probe.consoleLines.filter((l) => !/GL Driver/.test(l)).slice(-15).join("\n"));
+  } finally {
+    await probe.context.close();
+  }
+}
+
+async function exerciseHighlight(browser, file) {
+  const url = pathToFileURL(file).href;
+  const probe = await openWithProbes(browser, url, { offline: true });
+  const { page } = probe;
+  const loaded = (scene) =>
+    page.waitForFunction((id) => document.querySelector('[data-testid="viewport"]')?.getAttribute("data-loaded-scene") === id, scene, { timeout: 30000 });
+  const shots = {};
+  try {
+    for (const scene of ["plain", "highlight", "plddt"]) {
+      if (scene !== "plain") await page.getByLabel("Scene").selectOption(scene);
+      await loaded(scene);
+      check((await page.getByRole("alert").count()) === 0, `highlight: no viewer errors in scene "${scene}"`);
+      check((await sequenceText(page)).startsWith(CRAMBIN), `highlight: scene "${scene}" still shows the full sequence`);
+      shots[scene] = await page.locator('[data-testid="viewport"] canvas').first().screenshot();
+      check(shots[scene].length > 8000, `highlight: scene "${scene}" is not blank (${shots[scene].length} bytes)`);
+    }
+    check(!shots.plain.equals(shots.highlight) && !shots.plain.equals(shots.plddt) && !shots.highlight.equals(shots.plddt), "highlight: highlighted, pLDDT and plain scenes render differently");
+    const errors = probe.consoleLines.filter((l) => /^(error|pageerror)/.test(l) && !/GL Driver/.test(l));
+    check(errors.length === 0, `highlight: no console errors ${JSON.stringify(errors)}`);
+    await assertNoNetwork("highlight", probe, url);
+  } catch (error) {
+    check(false, `highlight: ${error.message}`);
+    console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
+  } finally {
+    await probe.context.close();
+  }
+}
+
+async function exerciseOverlay(browser, file) {
+  const url = pathToFileURL(file).href;
+  const probe = await openWithProbes(browser, url, { offline: true });
+  const { page } = probe;
+  try {
+    await page.waitForFunction(
+      () => {
+        const v = document.querySelector('[data-testid="viewport"]');
+        return v?.getAttribute("data-loaded-scene") === "overlay" && v.getAttribute("data-structure-count") === "2";
+      },
+      null,
+      { timeout: 30000 },
+    );
+    check(true, "overlay: both structures loaded into one scene");
+    check((await page.getByRole("alert").count()) === 0, "overlay: no viewer errors with a transformed structure");
+    const shot = await page.locator('[data-testid="viewport"] canvas').first().screenshot();
+    check(shot.length > 8000, `overlay: viewport is not blank (${shot.length} bytes)`);
+
+    await page.getByRole("button", { name: "Results" }).click();
+    const charts = page.getByTestId("line-chart");
+    await charts.first().waitFor({ timeout: 10000 });
+    check((await charts.count()) === 2, `overlay: two line charts are drawn, the scatter chart is not (${await charts.count()})`);
+    check((await page.getByText("This chart type is not drawn yet").count()) === 1, "overlay: an undrawn chart type says so and shows its table");
+    const [single, multi] = [charts.nth(0), charts.nth(1)];
+    check((await single.locator("polyline").count()) === 1 && (await single.locator("circle").count()) === 46, "overlay: one series with 46 points");
+    check((await single.locator("circle title").first().textContent()).includes("Aligned residue 1, Deviation"), "overlay: points carry a tooltip");
+    check((await multi.locator("g[data-series]").evaluateAll((g) => g.map((e) => e.getAttribute("data-series")))).join() === "A,B", "overlay: one series per chain");
+    check((await page.locator(".md-legend span").allTextContents()).join() === "A,B", "overlay: the legend names the series");
+    const ticks = await single.locator("text.md-tick").allTextContents();
+    check(ticks.includes("Aligned residue") && ticks.includes("Deviation Å") && ticks.includes("0"), `overlay: axes are labelled with units (${ticks.slice(-3).join(" | ")})`);
+    const box = await single.boundingBox();
+    check(box && box.width > 300 && box.height > 120, `overlay: the chart has a usable size (${JSON.stringify(box)})`);
+    const errors = probe.consoleLines.filter((l) => /^(error|pageerror)/.test(l) && !/GL Driver/.test(l));
+    check(errors.length === 0, `overlay: no console errors ${JSON.stringify(errors)}`);
+    await assertNoNetwork("overlay", probe, url);
+  } catch (error) {
+    check(false, `overlay: ${error.message}`);
+    console.log("  page alerts:", JSON.stringify(await page.getByRole("alert").allTextContents().catch(() => [])));
   } finally {
     await probe.context.close();
   }
@@ -529,10 +669,12 @@ try {
 }
 try {
   console.log(`Browser: Chrome ${browser.version()} on ${process.platform}/${process.arch}`);
-  const { good, evil, docking } = buildReports(workDir);
+  const { good, evil, docking, highlight, overlay } = buildReports(workDir);
   await exerciseGood(browser, good, { offline: false });
   await exerciseGood(browser, good, { offline: true });
   await exerciseDocking(browser, docking);
+  await exerciseHighlight(browser, highlight);
+  await exerciseOverlay(browser, overlay);
   await exerciseEdgeCases(browser, workDir);
   await exerciseUpdated(browser, good);
   await exerciseEvil(browser, evil);

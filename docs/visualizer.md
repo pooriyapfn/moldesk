@@ -35,6 +35,44 @@ Nothing opens a browser unless you pass `--open`. If opening fails the report is
 
 With `--json`, the result (or an error object) is a single JSON document on stdout; logs never mix into it.
 
+## Highlights and coloring (the Scene API)
+
+```sh
+moldesk view p.pdb --highlight A:40-60                          # sticks, palette color
+moldesk view p.pdb --highlight A:40-60 --highlight B:12 --color '#ff5500'   # one color for all
+moldesk view p.pdb --highlight A:40-60 --highlight B:12 --color '#ff5500' --color '#00c2ff'
+moldesk view p.pdb --color-by plddt --bfactor-is-plddt           # AlphaFold confidence classes
+moldesk view --scene scene.json                                  # the same, as JSON
+```
+
+Selectors use the [shared grammar](./analysis-json.md#selectors) (`A`, `A:45`, `A:40-60`, `A:52A`); `--label` reads them as label ids. A highlight that matches nothing exits 2 (`SELECTOR_NO_MATCH`) and writes no report; the error says whether the chain or the residue is missing and lists the chains and residue ranges the file has (also as `details.available` with `--json`). `--color` takes one color for every highlight or one per `--highlight`.
+
+A scene file is a documented subset of the report's `Scene`/`SceneComponent` contract, with a selector string in place of `selection`. Unknown keys are rejected:
+
+```json
+{
+  "structure": "p.pdb",
+  "colorBy": "chain",
+  "label": false,
+  "bfactorIsPlddt": false,
+  "components": [
+    { "selector": "A:40-60", "color": "#ff5500", "label": "Active site", "representation": "sticks" }
+  ]
+}
+```
+
+`structure` is optional when `<file>` is given (not both) and must be a relative path inside the scene file's folder. `--scene` cannot be combined with `--highlight`, `--color` or `--color-by`.
+
+How it maps to the report: a scene with components draws only those components, so the report gets a base layer (the whole structure as an uncolored cartoon, which the viewer colors by chain, plus ligands and ions as sticks) and one component per highlight. Highlights default to `sticks` because a second cartoon over the base cartoon would z-fight; `representation` can be overridden in a scene file. A whole-chain highlight becomes a `chains` selection, anything else an explicit residue list (at most 10,000 residues per selection, else `SCENE_TOO_LARGE`).
+
+`--color-by plddt` needs a known pLDDT source (see [analyze.md](./analyze.md#confidence)), otherwise it fails with `PLDDT_UNAVAILABLE`. Residues go into the AlphaFold DB classes (≥ 90 `#0053d6`, 70-90 `#65cbf3`, 50-70 `#ffdb13`, < 50 `#ff7d45`), one cartoon component per class; ligands keep their element colors.
+
+**Compatibility decision.** Per-residue color needs no new contract field: classes are ordinary `residues` components with a `color`. So reports keep `schemaVersion: 1` and `envelopeVersion: 1`, every existing viewer renders them, and `moldesk visualizer update` behaves as before. Reports from an incompatible future version are still refused by the updater (`planUpdate` returns `unsupported`). The trade-off: four classes, not a continuous gradient.
+
+## Charts
+
+A `chart` panel with `type: "line"` is drawn as plain SVG from its JSON or CSV dataset (the `x` and `y` columns, with units; an optional `seriesField` gives one line per value and a legend). The y axis starts at 0 when every value is non-negative. Hover a point for its value; the data stays available under "Data table". Other chart types (`scatter`, `bar`, `heatmap`) are not drawn yet and show their table with a note. `moldesk compare --report` uses a line chart for the per-residue deviation ([compare.md](./compare.md#overlay-report---report)).
+
 ## What a report contains
 
 One HTML file with:

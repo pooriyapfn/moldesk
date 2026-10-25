@@ -125,4 +125,46 @@ export type {
   UpdateResult,
 } from "./visualization.js";
 
+export {
+  ENVELOPE_KINDS,
+  ENVELOPE_SCHEMA_VERSION,
+  envelopeSchema,
+  schemaForKind,
+  validateEnvelope,
+} from "./schemas/envelope.js";
+export type { AnalysisEnvelope, EnvelopeKind } from "./schemas/envelope.js";
+export { parseSelector } from "./schemas/selector.js";
+export type { Selector, SelectorNamespace } from "./schemas/selector.js";
+
+export { analyzeStructureFile } from "./analysis/analyze.js";
+export type { AnalysisResult, AnalyzeOptions, ChainAnalysis, ResidueId } from "./analysis/analyze.js";
+export { DEFAULT_INSPECT_RADIUS, inspectStructureFile } from "./analysis/inspect.js";
+export type { InspectedResidue, InspectOptions, InspectResult, NeighborResidue } from "./analysis/inspect.js";
+export { buildSceneComponents, parseColor, parseColorBy, parseSceneFile, PLDDT_BINS, readSceneFile, resolveViewRequest } from "./analysis/scene.js";
+export type { ColorBy, HighlightSpec, SceneFile, ViewRequest, ViewSpec } from "./analysis/scene.js";
+export { compareStructureFiles } from "./analysis/compare.js";
+export type { CompareOptions, CompareResult, MappedResidue } from "./analysis/compare.js";
+export { DEFAULT_DEVIATION_THRESHOLD, deviationRows, invertRigid, overlayTransformForB, toColumnMajor } from "./analysis/compare-report.js";
+export { parseUsalignOutput } from "./analysis/usalign-output.js";
+export type { UsalignResult } from "./analysis/usalign-output.js";
+export {
+  detectCompiler,
+  getUsalignStatus,
+  installUsalign,
+  planUsalignInstall,
+  requireCompiler,
+  requireUsalign,
+  uninstallUsalign,
+  USALIGN_CITATION,
+  USALIGN_VERSION,
+} from "./tools/usalign.js";
+export type { Compiler, UsalignInstallation, UsalignInstallOptions, UsalignInstallPlan, UsalignReceipt, UsalignStatus } from "./tools/usalign.js";
+export { describeModel } from "./describe/describe.js";
+export type { DescribeOptions, ModelDescription, ModelParameter } from "./describe/describe.js";
+export { fetchCacheDir, fetchStructure } from "./fetch/fetch.js";
+export type { FetchedFile, FetchOptions, FetchProvenance, FetchResult } from "./fetch/fetch.js";
+export { parseFetchSpec } from "./fetch/sources.js";
+export type { FetchFormat, FetchSource, FetchSpec } from "./fetch/sources.js";
+export { chainsToFasta, fastaValidationEnvelope, validateFasta, writeFastaFile } from "./analysis/fasta.js";
+
 export { VERSION } from "./version.js";

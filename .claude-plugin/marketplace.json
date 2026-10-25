@@ -8,7 +8,7 @@
     {
       "name": "moldesk",
       "source": "./plugins/moldesk",
-      "description": "Install, check, and run molecular AI models with the MoleculeDesk CLI."
+      "description": "Install, check, and run molecular AI models and analyze protein structures with the MoleculeDesk CLI."
     }
   ]
 }

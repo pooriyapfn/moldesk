@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "kind": "moldesk.analysis",
+  "status": "ok",
+  "input": {
+    "path": "1BNA.pdb",
+    "format": "pdb",
+    "sha256": "df42f1506792f191b957227b061360652adcf6f813eb69d9ec553067ea584670"
+  },
+  "result": {
+    "modelCount": 1,
+    "analyzedModel": 0,
+    "chains": [
+      {
+        "authId": "A",
+        "labelId": "A",
+        "entityId": "1",
+        "type": "dna",
+        "residueCount": 12,
+        "residues": [
+          {
+            "authSeqId": 1,
+            "labelSeqId": 1,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 2,
+            "labelSeqId": 2,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 3,
+            "labelSeqId": 3,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 4,
+            "labelSeqId": 4,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 5,
+            "labelSeqId": 5,
+            "name": "DA"
+          },
+          {
+            "authSeqId": 6,
+            "labelSeqId": 6,
+            "name": "DA"
+          },
+          {
+            "authSeqId": 7,
+            "labelSeqId": 7,
+            "name": "DT"
+          },
+          {
+            "authSeqId": 8,
+            "labelSeqId": 8,
+            "name": "DT"
+          },
+          {
+            "authSeqId": 9,
+            "labelSeqId": 9,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 10,
+            "labelSeqId": 10,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 11,
+            "labelSeqId": 11,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 12,
+            "labelSeqId": 12,
+            "name": "DG"
+          }
+        ],
+        "sequence": "CGCGAATTCGCG",
+        "fullSequence": "CGCGAATTCGCG",
+        "gaps": []
+      },
+      {
+        "authId": "B",
+        "labelId": "B",
+        "entityId": "2",
+        "type": "dna",
+        "residueCount": 12,
+        "residues": [
+          {
+            "authSeqId": 13,
+            "labelSeqId": 1,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 14,
+            "labelSeqId": 2,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 15,
+            "labelSeqId": 3,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 16,
+            "labelSeqId": 4,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 17,
+            "labelSeqId": 5,
+            "name": "DA"
+          },
+          {
+            "authSeqId": 18,
+            "labelSeqId": 6,
+            "name": "DA"
+          },
+          {
+            "authSeqId": 19,
+            "labelSeqId": 7,
+            "name": "DT"
+          },
+          {
+            "authSeqId": 20,
+            "labelSeqId": 8,
+            "name": "DT"
+          },
+          {
+            "authSeqId": 21,
+            "labelSeqId": 9,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 22,
+            "labelSeqId": 10,
+            "name": "DG"
+          },
+          {
+            "authSeqId": 23,
+            "labelSeqId": 11,
+            "name": "DC"
+          },
+          {
+            "authSeqId": 24,
+            "labelSeqId": 12,
+            "name": "DG"
+          }
+        ],
+        "sequence": "CGCGAATTCGCG",
+        "fullSequence": "CGCGAATTCGCG",
+        "gaps": []
+      },
+      {
+        "authId": "A",
+        "labelId": "A",
+        "entityId": "3",
+        "type": "water",
+        "residueCount": 37
+      },
+      {
+        "authId": "B",
+        "labelId": "B",
+        "entityId": "3",
+        "type": "water",
+        "residueCount": 43
+      }
+    ],
+    "secondaryStructure": {
+      "source": "none"
+    },
+    "geometry": {
+      "centerOfMass": [
+        14.7081,
+        20.9762,
+        8.8377
+      ],
+      "radiusOfGyration": 13.2282,
+      "boundingBox": {
+        "min": [
+          4.025,
+          8.032,
+          -11.401
+        ],
+        "max": [
+          26.506,
+          34.195,
+          31.084
+        ]
+      }
+    },
+    "confidence": null
+  },
+  "warnings": [
+    {
+      "code": "NO_CONFIDENCE_SOURCE",
+      "message": "No known pLDDT source (ModelCIF metrics or a Boltz run output), so confidence is null. B-factors are not assumed to be pLDDT; pass --bfactor-is-plddt if they are."
+    }
+  ],
+  "provenance": {
+    "moldeskVersion": "x",
+    "tool": {
+      "name": "molstar",
+      "version": "5.12.0"
+    }
+  }
+}

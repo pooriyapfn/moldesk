@@ -2,6 +2,7 @@ import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { uninstallModel } from "@moldesk/core";
 import type { RuntimeKind } from "@moldesk/core";
+import { uninstallUsalignTool, USALIGN_TOOL } from "./usalign-tool.js";
 
 function parseRuntime(value: string): RuntimeKind {
   if (value === "python" || value === "docker") return value;
@@ -40,6 +41,7 @@ export function registerUninstallCommand(program: Command): void {
         else console.log("Uninstall cancelled. Re-run with --yes for non-interactive use.");
         return;
       }
+      if (model === USALIGN_TOOL) return uninstallUsalignTool(options);
       try {
         const removed = await uninstallModel(model, {
           runtime: options.runtime ? parseRuntime(options.runtime) : undefined,

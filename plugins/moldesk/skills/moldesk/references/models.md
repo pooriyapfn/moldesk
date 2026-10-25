@@ -4,7 +4,7 @@ All models are `beta`: install and run work, broader verification is ongoing. Ch
 
 Example inputs ship in the MoleculeDesk repository under `examples/` (https://github.com/pooriyapfn/moldesk/tree/main/examples). Copy them into the user's working folder rather than running from a clone.
 
-Set parameters with `--param key=value` (repeatable). Unknown parameters are rejected.
+Set parameters with `--param key=value` (repeatable). Unknown parameters are rejected. `moldesk describe <model> --json` lists the accepted parameters with their types, ranges and platform-dependent defaults, straight from the CLI.
 
 ---
 

@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { getSystemReport, VERSION } from "@moldesk/core";
+import { getSystemReport, getUsalignStatus, VERSION } from "@moldesk/core";
 import type { SystemReport } from "@moldesk/core";
 import { checkmark, section } from "../utils/format.js";
 
@@ -70,6 +70,19 @@ export function printHuman(report: SystemReport): void {
   console.log("  Host Python is diagnostic only; installs use managed uv Python.");
 }
 
+async function printTools(): Promise<void> {
+  console.log(section("Tools"));
+  try {
+    const status = await getUsalignStatus();
+    console.log(`  ${checkmark(status.compiler !== null)} C++ compiler ${status.compiler ? `${status.compiler.command} (${status.compiler.version})` : "not found (needed to build US-align)"}`);
+    console.log(
+      `  ${checkmark(status.installed)} US-align     ${status.installation ? status.installation.version : (status.problem ?? "not installed (run `moldesk install usalign`)")}`,
+    );
+  } catch {
+    console.log("  Tool status unavailable.");
+  }
+}
+
 export function registerDoctorCommand(program: Command): void {
   program
     .command("doctor")
@@ -83,6 +96,7 @@ export function registerDoctorCommand(program: Command): void {
           return;
         }
         printHuman(report);
+        await printTools();
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;

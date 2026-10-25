@@ -24,6 +24,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `examples/egfr-end-to-end/`: one script that fetches 1M17, takes its complete chain A sequence, predicts
+  it with Boltz-2, compares the prediction with the experiment (overlay report) and inspects the region
+  that deviates most, with a real Apple M3 (MPS) run recorded in its README (Boltz-2: 244 s; TM-score 0.916,
+  RMSD 1.17 Å over 293 residues). CI runs it with a committed Boltz-2 prediction in place of Boltz.
+- `moldesk analyze` now reports `fullSequence` for polymer chains: the entity's complete sequence from the
+  file (SEQRES / `entity_poly_seq`), including residues with no coordinates. `sequence` stays the modeled
+  residues, and `--fasta` now writes the full sequences, since predicting the modeled-only sequence would
+  silently drop missing loops (1M17: 312 modeled of 333 residues).
+- Agent skill (`plugins/moldesk`, now 0.2.0): covers `fetch`, `analyze`, `inspect`, `view --highlight`,
+  `compare`, `describe` and `schema`, adds ground rules for network fetches, building US-align and
+  never inventing confidence, and two recipes (understand a structure; compare a Boltz prediction with an
+  experimental structure, the EGFR kinase domain). `scripts/check-skill-commands.mjs` checks that every
+  `moldesk` command and flag the skill mentions exists in the built CLI's `--help` and that `cli.md`
+  documents every command; CI runs it.
+- `moldesk describe <model> [--json]`: one document per model with its inputs, outputs, parameters (from the
+  adapter's own list, with per-platform defaults such as Boltz's `accelerator`), runtimes and hardware
+  needs, assets and licenses, cloud availability and the verdict for this machine (the same check as
+  `list`/`install`, from the same report as `doctor`). See `docs/describe.md`.
+- `moldesk schema <kind>` now prints the full `result` shape of every kind (JSON Schema draft-07, was
+  draft 2020-12 with an open `result`); real output of every command is validated against it in tests.
+- `moldesk fetch pdb:1M17 | afdb:P00533 | uniprot:P00533` (`--format`, `--output`, `--refresh`): downloads into
+  `~/.moldesk/cache/fetch/<source>/<id>/` with a provenance sidecar (URL, retrieval time, SHA-256, source
+  version, license). Ids are validated before any request; HTTPS to one allowed host per source, no
+  cross-host redirects, size caps on the decompressed stream, content checks and atomic writes. The
+  AlphaFold DB file URL is resolved through its API. A verified cache hit makes no request. See
+  `docs/fetch.md`.
+- `moldesk compare a b --report overlay.html [--deviation-threshold 2]`: an offline overlay report with
+  both structures in one scene (B moved onto A through a column-major scene transform), the per-residue
+  deviation as a line chart, and residues above the threshold highlighted. `mapping[].distance` is the
+  new per-pair deviation in the compare result. The report viewer now draws `line` chart panels as SVG
+  (other chart types still show their table). See `docs/compare.md`.
+- `moldesk compare <a> <b>` (`--chain-a`, `--chain-b`, `--multimer`) with US-align: TM-score
+  normalized by each structure, RMSD, aligned length, sequence identity, a 4x4 superposition
+  transform and the residue mapping. `moldesk install usalign` builds the pinned release 20260527
+  (SHA-256 checked, verified on its sample structures) with your own C++ compiler into
+  `~/.moldesk/tools`; `moldesk uninstall usalign` removes it and `moldesk doctor` lists the
+  compiler and install state. There is no fallback when it is not installed. See `docs/compare.md`.
+- `moldesk view --highlight A:40-60 [--color '#ff5500'] [--color-by chain|plddt]` and
+  `moldesk view --scene scene.json`: highlights and pLDDT-class coloring in offline reports, encoded
+  with the existing v1 report fields (no schema bump, so older viewers still open the report).
+  `--color-by plddt` needs a known pLDDT source. See `docs/visualizer.md`.
+- `moldesk inspect <file> <selector>`: per-residue name, auth/label ids, secondary structure, pLDDT
+  (when known) and heavy-atom count for a chain, residue or range, plus neighbouring residues within
+  `--radius` Å (default 5) with the minimum distance and atom pair. A selector that matches nothing
+  exits 2. See `docs/inspect.md`.
+- `moldesk analyze <pdb|cif>`: chains with auth and label ids, entity types, sequences, numbering
+  gaps, mmCIF unobserved residues, secondary structure (file records or DSSP), geometry and pLDDT
+  only from a known source (ModelCIF metrics, a MoleculeDesk Boltz run, or `--bfactor-is-plddt`).
+  `--fasta` writes the chain sequences; `--validate-fasta` checks a FASTA file. Runs Mol* in Node, so
+  `@moldesk/core` now depends on `molstar` (about 95 MB installed). See `docs/analyze.md`.
+- Analysis JSON contract: a versioned `--json` envelope for structure-intelligence commands,
+  `moldesk schema [kind]` to print its JSON Schema, and a shared residue selector grammar
+  (`A`, `A:45`, `A:40-60`, `A:52A`). See `docs/analysis-json.md`.
 - Runpod cloud execution (`moldesk run --compute runpod`, `moldesk cloud ...`) for Boltz-2,
   ProteinMPNN, DiffDock-L and OpenDDE. `ephemeral` caching is supported; `persistent` caching is experimental (it ran live
   but was slower than `ephemeral` on standard network volumes). Validated live on RTX 3090, A40 and

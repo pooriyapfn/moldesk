@@ -70,6 +70,15 @@ describe("doctor (real command, faked process boundary only)", () => {
     expect(output).toContain("CUDA (driver max) 12.4");
   });
 
+  it("lists the C++ compiler and US-align status under Tools", async () => {
+    const program = buildProgram();
+    await program.parseAsync(["doctor"], { from: "user" });
+    const output = logs.join("\n");
+    expect(output).toContain("Tools");
+    expect(output).toContain("C++ compiler not found (needed to build US-align)");
+    expect(output).toContain("not installed (run `moldesk install usalign`)");
+  });
+
   it("renders the corrected no-NVIDIA guidance instead of the misleading Docker-fallback note", async () => {
     const program = buildProgram();
     await program.parseAsync(["doctor"], { from: "user" });
