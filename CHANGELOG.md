@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Boltz-2, DiffDock-L, OpenDDE Preview, ProteinMPNN and LigandMPNN are now `available` (were `beta`);
+  BindCraft2 stays `beta`. ProteinMPNN and LigandMPNN Apple Silicon runs are maintainer-reported.
+- Every model docs page now opens with a quick-start section: install/run/agent commands and
+  plain-language speed and cost numbers from the benchmarks.
 - OpenDDE is now advertised on Linux x64 with NVIDIA CUDA. Verified on Runpod Pods (A40 and RTX 3090)
   with `examples/opendde/tiny.json`; a local Linux install, the no-GPU refusal path and ligand-file jobs
   are not yet verified.

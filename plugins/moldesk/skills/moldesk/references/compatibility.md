@@ -9,7 +9,7 @@ moldesk list --json       # per model: compatibility.status, selectedRuntime, re
 
 `compatibility.status` is `compatible` or `unsupported`. Every reason has a `code`, a `message`, and often a `remediation`. Quote the message to the user instead of paraphrasing.
 
-## Advertised support (as of MoleculeDesk 0.0.7)
+## Advertised support (as of MoleculeDesk 0.0.8)
 
 | Model | Apple Silicon (darwin-arm64) | Linux x64 + NVIDIA | Linux x64, no GPU |
 | --- | --- | --- | --- |

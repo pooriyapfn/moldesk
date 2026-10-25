@@ -11,3 +11,5 @@ __pycache__/
 *.pyc
 .venv/
 /docs/v*.md
+# Local browser-preview config
+.claude/launch.json
