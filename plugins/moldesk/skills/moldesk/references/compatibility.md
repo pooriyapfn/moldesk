@@ -17,6 +17,7 @@ moldesk list --json       # per model: compatibility.status, selectedRuntime, re
 | `opendde` | yes (MPS) | yes (CUDA) | no |
 | `diffdock` | no | yes (CUDA required) | no |
 | `bindcraft2` | no | yes (CUDA 12, 24 GB RAM, 25 GB disk) | no |
+| `rfd4-proteina` | no | CUDA 12 build, verified on a Runpod RTX 6000 Ada Pod only | no |
 | `proteinmpnn` | yes | yes | yes |
 | `ligandmpnn` | yes | yes | yes |
 

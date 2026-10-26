@@ -1,0 +1,5 @@
+# One unconditioned 100-residue monomer. `monomer-short.cif` is an annotated CIF that only
+# carries the length request (no coordinates), so the whole input is kept as is.
+monomer:
+  input: monomer-short.cif
+  input_as_annotated_cif: true

@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- RFD4-Proteina (`rfd4-proteina`): protein, binder, enzyme and antibody design from YAML/JSON
+  condition specs, Linux/NVIDIA only (CUDA 12 build, BSD-3-Clause code and weights). Generation only:
+  no metrics, refolding or reward-guided search. The manifest pins the PyPI wheel, its full
+  167-package closure and the two model files by hash; weights load from a managed local directory
+  with Hub access disabled. Specs are validated against a closed grammar, structure files stay inside
+  the spec's folder, and upstream receives a resolved JSON spec. A random seed is chosen up front and
+  recorded. Runs on Runpod (`--compute runpod`, `ephemeral`, on the A100/H100/H200/L40S/RTX 6000 Ada
+  allow-list): a 100-residue monomer completed in about 2.7 minutes (roughly $0.05) on an RTX 6000 Ada,
+  with benchmarks on the model page. **Not yet verified: a local Linux install, a network-off run, cancel,
+  and the other allow-listed GPUs**; see `models/rfd4-proteina/README.md` for the open gates.
+
 - `examples/egfr-end-to-end/`: one script that fetches 1M17, takes its complete chain A sequence, predicts
   it with Boltz-2, compares the prediction with the experiment (overlay report) and inspects the region
   that deviates most, with a real Apple M3 (MPS) run recorded in its README (Boltz-2: 244 s; TM-score 0.916,

@@ -63,6 +63,18 @@ export const models: Record<string, ModelInfo> = {
     install: "moldesk install bindcraft2",
     run: "moldesk run bindcraft2 campaign.json",
   },
+  "rfd4-proteina": {
+    slug: "rfd4-proteina",
+    displayName: "RFD4-Proteina",
+    tagline: "Design proteins, binders, enzymes and antibodies from a short condition spec.",
+    status: "available",
+    license: "BSD-3-Clause",
+    upstream: "https://github.com/RosettaCommons/RFD4-Proteina",
+    appleSilicon: false,
+    nvidiaCuda: true,
+    install: "moldesk install rfd4-proteina",
+    run: "moldesk run rfd4-proteina design.yaml",
+  },
   opendde: {
     slug: "opendde",
     displayName: "OpenDDE Preview",

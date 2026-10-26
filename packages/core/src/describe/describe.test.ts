@@ -49,7 +49,7 @@ const describeIt = (name: string, report = PROFILES["Linux with an A100"], extra
 
 describe("the catalog", () => {
   it("has models to test", () => {
-    expect(models.map((m) => m.name).sort()).toEqual(["bindcraft2", "boltz", "diffdock", "ligandmpnn", "opendde", "proteinmpnn"]);
+    expect(models.map((m) => m.name).sort()).toEqual(["bindcraft2", "boltz", "diffdock", "ligandmpnn", "opendde", "proteinmpnn", "rfd4-proteina"]);
   });
 });
 
@@ -145,6 +145,17 @@ describe("describe", () => {
     expect(accelerator.default).toBeUndefined();
     expect(accelerator.defaultsByPlatform).toEqual({ "linux-x64": "gpu", "darwin-arm64": "mps" });
     expect(accelerator.enum).toEqual(["gpu", "mps", "cpu"]);
+  });
+
+  it("reports no default for a seed that is drawn at random for every run", async () => {
+    const { result } = await describeIt("rfd4-proteina");
+    const seed = result.parameters.find((p) => p.name === "seed")!;
+    expect(seed.default).toBeUndefined();
+    expect(seed.defaultsByPlatform).toBeUndefined();
+    // A real run still gets one, recorded before it starts.
+    const adapter = getAdapter("rfd4-proteina")!;
+    const installed = { runtime: { kind: "python", python: { platform: "linux-x64" as const, platformSelected: true } } };
+    expect(prepareRunParams(adapter, "rfd4-proteina", installed, {}).effectiveParams.seed).toBeTypeOf("number");
   });
 
   it("judges only the requested runtime", async () => {

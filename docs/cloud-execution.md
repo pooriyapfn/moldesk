@@ -33,6 +33,7 @@ Which models are enabled, and why the others are not:
 | LigandMPNN | Not enabled: its live run could not download the weights from the upstream host |
 | DiffDock-L | Supported (`ephemeral`), on the Ampere GPUs in its allow-list. The protein file is uploaded, so the run needs `--accept-file-upload` (see below) |
 | BindCraft2 | Not enabled yet: its job references extra files, which can now be uploaded (see below), but it has no cloud block or live run |
+| RFD4-Proteina | Runs in `ephemeral` mode on the A100, H100/H200, L40S and RTX 6000 Ada GPUs in its allow-list. Live-validated on the RTX 6000 Ada (100-residue monomer, about 2.7 minutes, roughly $0.05) and the L40S (PD-L1 binder, four designs, about 4 minutes, roughly $0.07). The CIF next to the spec is uploaded, so it needs `--accept-file-upload` |
 | OpenDDE | Supported (`ephemeral`), on the Ampere, Ada and Hopper GPUs in its allow-list with at least 24 GB. No `.pdb` copy of the structure is made in cloud runs (the mmCIF is returned). Jobs that reference ligand files have not been run |
 
 ## Cache policies

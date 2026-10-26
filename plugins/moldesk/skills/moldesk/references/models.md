@@ -159,6 +159,33 @@ Start with a small budget (`max_trajectories=1` or `2`) to measure time per traj
 
 ---
 
+## RFD4-Proteina (`rfd4-proteina`): protein, binder, enzyme and antibody design
+
+- **Status:** beta. It has run end to end on a Runpod RTX 6000 Ada Pod (`--compute runpod --cache-policy ephemeral --accept-file-upload`, about 2.7 minutes and roughly $0.05 for a 100-residue monomer), but **not on a local Linux machine**, and binder specs and long designs are unverified. Say so before the user relies on it.
+- **Runs on:** Linux x64 + NVIDIA, CUDA 12 build. No CPU, macOS, AMD or Blackwell (not a v1 target). Measured on Runpod for a 100-residue monomer: about 17.5 GiB of disk growth and 2.3 GiB of GPU memory (RAM not measured). Weights are about 1.7 GB; the runtime is several GB.
+- **License:** BSD-3-Clause for code and weights.
+- **Input:** a `.yaml`, `.yml` or `.json` condition spec. Each top-level key is a design (letters, digits, `_`, `-`); fields are `input` (relative path or list of CIF/BinaryCIF files in the spec's folder), `input_as_annotated_cif`, `contig` and `conditions`; `global_args` holds shared defaults. Absolute paths, `..`, aliases, other fields and PDB files are rejected. At most 8 designs.
+- **Outputs:** `inference_samples/<design>_<i>/<design>_<i>_generated.cif`, the resolved `moldesk-spec.json`, and `moldesk-summary.json`. Generation only: no metrics, refolding or search.
+- **Dual use:** nothing screens the generated designs. Mention that when the target or the design is biologically sensitive.
+
+```yaml
+monomer:
+  input: monomer-short.cif
+  input_as_annotated_cif: true
+```
+
+| Param | Meaning |
+| --- | --- |
+| `numReplicates` | Designs per spec entry, integer 1-32 (default 1) |
+| `batchSize` | Designs at once, integer 1-8 (default 1) |
+| `seed` | Integer 0-4294967295; a random one is chosen first and recorded when omitted |
+| `recycle` | `thinking_low`, `thinking_medium` (default), `thinking_high` |
+| `compile` | `true` enables torch.compile length buckets (default `false`) |
+
+Start with `numReplicates=1`, then ask the user before scaling up. These are computational candidates, not validated binders.
+
+---
+
 ## ProteinMPNN (`proteinmpnn`): sequence design for a backbone
 
 - **Runs on:** Apple Silicon and Linux x64. No GPU required. Small install (checkpoint about 6.7 MB plus the environment).

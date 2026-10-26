@@ -63,8 +63,16 @@ export interface ParamDescriptor {
   default?: string | number | boolean;
   min?: number;
   max?: number;
+  /** Number params only: reject fractions at preflight (before any cloud resource exists). */
+  integer?: boolean;
   enum?: Array<string | number>;
   description?: string;
+  /**
+   * `resolveParamDefaults` draws this param's value at random for every run (a seed). It is still
+   * applied and recorded before the run, locally and in the cloud, but `moldesk describe` reports no
+   * default for it: any value shown would never be the one a run uses.
+   */
+  randomDefault?: boolean;
 }
 
 export interface InstallPlanStep {

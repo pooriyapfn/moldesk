@@ -13,6 +13,8 @@
 
 - [Run Boltz-2 locally](https://moleculedesk.com/docs/guides/run-boltz-locally): requirements, commands, input, and output.
 - [Molecular AI on Apple Silicon](https://moleculedesk.com/docs/guides/apple-silicon): verified and unverified paths.
+- [Design a PD-L1 binder with RFD4-Proteina on a cloud GPU](https://moleculedesk.com/docs/guides/design-pd-l1-binder-rfd4-proteina): 8 binder designs in about 5 minutes for roughly $0.09 on a rented L40S, with measured time, cost, per-design results and a 3D viewer.
+- [RFD4-Proteina model page](https://moleculedesk.com/docs/models/rfd4-proteina): condition specs, parameters, Runpod benchmarks and verification status.
 - [Boltz-2 model page](https://moleculedesk.com/docs/models/boltz): model details and platform support.
 
 ## Source

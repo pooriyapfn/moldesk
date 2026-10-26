@@ -20,6 +20,7 @@ const CASES: Array<{ model: string; job: string }> = [
   { model: "bindcraft2", job: "bindcraft2/campaign.json" },
   { model: "opendde", job: "opendde/ligand-file.json" },
   { model: "opendde", job: "opendde/tiny.json" }, // self-contained: no extra files, so no upload warning
+  { model: "rfd4-proteina", job: "rfd4-proteina/monomer.yaml" },
 ];
 
 const temporary: string[] = [];
