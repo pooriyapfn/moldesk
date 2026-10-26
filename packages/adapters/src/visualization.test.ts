@@ -3,7 +3,7 @@ import { getAdapter } from "./index.js";
 import { ReportBuilder } from "./visualization.js";
 
 describe("adapter visualization hooks", () => {
-  it.each(["boltz", "opendde", "bindcraft2", "diffdock"])("%s describes its structure outputs", (name) => {
+  it.each(["boltz", "opendde", "bindcraft2", "diffdock", "rfd4-proteina"])("%s describes its structure outputs", (name) => {
     expect(typeof getAdapter(name)?.describeVisualization).toBe("function");
   });
 

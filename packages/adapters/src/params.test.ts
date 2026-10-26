@@ -43,6 +43,13 @@ describe("validateParams", () => {
     expect(errors.some((e) => e.includes("is not a number"))).toBe(true);
   });
 
+  it("rejects a fraction for an integer number param, and only for one", () => {
+    const strict: ParamDescriptor[] = [{ name: "n", type: "number", integer: true, min: 1, max: 10 }, { name: "x", type: "number" }];
+    expect(validateParams(strict, { n: "1.5" }).errors.some((e) => e.includes("is not an integer"))).toBe(true);
+    expect(validateParams(strict, { n: "1e0", x: "2.5" })).toEqual({ effective: { n: 1, x: 2.5 }, errors: [] });
+    expect(validateParams(strict, { n: "9007199254740993" }).errors.length).toBeGreaterThan(0);
+  });
+
   it("rejects a non-boolean value for a boolean param", () => {
     const { errors } = validateParams(descriptors, { mode: "fast", verbose: "maybe" });
     expect(errors.some((e) => e.includes("is not a boolean"))).toBe(true);

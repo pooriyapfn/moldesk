@@ -35,6 +35,7 @@ export const docsNav: DocNavSection[] = [
       { title: "Boltz-2", slug: "models/boltz" },
       { title: "DiffDock-L", slug: "models/diffdock" },
       { title: "BindCraft2", slug: "models/bindcraft2", status: "beta" },
+      { title: "RFD4-Proteina", slug: "models/rfd4-proteina" },
       { title: "OpenDDE Preview", slug: "models/opendde" },
       { title: "ProteinMPNN", slug: "models/proteinmpnn" },
       { title: "LigandMPNN", slug: "models/ligandmpnn" },
@@ -51,6 +52,10 @@ export const docsNav: DocNavSection[] = [
       {
         title: "Runpod cloud execution",
         slug: "guides/runpod-cloud-execution",
+      },
+      {
+        title: "Design a PD-L1 binder",
+        slug: "guides/design-pd-l1-binder-rfd4-proteina",
       },
     ],
   },

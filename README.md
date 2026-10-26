@@ -53,6 +53,7 @@ Available:
 
 In progress:
 
+* RFD4-Proteina adapter (protein, binder, enzyme and antibody design from condition specs; generation only, Linux/NVIDIA): unit-tested and run end to end on a Runpod RTX 6000 Ada Pod (`--compute runpod`, about 2.7 minutes and roughly $0.05 for a 100-residue monomer); **not yet run on a local Linux machine**; see [models/rfd4-proteina](models/rfd4-proteina/README.md)
 * BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on NVIDIA RTX 3090 and A40 GPUs (beta) (source-available, hosting-restricted license)
 * reproducible run history
 
@@ -154,6 +155,7 @@ Model support is being added incrementally.
 | LigandMPNN | Available; Apple Silicon and Linux/NVIDIA CUDA (RTX 3090) |
 | DiffDock-L | Available; Linux/NVIDIA CUDA only, verified on an A40 |
 | BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
+| RFD4-Proteina | Generation only, Linux/NVIDIA (CUDA 12); BSD-3-Clause; run on a Runpod RTX 6000 Ada Pod only (not yet on a local Linux machine) |
 | OpenDDE Preview | Available (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
 | ColabFold | Planned |
 | AlphaFold | Planned |

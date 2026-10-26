@@ -1,0 +1,219 @@
+export const metadata = {
+  title: "RFD4-Proteina: protein, binder, enzyme and antibody design",
+  description: "RFD4-Proteina integration for Linux/NVIDIA: condition-spec input, pinned weights, BSD-3-Clause licensing, and what has and has not been verified on a GPU.",
+};
+
+# RFD4-Proteina protein design
+
+<ModelHero model="rfd4-proteina" />
+
+## Overview
+
+[RFD4-Proteina](https://github.com/RosettaCommons/RFD4-Proteina) is a flow-matching design model from the
+Institute for Protein Design (Baker Lab) and NVIDIA. From a short YAML or JSON **condition spec** it generates
+proteins, protein and DNA binders, enzymes around a catalytic site, pockets around a small molecule, and
+antibody loops, with sequence and all-atom structure produced together.
+
+**Status: available.** It has been run end to end on Runpod (an RTX 6000 Ada and an L40S Pod, 2026-10-26): a
+100-residue monomer took about 2.7 minutes and roughly $0.05, and a PD-L1 binder run with four designs about 4 minutes and $0.07, including install and download. Larger designs, a
+local Linux install and offline operation are not verified yet. See [Verification status](#verification-status).
+
+## Requirements and license
+
+| | |
+| --- | --- |
+| Package | `rfd4-proteina` 0.0.3 (PyPI wheel, pinned with the full dependency closure) |
+| Python | Managed 3.12 |
+| Platform | Linux x64 + NVIDIA; CUDA 12 build (torch 2.14.1+cu126). No CPU, macOS, AMD or Blackwell support |
+| Weights | `config.json` and `model.safetensors` (about 1.7 GB), downloaded and hash-checked at install |
+| Disk / VRAM | About 17.5 GiB of disk growth and 2.3 GiB of GPU memory for a 100-residue monomer on Runpod (see the benchmarks below); RAM and larger designs are not measured yet |
+| Input | A `.yaml`, `.yml` or `.json` condition spec plus the CIF/BinaryCIF files it names |
+| Results | One mmCIF per design and replicate, the resolved spec, and a summary |
+
+**BSD-3-Clause** for both the code and the weights. Upstream lists A100, H100/H200, L40S and RTX 6000 Ada
+among its tested GPUs; A40, RTX 3090/4090 and the A5000/A6000 are not on that list, so the Runpod profile only
+quotes the listed GPUs.
+
+## Run it on Runpod
+
+```bash
+moldesk run rfd4-proteina design.yaml --compute runpod --cache-policy ephemeral \
+  --max-budget 3 --max-lifetime 3600 --accept-file-upload
+```
+
+The Pod downloads the runtime and the 1.7 GB weights each time, so there is nothing to install locally and
+nothing is kept afterwards. Structure files named in your spec are uploaded to the Pod, which is why the run
+needs `--accept-file-upload`. Read the [Runpod guide](/docs/guides/runpod-cloud-execution) for the other
+acknowledgments and limits.
+
+## A condition spec
+
+```yaml
+binder:
+  input: pdl1.cif            # a CIF in the same folder as this file
+  contig: "50-120, /0, A17-131"   # a new 50-120 residue chain, then the target
+  conditions:
+    C_CRDGRP: {1: [{select: "sel('A/*/*/[N,CA,C,O]')"}]}
+    C_SEQ: {true: [{select: "sel('A')"}]}
+    C_HOT: {true: [{select: "sel('A/*/56/[CG,OH]')"}]}
+```
+
+```bash
+moldesk run rfd4-proteina binder.yaml --param numReplicates=4 --param seed=42
+```
+
+Each top-level key is a design. `global_args` holds defaults shared by every design. The grammar for `contig`
+and `conditions` is upstream's: see its
+[YAML/JSON reference](https://rfd4-proteina.org/latest/reference/yaml-json.html).
+
+MoleculeDesk checks the spec before anything runs and is stricter than upstream in a few places:
+
+- Structure files must be **relative paths inside the spec's own folder** (no `..`, no absolute paths), with a
+  CIF or BinaryCIF suffix. They are copied into the run, checksummed, and handed to the model as staged copies.
+  PDB files are not accepted.
+- Only the four documented fields are allowed, at most 8 designs and 16 distinct structure files per spec.
+  Design names become file names (letters, digits, `_`, `-`).
+- The spec is read as YAML 1.2 and passed to the model as a resolved JSON file, so what was validated is exactly
+  what runs. YAML aliases, merge keys, custom tags and duplicate keys are rejected.
+
+## Parameters
+
+| `--param` | Meaning |
+| --- | --- |
+| `numReplicates` | Designs per spec entry, integer 1-32 (default 1) |
+| `batchSize` | Designs generated at once, integer 1-8 (default 1) |
+| `seed` | Integer 0-4294967295; a random seed is chosen first and recorded in `run.json` when omitted |
+| `recycle` | `thinking_low`, `thinking_medium` (default) or `thinking_high` |
+| `compile` | `true` enables `torch.compile` length buckets; the default skips the warm-up |
+
+Other upstream settings are not exposed. A run needs a working CUDA GPU; there is no CPU fallback.
+
+<BenchmarkTable model="rfd4-proteina" />
+
+## Example: design a binder to PD-L1
+
+**Result in short:** RFD4-Proteina designed four new PD-L1-binding protein candidates in about 4 minutes for roughly $0.07 on a rented NVIDIA L40S ($1.09/hour), including installing the model and downloading the results. Eight designs (upstream's cookbook setting) took about 5 minutes and $0.09. In all four, the new chain reaches the three requested hotspot residues of PD-L1 (every hotspot atom is within about 5 Å) with no atomic clashes. Nothing here has been tested in a lab.
+
+This is the example from upstream's [Design a binder in 10 lines](https://rfd4-proteina.org/latest/how-to/binder-in-10-lines.html): the target is PD-L1 chain A (residues 17-131 of PDB 5O45), the binder is a new chain of 50-120 residues, and three target residues are marked as hotspots. The files are in [`examples/rfd4-proteina/pdl1-binder`](https://github.com/pooriyapfn/moldesk/tree/main/examples/rfd4-proteina/pdl1-binder).
+
+```yaml
+binder:
+  input: 5o45_cropped.cif.zst
+  contig: "50-120, /0, A17-131"
+  conditions:
+    C_CRDGRP: {1: [{select: "sel('A/*/*/[N,CA,C,O]')"}]}
+    C_SEQ: {true: [{select: "sel('A')"}]}
+    C_HOT:
+      true:
+        - {select: "sel('A/*/56/[CG,OH]')"}
+        - {select: "sel('A/*/115/[CG,SD]')"}
+        - {select: "sel('A/*/123/[CD2,OH]')"}
+```
+
+```bash
+moldesk run rfd4-proteina binder.yaml --compute runpod --cache-policy ephemeral \
+  --max-budget 3 --max-lifetime 3600 --accept-file-upload \
+  --param numReplicates=4 --param batchSize=4 --param seed=42
+```
+
+A shorter walkthrough with an interactive 3D view of the results is in the guide [Design a PD-L1 binder with RFD4-Proteina on a cloud GPU](/docs/guides/design-pd-l1-binder-rfd4-proteina).
+
+### How long did it take and what did it cost?
+
+| | First run | Runs 2 and 3 |
+| --- | ---: | ---: |
+| Wall time (Pod start to results on your machine) | 308 s | 239 s and 248 s |
+| Cost at $1.09/hour (GPU compute only) | $0.093 | about $0.07 |
+| Peak GPU memory | 4.3 GiB | 4.3 GiB |
+| Pod disk used | 17.5 GiB of 40 GiB | 17.5 GiB of 40 GiB |
+
+Generating the four designs took about a minute; the rest is installing the pinned environment and downloading the 1.7 GB weights, which an `ephemeral` run repeats every time. That fixed setup is why four designs cost only a little more than one (a single design took 155-171 s on an RTX 6000 Ada at $0.99/hour, about $0.045).
+
+### What did it produce?
+
+Four complexes (`binder_0` to `binder_3`), each with the unchanged PD-L1 chain A plus a new chain B. The numbers below were measured on the returned structures; target residues are renumbered 1-115 in the output, so the hotspots 56, 115 and 123 appear as 40, 99 and 107.
+
+| Design | Binder length | Binder residues within 4.5 Å of PD-L1 | PD-L1 residues within 4.5 Å of the binder | Closest binder atom to each hotspot atom |
+| --- | ---: | ---: | ---: | --- |
+| `binder_0` | 103 | 14 | 15 | 2.8 to 4.5 Å |
+| `binder_1` | 99 | 9 | 13 | 2.3 to 4.6 Å |
+| `binder_2` | 73 | 20 | 22 | 2.4 to 5.1 Å |
+| `binder_3` | 99 | 20 | 24 | 3.1 to 5.3 Å |
+
+```text
+binder_0  QLTQPSSVSGSVGDRVTITCRASQSVSSYLAWYQQKPGKAPKLLIYDASSLESGVPSRFSGFGYGTDFTLTISSLQPEDVAVYYCQQYRHSPWTFGQGTKLEI
+binder_1  PTVDVPSSLSVKEGETATLPCTVTASETAIYQVTWYKDGSKLLKKFDPTLLLSGESKTFPLNLNSVTLADSGVYTCKVEDLTSSNPPVEKNTTLTVLPP
+binder_2  SSMYQVSLFVESPSSSSAHVKEVEASSPAEAIEKVAAEEKIHAPLNYITDTSDFAHAKAKQGDTHYHLFADLL
+binder_3  SISITSISASSTSVSLTLHNSSSTSKTLLIKIEKIKSEGSELVYEKSVTLSAHSTETYTIPFSDFTSPPEPDTLYRVSIFEVDGTTETEVAAGLFTVPS
+```
+
+All three runs produced identical coordinates for all four designs, so a seed reproduces a result. No atoms of the binder come closer than 2.2 Å to the target. The sequences differ a lot in character: `binder_0` resembles an antibody light-chain variable domain, while `binder_3` is rich in serine and threonine, which is a reason to filter designs before ordering any.
+
+### What happens with 8 designs, as in upstream's cookbook?
+
+Upstream's cookbook recipe asks for 8 designs per input. Running the same spec with `--param numReplicates=8 --param batchSize=8` took 302 s and cost about $0.09 on an L40S (a single run): generation took 118 s, twice the 58 s for four, so each extra design costs about 15 seconds of GPU time while the roughly three-minute setup stays the same. That is about $0.012 per design. Peak GPU memory rose from 4.3 to 7.1 GiB because the designs are generated together; disk use stayed at 17.5 GiB. The eight designs are a different sample from the four above (the batch size changes the random draws), so `binder_0` here is not the same structure as `binder_0` there.
+
+| Design | Binder length | Binder residues within 4.5 Å of PD-L1 | PD-L1 residues within 4.5 Å of the binder | Closest binder atom to each hotspot atom | Closest binder-target atom pair |
+| --- | ---: | ---: | ---: | --- | ---: |
+| `binder_0` | 103 | 13 | 15 | 3.0 to 4.5 Å | 2.2 Å or more |
+| `binder_1` | 99 | 18 | 17 | 2.4 to 4.5 Å | **1.86 Å** |
+| `binder_2` | 73 | 15 | 18 | 2.7 to 4.6 Å | 2.2 Å or more |
+| `binder_3` | 99 | 15 | 16 | 2.5 to 5.0 Å | 2.2 Å or more |
+| `binder_4` | 104 | 16 | 15 | 2.9 to 4.5 Å | 2.2 Å or more |
+| `binder_5` | 119 | 11 | 17 | 2.8 to 4.9 Å | 2.2 Å or more |
+| `binder_6` | 84 | 14 | 19 | 3.3 to 5.0 Å | 2.2 Å or more |
+| `binder_7` | 87 | 18 | 17 | 3.4 to 4.7 Å | **2.19 Å** |
+
+Six of the eight have no atom pair closer than 2.2 Å. `binder_1` has a PD-L1 glutamate oxygen 1.86 Å from a tyrosine hydroxyl of the binder, which is too close for a relaxed structure, and `binder_7` has a PD-L1 arginine nitrogen 2.19 Å from a backbone oxygen of a binder lysine. Every design still reaches all six hotspot atoms (within 5.0 Å). A real selection step would drop or relax designs like these before refolding.
+
+```text
+binder_0  QLTQPSSVSGSVGDRVTITCRASQSISSYLAWYQQKPGKAPKLLIYDASSLESGVPSRFSGFGYGTDFTLTISSLQPEDVAVYYCQQYYSLRTFGQGTKVEIK
+binder_1  SMTPMITYITTFPETLSVKEGENATITCAWEVNPYSSALKYTVEWYKDGKLLKSYSDVSSRTSSLTLTSVTLADSGMYTCKVTLGNDAKTSAPTTLTVL
+binder_2  SMFDQILEQFNSSAQPFLERVLTQYKEGKVEDAVSNVLTLASYFPDTFSSLGEQATKILTADQFINALTSLVS
+binder_3  TTLPSVGETVTLTVYDSDRDETHEITGTVESVSVDGDTVYVDVKVPASDSVLLKPGTTVTVSASSGVTIENATVTDFSSVDSTHITVHLSASLSDVSMS
+binder_4  SALTQPSSVSGSVGDRVTISCSGSSSNIGSNYVQWYQQKPGQAPTLLIAFNNKRESGVPDRFSGSKSGTSASLTISGLQPEDEADYYCHTLSSSFGGGTKLTVL
+binder_5  SVSSVDLGDHIGFQTYFEALLPHLKALEPGDTLKVTATIILTNADLTSLNTLLEEGSLTYTFEDGSVLSLTLDSRDGSTLHTSGTLDLPNGMSFSVESTLNYDSEKETVDVDATYTRQP
+binder_6  SSMLTIKINGSEKLFSSTEVGESVTFTAHVDGKEVTAHWKVYLGDELVFEDEAPTITFTPKSSGLYRVKVSHGSLETYALLHVT
+binder_7  VTATVGQTVTLTCPFSKPDGSTTEPTVTWEKDGSPVSGSRFTITTHSDNTSTLTITSVQLADTGTYTCSSTYGTDTTKMNFTLTVNS
+```
+
+Upstream's recipe also sets `recycle_strategy=medium/front_loaded` and scores the designs with refolding. MoleculeDesk uses its default recycling preset (`thinking_medium`) and runs no scoring, so these eight are an unfiltered batch rather than a ranked shortlist.
+
+### What does this not tell you?
+
+This run generated structures only: there was no metrics step, so no refolding with AlphaFold or OpenFold3, no binding-energy estimate and no experimental test. Closeness to the hotspots and the absence of clashes are geometric checks, not evidence that a design binds PD-L1. Upstream's own workflow refolds and scores many more designs (its cookbook uses 8 per input) before picking candidates.
+
+### Which GPU should I use?
+
+The profile quotes only the GPUs upstream lists as tested. In this test an RTX 6000 Ada ($0.99/hour) and an L40S ($1.09/hour) both ran successfully; A100, H100 and H200 are allowed but were not run. Designs of this size use under 5 GiB of GPU memory, so a 48 GB card is more than enough.
+
+## Results
+
+Each design and replicate produces `inference_samples/<design>_<i>/<design>_<i>_generated.cif`. A run succeeds
+only if every design has exactly the requested number of structures and each file has a data block and an
+`_atom_site` loop of finite coordinates. `moldesk-spec.json` records the resolved spec and
+`moldesk-summary.json` the parameters and atom counts. Generated structures open in an automatic 3D report.
+These are computational candidates; binding and function need experimental validation.
+
+## Not included
+
+Reward-guided search, refolding and other metrics need an AlphaFold2 or OpenFold3 oracle environment (container
+images of 6-16 GB) and are not part of this integration. Annotated-CIF-only input, partial diffusion as a
+separate option, and CUDA 13 are also not supported yet.
+
+## Dual use
+
+This model can design binders to arbitrary targets, and MoleculeDesk performs **no biosecurity screening** of
+what it generates. The upstream Hugging Face Spaces screen designs with SecureDNA; the command-line tool does
+not. Screening generated sequences before ordering or sharing them is your responsibility.
+
+## Verification status
+
+Verified on 2026-10-26 with `moldesk run rfd4-proteina examples/rfd4-proteina/monomer.yaml --compute runpod`:
+
+- **Install and generation on Runpod**: a clean install of the pinned environment (torch 2.14.1+cu126), the two weights files and a generation succeeded on an RTX 6000 Ada Pod (four runs, US-WA-1 and US-IL-1). The output was a valid mmCIF (793 atoms) with the expected `inference_samples/<design>_<i>/` layout, and a 4-design run returned four structures. Pods and volumes were gone after every run.
+- **Binder design**: the upstream PD-L1 example (three hotspots, a target uploaded as `.cif.zst`) ran on an L40S Pod three times and returned four complexes each time, with identical coordinates in every run; the hotspot and clash checks are in the example above.
+- **Reproducibility**: runs with the same seed produced identical coordinates.
+- **Pinned hashes**: the first install attempt on an L40S Pod was rejected because `triton` 3.8.0 is published on both PyPI and the PyTorch index with different files; the manifest now carries the index's hashes.
+
+Not verified yet: a local `moldesk install` on a Linux machine, generation with the network disabled (the runtime sets the offline variables, but the Pod had network access), cancelling a run, enzyme, antibody and other conditioned specs, designs against targets much larger than PD-L1, A100/H100/H200 GPUs, and Blackwell GPUs. The repository's `models/rfd4-proteina/README.md` lists each open gate and the pinned versions and hashes.

@@ -6,6 +6,7 @@ import { boltzAdapter } from "./boltz/index.js";
 import { diffdockAdapter } from "./diffdock/index.js";
 import { openddeAdapter } from "./opendde/index.js";
 import { bindcraft2Adapter } from "./bindcraft2/index.js";
+import { rfd4ProteinaAdapter } from "./rfd4-proteina/index.js";
 
 export const adapterCatalog: Record<string, ModelAdapterDefinition> = {
   bindcraft2: bindcraft2Adapter,
@@ -14,6 +15,7 @@ export const adapterCatalog: Record<string, ModelAdapterDefinition> = {
   boltz: boltzAdapter,
   diffdock: diffdockAdapter,
   opendde: openddeAdapter,
+  "rfd4-proteina": rfd4ProteinaAdapter,
 };
 
 export function getAdapter(modelName: string): ModelAdapterDefinition | undefined {

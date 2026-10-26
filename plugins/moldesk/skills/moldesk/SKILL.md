@@ -70,6 +70,7 @@ The structure commands print exactly one document on stdout: `{ "schemaVersion":
 | All-atom co-folding (protein, DNA, RNA, ligand, ions) | `opendde` | OpenDDE `.json` | Apple Silicon (MPS), Linux + NVIDIA |
 | Blind docking of a small molecule into a protein | `diffdock` | `.json` job | Linux + NVIDIA only |
 | Protein binder design campaign | `bindcraft2` | `.json` campaign | Linux + NVIDIA only |
+| Design proteins, binders, enzymes or antibodies from a condition spec | `rfd4-proteina` | `.yaml` / `.json` spec + CIF files | Linux + NVIDIA only (verified on Runpod only) |
 | Sequence design for a backbone | `proteinmpnn` | `.pdb` | Apple Silicon, Linux |
 | Sequence design around ligands or multimers | `ligandmpnn` | `.pdb` | Apple Silicon, Linux |
 

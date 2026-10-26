@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party Mol* viewer copied in by scripts/sync-molstar.mjs.
+    "public/vendor/**",
   ]),
 ]);
 

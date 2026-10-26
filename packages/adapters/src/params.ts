@@ -18,6 +18,9 @@ function coerce(descriptor: ParamDescriptor, raw: string, errors: string[]): unk
         errors.push(`--param ${descriptor.name}: "${raw}" is not a number.`);
         return undefined;
       }
+      if (descriptor.integer && !Number.isSafeInteger(value)) {
+        errors.push(`--param ${descriptor.name}: ${raw} is not an integer.`);
+      }
       if (descriptor.min !== undefined && value < descriptor.min) {
         errors.push(`--param ${descriptor.name}: ${value} is below the minimum of ${descriptor.min}.`);
       }

@@ -66,7 +66,7 @@ try {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  const expected = ["bindcraft2", "boltz", "diffdock", "ligandmpnn", "opendde", "proteinmpnn"];
+  const expected = ["bindcraft2", "boltz", "diffdock", "ligandmpnn", "opendde", "proteinmpnn", "rfd4-proteina"];
   if (manifests.join(",") !== expected.join(",")) {
     throw new Error(`Expected installed registry manifests ${expected.join(",")}; found ${manifests.join(",")}.`);
   }

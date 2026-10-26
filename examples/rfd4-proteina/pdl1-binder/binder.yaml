@@ -1,0 +1,13 @@
+# Design a binder to PD-L1. Spec from upstream's "Design a binder in 10 lines"
+# (https://rfd4-proteina.org/latest/how-to/binder-in-10-lines.html); only the input path differs.
+binder:
+  input: 5o45_cropped.cif.zst                       # PD-L1, chain A, residues 17-131 (from PDB 5O45)
+  contig: "50-120, /0, A17-131"                     # a new 50-120 residue chain, then the target
+  conditions:
+    C_CRDGRP: {1: [{select: "sel('A/*/*/[N,CA,C,O]')"}]}   # target backbone geometry, free pose
+    C_SEQ: {true: [{select: "sel('A')"}]}                   # target sequence is known
+    C_HOT:                                                  # hotspot atoms on the target
+      true:
+        - {select: "sel('A/*/56/[CG,OH]')"}
+        - {select: "sel('A/*/115/[CG,SD]')"}
+        - {select: "sel('A/*/123/[CD2,OH]')"}

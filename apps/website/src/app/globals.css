@@ -80,3 +80,8 @@ a:hover {
     opacity: 0;
   }
 }
+
+/* The embedded Mol* viewer (binder-viewer.tsx) keeps the page's own controls only: hide its corner buttons. */
+.msp-plugin .msp-viewport-controls {
+  display: none !important;
+}

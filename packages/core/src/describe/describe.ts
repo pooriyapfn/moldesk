@@ -73,12 +73,14 @@ function describeParameters(manifest: ModelManifestV1): ModelParameter[] {
   const adapter = getAdapter(manifest.name);
   const platforms = manifestPlatforms(manifest);
   const perPlatform = new Map<string, Record<string, Value>>();
+  const random = new Set((adapter?.params ?? []).filter((p) => p.randomDefault).map((p) => p.name));
   for (const platform of platforms) {
     const defaults = adapter?.resolveParamDefaults?.({
       manifestName: manifest.name,
       installed: { runtime: { kind: "python", python: { platform, platformSelected: true } } },
     });
     for (const [key, value] of Object.entries(defaults ?? {})) {
+      if (random.has(key)) continue;
       perPlatform.set(key, { ...(perPlatform.get(key) ?? {}), [platform]: value as Value });
     }
   }

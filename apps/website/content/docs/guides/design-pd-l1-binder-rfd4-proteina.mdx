@@ -1,0 +1,122 @@
+export const metadata = {
+  title: "Design a PD-L1 binder with RFD4-Proteina on a cloud GPU",
+  description:
+    "Design 8 PD-L1 binder candidates with RFD4-Proteina in about 5 minutes for roughly $0.09 on a rented L40S GPU. Spec, command, measured results and a 3D viewer.",
+};
+
+<JsonLd
+  data={{
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "How to design a PD-L1 binder with RFD4-Proteina on a cloud GPU",
+        "description": "Eight PD-L1 binder designs with RFD4-Proteina took about 5 minutes and roughly $0.09 on a rented NVIDIA L40S, run with MoleculeDesk.",
+        "datePublished": "2026-10-26",
+        "dateModified": "2026-10-26",
+        "inLanguage": "en",
+        "about": ["RFD4-Proteina", "PD-L1", "protein binder design", "Runpod"],
+        "author": { "@type": "Organization", "name": "MoleculeDesk" },
+        "mainEntityOfPage": "https://moleculedesk.com/docs/guides/design-pd-l1-binder-rfd4-proteina",
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How much does it cost to design protein binders with RFD4-Proteina?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "In this test, eight PD-L1 binder designs took about 5 minutes and cost roughly $0.09 of GPU compute on a rented NVIDIA L40S at $1.09 per hour. Four designs cost $0.07 to $0.09. Most of the time is fixed setup, so each extra design adds only about 15 seconds of GPU time. Disk and transfer fees are not included.",
+            },
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need my own GPU to run RFD4-Proteina?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. MoleculeDesk can rent a Runpod GPU for one run with the --compute runpod option and download the results. A local run needs Linux x64 with an NVIDIA GPU and CUDA 12; macOS, CPU-only and AMD systems are not supported.",
+            },
+          },
+          {
+            "@type": "Question",
+            "name": "Are the designed binders validated?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. They are computational candidates. This run checked geometry only (hotspot distances and clashes) and did not refold or score the designs. Two of the eight had a binder-target atom pair closer than 2.2 angstroms. Binding needs experimental validation.",
+            },
+          },
+        ],
+      },
+    ],
+  }}
+/>
+
+# How to design a PD-L1 binder with RFD4-Proteina on a cloud GPU
+
+**Eight new PD-L1 binder designs took about 5 minutes and roughly $0.09 of GPU time on a rented NVIDIA L40S.** The run used RFD4-Proteina through MoleculeDesk on a Runpod Pod, with no local GPU. Every design reaches the three requested PD-L1 hotspot residues, and six of the eight have no clashing atoms. They are computational candidates: nothing was refolded, scored or tested in a lab.
+
+## What is RFD4-Proteina?
+
+[RFD4-Proteina](/docs/models/rfd4-proteina) is a protein design model from the Institute for Protein Design (Baker Lab) and NVIDIA, released in October 2026 under the BSD-3-Clause license. From a short YAML condition spec it generates a new protein chain around a target structure. PD-L1 is an immune checkpoint protein, and a binder to it is the standard worked example in the model's own documentation.
+
+## How do you run it?
+
+The spec is upstream's [binder-in-10-lines](https://rfd4-proteina.org/latest/how-to/binder-in-10-lines.html) example: a new 50-120 residue chain against PD-L1 (chain A, residues 17-131 of PDB 5O45) with hotspots on three residues. The files are in [`examples/rfd4-proteina/pdl1-binder`](https://github.com/pooriyapfn/moldesk/tree/main/examples/rfd4-proteina/pdl1-binder).
+
+```bash
+curl -fsSL https://moleculedesk.com/install.sh | sh
+moldesk cloud connect runpod
+moldesk run rfd4-proteina examples/rfd4-proteina/pdl1-binder/binder.yaml \
+  --compute runpod --cache-policy ephemeral --max-budget 3 --max-lifetime 3600 \
+  --accept-file-upload --param numReplicates=8 --param batchSize=8 --param seed=42
+```
+
+MoleculeDesk shows the GPU, price and limits before it spends anything, uploads the spec and the target structure, installs the pinned model on the Pod, generates the designs, downloads them and shuts the Pod down. Read the [Runpod guide](/docs/guides/runpod-cloud-execution) for the acknowledgments it asks for.
+
+## How long does it take and what does it cost?
+
+<RunTimeChart />
+
+| Run | GPU (price per hour) | Total time | GPU compute cost |
+| --- | --- | ---: | ---: |
+| 8 binder designs | L40S ($1.09) | 302 s | about $0.09 |
+| 4 binder designs | L40S ($1.09) | 239-308 s (3 runs) | $0.07-0.09 |
+| 1 monomer, smoke test | RTX 6000 Ada ($0.99) | 155-171 s (3 runs) | about $0.045 |
+
+Most of the time is fixed setup: starting the Pod, installing the pinned environment, downloading 1.7 GB of weights and loading the model take roughly 2.5 to 4 minutes. Generation itself took 58 s for four designs and 118 s for eight, so each extra design adds about 15 seconds. The cost counts GPU compute at the quoted hourly rate; disk and transfer charges are not published by Runpod and are not included. The 8-design time is from a single run.
+
+## Where do the designs land on PD-L1?
+
+The viewer shows `binder_0` on PD-L1 (grey cartoon); the pink sticks are the three hotspot residues (Tyr56, Met115 and Tyr123). Drag to rotate and scroll to zoom, pick another design number, or choose **All 8** to overlay all eight binders on the same PD-L1. The 3D view is rendered with [Mol*](https://molstar.org) and loads when it scrolls into view.
+
+<BinderViewer />
+
+Across the eight designs, 11 to 18 binder residues sit within 4.5 Å of PD-L1, and every hotspot atom has a binder atom within 5.0 Å. The binders are 73 to 119 residues long and quite varied; the sequences of `binder_0` and `binder_4` look like antibody variable domains.
+
+## How good are these designs?
+
+| Check | Result |
+| --- | --- |
+| Hotspots reached | 8 of 8 (all six hotspot atoms within 5.0 Å) |
+| Clean contacts (no atom pair under 2.2 Å) | 6 of 8; `binder_1` has a 1.86 Å contact and `binder_7` a 2.19 Å contact |
+| Same seed, same result | Identical coordinates across repeated 4-design runs |
+| Refolding, scoring, lab test | Not done |
+
+Upstream's full workflow refolds designs with AlphaFold or OpenFold3 and filters them; this run only generated structures. Treat the eight as an unfiltered batch to rank, not as validated binders. MoleculeDesk performs no biosecurity screening, so screen sequences before ordering or sharing designs.
+
+## FAQ
+
+**How much does it cost to design protein binders with RFD4-Proteina?**
+In this test, eight designs cost about $0.09 of GPU compute on an L40S. Four designs cost $0.07 to $0.09, because the fixed setup dominates.
+
+**Do I need my own GPU?**
+No. `--compute runpod` rents a GPU Pod for one run. A local run needs Linux x64 with an NVIDIA GPU and CUDA 12.
+
+**Which GPU should I pick?**
+Upstream lists A100, H100/H200, L40S and RTX 6000 Ada as tested. The L40S and the RTX 6000 Ada both ran here; A100, H100 and H200 are allowed but were not run. Eight designs used 7.1 GiB of GPU memory, so a 48 GB card is more than enough.
+
+**Are the binders real binders?**
+Not yet known. They satisfy the geometric conditions, but binding needs scoring and experimental validation.
+
+More detail, the per-design table and every sequence are on the [RFD4-Proteina model page](/docs/models/rfd4-proteina#example-design-a-binder-to-pd-l1).
