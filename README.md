@@ -1,28 +1,85 @@
+<div align="center">
+
 # MoleculeDesk
 
-MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally.
+**Run molecular AI models on your own Mac, Linux GPU or rented cloud GPU, with one command.**
 
-It aims to make tools like Boltz, AlphaFold, ColabFold, Chai, and other molecular AI models easier to install and run on local machines, workstations, and remote GPU servers.
+Protein structure prediction, protein and binder design, and molecular docking, without setting up conda, CUDA, containers or model weights by hand.
 
-Think of it as a simpler interface for scientific models:
+[![Release](https://img.shields.io/github/v/release/pooriyapfn/moldesk?label=release)](https://github.com/pooriyapfn/moldesk/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20(Apple%20Silicon)%20%7C%20Linux%20(NVIDIA)-555)](https://moleculedesk.com/docs/model-compatibility)
+[![GitHub stars](https://img.shields.io/github/stars/pooriyapfn/moldesk?style=social)](https://github.com/pooriyapfn/moldesk/stargazers)
 
-Read the [documentation](https://moleculedesk.com/docs), [Boltz-2 local guide](https://moleculedesk.com/docs/guides/run-boltz-locally), and [Apple Silicon support guide](https://moleculedesk.com/docs/guides/apple-silicon) for current commands and platform limits.
+[Website](https://moleculedesk.com) · [Docs](https://moleculedesk.com/docs) · [Benchmarks](https://moleculedesk.com/docs/benchmarks) · [Guides](https://moleculedesk.com/docs/guides/run-boltz-locally)
+
+<!-- TODO: hero GIF (install -> moldesk run boltz -> 3D report opening), ~10 s, < 5 MB.
+     ![MoleculeDesk demo](docs/assets/demo.gif) -->
+
+</div>
+
+---
+
+## Quick start
 
 ```bash
+# 1. Install (macOS or Linux; no Node.js, npm or admin rights needed)
 curl -fsSL https://moleculedesk.com/install.sh | sh
 
+# 2. Check what your machine can run
 moldesk doctor
-moldesk install proteinmpnn
-moldesk list --installed
+
+# 3. Install a model and predict a structure
+moldesk install boltz
+moldesk run boltz protein.yaml
 ```
 
-The installer works on macOS and Linux with nothing installed beforehand: no Node.js, no npm, no admin rights. It sets up everything inside `~/.moldesk`. See the [installation guide](https://moleculedesk.com/docs/installation) for updating, removing, and GPU servers.
+<details>
+<summary><code>protein.yaml</code>: a minimal Boltz-2 input</summary>
 
-Instead of manually setting up Python environments, CUDA dependencies, containers, model weights, and model-specific commands, MoleculeDesk provides a consistent interface across supported models.
+```yaml
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: QLEDSEVEAVAKGLEEMYANGVTEDNFKNYVKNNFAQQEISSVEEELNVNISDSCVANKIKDEFFAMISISAIVKAAQKKAWKELAVTVLRFAKANGLKTNAIIVAGQLALWAVQCG
+      msa: empty
+```
+
+</details>
+
+Boltz-2, OpenDDE, DiffDock-L and BindCraft2 runs write an **offline, self-contained 3D report** you can open in any browser. Everything is installed under `~/.moldesk`. See the [installation guide](https://moleculedesk.com/docs/installation) for updating, uninstalling and GPU servers.
+
+## What you can do
+
+- **Predict protein and complex structures** with [Boltz-2](https://moleculedesk.com/docs/models/boltz) and [OpenDDE](https://moleculedesk.com/docs/models/opendde), including on Apple Silicon (MPS). → [Run Boltz-2 locally](https://moleculedesk.com/docs/guides/run-boltz-locally)
+- **Design protein binders.** 8 PD-L1 binder designs took about 5 minutes and cost about $0.09 on a rented L40S with [RFD4-Proteina](https://moleculedesk.com/docs/models/rfd4-proteina). → [Step-by-step guide](https://moleculedesk.com/docs/guides/design-pd-l1-binder-rfd4-proteina)
+- **Design sequences** for a backbone with [ProteinMPNN](https://moleculedesk.com/docs/models/proteinmpnn) and [LigandMPNN](https://moleculedesk.com/docs/models/ligandmpnn).
+- **Dock small molecules** with [DiffDock-L](https://moleculedesk.com/docs/models/diffdock).
+- **Run binder campaigns** with [BindCraft2](https://moleculedesk.com/docs/models/bindcraft2) (beta).
+- **Fetch, analyze and compare structures** from PDB, AlphaFold DB and UniProt (`moldesk fetch`, `analyze`, `inspect`, `compare`, `describe`), with a stable JSON output. → [EGFR end-to-end example](examples/egfr-end-to-end/README.md)
+- **Use your own cloud GPU when you need one.** Add `--compute runpod` to run on your own Runpod account and get verified results back on your machine. → [Cloud guide](https://moleculedesk.com/docs/guides/runpod-cloud-execution)
+
+## Supported models
+
+| Model | What it does | Apple Silicon | Linux + NVIDIA | Runpod cloud |
+| --- | --- | :---: | :---: | :---: |
+| [Boltz-2](https://moleculedesk.com/docs/models/boltz) | Structure and complex prediction | ✅ | ✅ | ✅ |
+| [OpenDDE](https://moleculedesk.com/docs/models/opendde) (preview) | All-atom co-folding | ✅ | ✅ | ✅ |
+| [ProteinMPNN](https://moleculedesk.com/docs/models/proteinmpnn) | Sequence design | ✅ | ✅ | ✅ |
+| [LigandMPNN](https://moleculedesk.com/docs/models/ligandmpnn) | Ligand-aware sequence design | ✅ | ✅ | — |
+| [DiffDock-L](https://moleculedesk.com/docs/models/diffdock) | Molecular docking | — | ✅ | ✅ |
+| [RFD4-Proteina](https://moleculedesk.com/docs/models/rfd4-proteina) | Protein, binder, enzyme and antibody design | — | 🧪 | ✅ |
+| [BindCraft2](https://moleculedesk.com/docs/models/bindcraft2) | Binder design campaigns | — | 🧪 | — |
+| ColabFold · AlphaFold · Chai | | 🔜 | 🔜 | 🔜 |
+
+✅ available · 🧪 beta or partly verified · 🔜 planned · — not supported. See [model compatibility](https://moleculedesk.com/docs/model-compatibility) for the exact hardware each result was verified on, and [benchmarks](https://moleculedesk.com/docs/benchmarks) for measured time and cost.
+
+MoleculeDesk does not redistribute models or weights. Each model stays under its own license; BindCraft2 is source-available with a hosting restriction.
 
 ## Use it from Claude Code or Codex
 
-The MoleculeDesk skill lets a coding agent install the CLI, check compatibility, prepare inputs, and run models for you. It asks before large downloads and before anything that costs money.
+Ask your coding agent to "predict this structure" or "design a binder for PD-L1". The MoleculeDesk skill installs the CLI, checks your hardware, prepares inputs and runs the model. It asks before large downloads and before anything that costs money.
 
 ```bash
 # Claude Code
@@ -31,146 +88,53 @@ claude plugin install moldesk --marketplace pooriyapfn/moldesk
 # Codex: add the marketplace, then open /plugins in Codex and install moldesk
 codex plugin marketplace add pooriyapfn/moldesk
 ```
- See [plugins/moldesk](plugins/moldesk) and the [agent skills guide](https://moleculedesk.com/docs/agent-skills).
 
-## Status
+See the [agent skills guide](https://moleculedesk.com/docs/agent-skills) and [plugins/moldesk](plugins/moldesk).
 
-MoleculeDesk is currently in early development.
+## Why MoleculeDesk
 
-Available:
+| By hand | With MoleculeDesk |
+| --- | --- |
+| A separate conda env, CUDA build and README for every model | `moldesk install <model>`: isolated, pinned and atomic |
+| Guess whether your GPU, RAM or disk is enough | `moldesk doctor` explains what runs on your machine, and why |
+| A different input format and flags for every tool | One `moldesk run <model> <input>` workflow |
+| Results scattered across output folders | An offline 3D report plus recorded versions, parameters and logs |
+| Rent a GPU, SSH in and rebuild the environment | `--compute runpod`, with a cost quote and a budget guard |
 
-* `moldesk doctor` for system and hardware detection
-* `moldesk list` for model discovery
-* compatibility explanations for Python, Docker, CUDA, GPU, RAM, and disk
-* isolated, atomic ProteinMPNN and LigandMPNN installation
-* Boltz-2 installation and prediction on Apple Silicon using MPS; Linux x64/CUDA verified on an NVIDIA RTX 3090 (see the [benchmarks](https://moleculedesk.com/docs/benchmarks))
-* OpenDDE Preview (all-atom co-folding) installation and prediction on Apple Silicon using MPS and on Linux x64/CUDA (verified on Runpod A40 and RTX 3090 Pods; the no-GPU refusal path is not yet verified)
-* `moldesk list --installed`, reinstall, and uninstall state management
-* offline, self-contained 3D reports: `moldesk view <pdb|cif>` and an automatic report for successful Boltz, OpenDDE, BindCraft2, and DiffDock runs (see [docs](docs/visualizer.md))
-* structure intelligence with a stable JSON contract: `moldesk fetch` (PDB, AlphaFold DB, UniProt), `analyze`, `inspect`, `view --highlight`, `compare` (US-align, with an overlay report) and `describe`; see [analysis-json](docs/analysis-json.md) and the [EGFR end-to-end example](examples/egfr-end-to-end/README.md)
-* `moldesk --version`
-* initial CLI and runtime architecture
+## FAQ
 
-In progress:
+**Can I run Boltz-2 on a Mac?**
+Yes. Boltz-2, OpenDDE, ProteinMPNN and LigandMPNN run on Apple Silicon using MPS. See the [Apple Silicon guide](https://moleculedesk.com/docs/guides/apple-silicon).
 
-* RFD4-Proteina adapter (protein, binder, enzyme and antibody design from condition specs; generation only, Linux/NVIDIA): unit-tested and run end to end on a Runpod RTX 6000 Ada Pod (`--compute runpod`, about 2.7 minutes and roughly $0.05 for a 100-residue monomer); **not yet run on a local Linux machine**; see [models/rfd4-proteina](models/rfd4-proteina/README.md)
-* BindCraft2 adapter for bounded local Linux/NVIDIA binder campaigns: install and bounded campaigns verified on NVIDIA RTX 3090 and A40 GPUs (beta) (source-available, hosting-restricted license)
-* reproducible run history
+**Do I need an NVIDIA GPU?**
+Not for the models above. DiffDock-L, RFD4-Proteina and BindCraft2 need Linux with NVIDIA CUDA. If you don't have that hardware, you can run them on your own Runpod account.
 
-Future releases will add more models, remote GPU execution, and a desktop interface for researchers who prefer not to use the command line.
+**How fast is it, and what does a cloud run cost?**
+On an RTX 3090, a 115-residue Boltz-2 prediction takes about 85 s once warm, and a ProteinMPNN design takes about 8 s. On Runpod, a 100-residue RFD4-Proteina design took about 2.7 minutes (~$0.05). All numbers are in the [benchmarks](https://moleculedesk.com/docs/benchmarks).
 
-## Goals
+**Is MoleculeDesk an AlphaFold replacement?**
+No. It is a package manager and runtime that installs and runs existing open models (Boltz-2, RFD4-Proteina, DiffDock-L and others) behind one consistent CLI. AlphaFold, ColabFold and Chai support is planned.
 
-MoleculeDesk focuses on a few principles:
+**Does anything leave my machine?**
+Local runs stay local. Downloads (model weights, PDB, AlphaFold DB and UniProt fetches) happen only when you ask for them, and cloud runs happen only with `--compute runpod` and an explicit acknowledgment of the cost risk.
 
-* **Simple installation**
-  Researchers should not need to manually manage CUDA, Python environments, containers, or model-specific setup.
+## Project status
 
-* **Consistent commands**
-  Different models should follow the same install and run workflow.
+MoleculeDesk is in early development (latest: [releases](https://github.com/pooriyapfn/moldesk/releases)). Verification status per model and platform is tracked on the [model compatibility](https://moleculedesk.com/docs/model-compatibility) page and in the [CHANGELOG](./CHANGELOG.md). Coming next: more models, reproducible run history, and a desktop app for researchers who prefer not to use the command line.
 
-* **Local-first execution**
-  Run models on your own laptop, workstation, or GPU machine whenever possible.
+## Contributing
 
-* **Reproducibility**
-  Preserve model versions, parameters, inputs, outputs, environment information, and logs.
-
-* **Hardware awareness**
-  Detect available CPU, GPU, memory, CUDA, and runtime capabilities before running a model.
-
-### Optional cloud execution
-
-Boltz-2 and ProteinMPNN can run on your own Runpod account (`moldesk run <model> <input> --compute runpod`), with verified results returned locally. Use temporary model assets (`ephemeral`, supported) or retain a reusable model cache (`persistent`, experimental: it was slower than `ephemeral` in live tests, and retained storage keeps incurring charges until you delete it). Other models are not enabled for cloud execution yet. Shutdown is best effort: if MoleculeDesk disconnects, Pods may keep charging; each run requires explicit risk acknowledgment. Read the [Runpod cloud execution guide](https://moleculedesk.com/docs/guides/runpod-cloud-execution) for the workflow, costs and limits.
-
-## Architecture
-
-```text
-CLI / Desktop
-      |
-     Core
-      |
-    Runtime
-      |
-Model Registry
-      |
-Boltz / AlphaFold / ColabFold / Chai / ...
-```
-
-### Repository structure
-
-* `apps/cli`
-  The `moldesk` command-line interface. It stays intentionally thin and delegates functionality to the shared core.
-
-* `apps/desktop`
-  Future Tauri desktop application using the same MoleculeDesk core.
-
-* `packages/core`
-  Shared application logic used by the CLI and desktop app.
-
-* `packages/runtime`
-  Hardware detection, Python environments, containers, processes, and execution infrastructure.
-
-* `packages/registry`
-  Model discovery, manifests, compatibility metadata, and model resolution.
-
-* `packages/adapters`
-  Thin model-specific installation, command, and output translations.
-
-* `packages/visualizer`
-  The offline molecular report: report contract, exporter, local viewer updater, and the Mol* viewer bundle built once at package build time.
-
-* `models/`
-  Validated model manifests and provenance documentation.
-
-Example:
-
-```text
-models/
-├── boltz/
-├── colabfold/
-├── alphafold/
-└── chai/
-```
-
-## Development
-
-MoleculeDesk uses a pnpm workspace.
+Contributions are welcome: new model adapters, platform verification reports and docs fixes. Start with [CONTRIBUTING.md](./CONTRIBUTING.md), [adding a model](docs/adding-a-model.md) and the [architecture overview](docs/architecture.md).
 
 ```bash
 git clone https://github.com/pooriyapfn/moldesk.git
 cd moldesk
-
 pnpm install
 pnpm --filter @moldesk/cli dev -- doctor
 ```
 
-## Model support
-
-Model support is being added incrementally.
-
-| Model | Status |
-| --- | --- |
-| Boltz-2 | Available; Apple Silicon MPS and Linux/NVIDIA CUDA verified |
-| ProteinMPNN | Available; Apple Silicon and Linux/NVIDIA CUDA (RTX 3090) |
-| LigandMPNN | Available; Apple Silicon and Linux/NVIDIA CUDA (RTX 3090) |
-| DiffDock-L | Available; Linux/NVIDIA CUDA only, verified on an A40 |
-| BindCraft2 | Beta; Linux/NVIDIA CUDA verified on RTX 3090 and A40; source-available, hosting-restricted license |
-| RFD4-Proteina | Generation only, Linux/NVIDIA (CUDA 12); BSD-3-Clause; run on a Runpod RTX 6000 Ada Pod only (not yet on a local Linux machine) |
-| OpenDDE Preview | Available (upstream preview); Apple Silicon MPS verified; Linux/NVIDIA CUDA verified on Runpod A40 and RTX 3090 Pods |
-| ColabFold | Planned |
-| AlphaFold | Planned |
-| Chai | Planned |
-
-A model being listed here does not mean MoleculeDesk redistributes that model or its weights. Each model remains subject to its own license and usage terms.
-
-## Contributing
-
-MoleculeDesk is in an early stage, and contributions are welcome.
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+If MoleculeDesk saves you a setup afternoon, a ⭐ helps other researchers find it.
 
 ## License
 
-MoleculeDesk is licensed under the MIT License.
-
-See [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE). Models and weights keep their own licenses.
