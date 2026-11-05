@@ -3,6 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
+import { getAdapter } from "@moldesk/adapters";
+import { collectRunOutputs, finalizeRun, prepareRunParams } from "../../run-lifecycle.js";
+import { npz } from "../../testSupport/interface.js";
+import type { RunRecord } from "../../run.js";
 import { WireJob, WorkerClient, validateInventory, type JobInputFile } from "@moldesk/runtime";
 import { createWorkerServer, type RunningWorker, type WorkerPipeline } from "./server.js";
 
@@ -67,7 +71,7 @@ function wire(input: JobInputFile, runId = RUN): WireJob {
 }
 
 const writes =
-  (files: Record<string, string>, exitCode = 0): WorkerPipeline =>
+  (files: Record<string, string | Buffer>, exitCode = 0): WorkerPipeline =>
   async ({ outputDir, log, setStage }) => {
     setStage("running");
     log("stdout", `token is ${TOKEN}\n`);
@@ -113,6 +117,37 @@ describe("worker server + client", () => {
     expect(inventory.files.map((file) => file.path)).toEqual(["boltz_results_in/predictions/a/a_model_0.cif", "conf.json"]);
     expect(fs.readFileSync(path.join(out, "boltz_results_in/predictions/a/a_model_0.cif"), "utf8")).toBe("CIF-DATA");
     expect(fs.readdirSync(out).filter((name) => name.startsWith(".moldesk-staging"))).toEqual([]);
+  });
+
+  it("round-trips binary PAE/pLDDT through inventory, hashing, run.json and export", async () => {
+    const base = "boltz_results_job/predictions/job";
+    const bytes = npz();
+    const { client } = await boot(writes({ [`${base}/job_model_0.cif`]: "data_job\n", [`${base}/confidence_job_model_0.json`]: "{}", [`${base}/pae_job_model_0.npz`]: bytes, [`${base}/plddt_job_model_0.npz`]: npz([4], undefined, { key: "plddt" }) }));
+    const c = client(), input = inputFile(); await c.uploadInput(RUN, input); await c.start(wire(input)); await untilDone(c);
+    const outputDir = tmp(), inventory = await c.collect(RUN, outputDir);
+    const pae = inventory.files.find((f) => f.path.endsWith("pae_job_model_0.npz"))!;
+    expect(pae.sha256).toBe(sha(bytes)); expect(pae.sizeBytes).toBe(bytes.length);
+    const adapter = getAdapter("boltz")!;
+    const context = { manifestName: "boltz", inputPath: input.sourcePath, outputDir, modelDir: "/model", assetsDir: "/assets", runtimeExecutable: "/python", params: { write_full_pae: true }, platform: "linux-x64" as const };
+    const outputs = await collectRunOutputs(adapter, context);
+    const runDirPath = tmp(), exported = tmp();
+    const record = { id: RUN, status: "succeeded", startedAt: new Date().toISOString(), outputs } as RunRecord;
+    const result = await finalizeRun({ adapter, context, record, runDirPath, startedAt: record.startedAt, outputDir: exported, visualize: false });
+    expect(result.exportError).toBeUndefined();
+    expect(fs.readFileSync(path.join(exported, "pae_job_model_0.npz"))).toEqual(bytes);
+    expect(JSON.parse(fs.readFileSync(path.join(runDirPath,"run.json"),"utf8")).outputs.find((o: {id:string})=>o.id==="pae").sha256).toBe(sha(bytes));
+    const collision = await finalizeRun({ adapter, context, record, runDirPath, startedAt: record.startedAt, outputDir: exported, visualize: false });
+    expect(collision.exportError?.code).toBe("OUTPUT_COLLISION"); expect(fs.readFileSync(path.join(exported,"pae_job_model_0.npz"))).toEqual(bytes);
+    fs.rmSync(path.join(outputDir,base,"pae_job_model_0.npz"));
+    await expect(collectRunOutputs(adapter,context)).rejects.toMatchObject({code:"MISSING_REQUIRED_OUTPUT"});
+  });
+
+  it("resolves Linux PAE defaults for cloud independently of the client host", () => {
+    const adapter = getAdapter("boltz")!;
+    const installed = { runtime: { kind: "python" as const, python: { platform: "linux-x64" as const, platformSelected: true } } };
+    expect(prepareRunParams(adapter,"boltz",installed,undefined).effectiveParams).toMatchObject({accelerator:"gpu",write_full_pae:false});
+    expect(prepareRunParams(adapter,"boltz",installed,{write_full_pae:"true"}).effectiveParams.write_full_pae).toBe(true);
+    expect(()=>prepareRunParams(adapter,"boltz",installed,{write_full_pae:"maybe"})).toThrow();
   });
 
   it("rejects an upload whose bytes do not match the declared SHA-256 and a start with missing inputs", async () => {

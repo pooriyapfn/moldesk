@@ -1,0 +1,16 @@
+{
+  "generationSpec": "../rfd4-proteina/pdl1-binder/binder.yaml",
+  "policyRevision": "pdl1-v1",
+  "target": {
+    "chain": "A", "start": 17, "end": 131,
+    "sequence": "NAFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVN"
+  },
+  "roles": { "binder": { "targetChain": "A", "binderChain": "B", "expectedContig": "50-120, /0, A17-131", "generatedTargetStart": 1 } },
+  "generationSeeds": [28001, 28002, 28003],
+  "predictionProtocol": {
+    "modelVersion": "2.2.1", "adapterVersion": "0.3.0", "samples": 1,
+    "parameters": { "accelerator": "mps", "devices": 1, "diffusion_samples": 1, "write_full_pae": true, "seed": 28101 }
+  },
+  "scoring": { "paeCutoffAngstrom": 15, "distanceCutoffAngstrom": 15 },
+  "ranking": { "metric": "ipsaeMax", "aggregation": "min", "minimum": 0.6, "shortlistSize": 5, "diversity": "exact-sequence" }
+}

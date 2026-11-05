@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { getSystemReport, getUsalignStatus, VERSION } from "@moldesk/core";
+import { getSystemReport, getUsalignStatus, getIpsaeStatus, VERSION } from "@moldesk/core";
 import type { SystemReport } from "@moldesk/core";
 import { checkmark, section } from "../utils/format.js";
 
@@ -73,6 +73,8 @@ export function printHuman(report: SystemReport): void {
 async function printTools(): Promise<void> {
   console.log(section("Tools"));
   try {
+    const ipsae = await getIpsaeStatus();
+    console.log(`  ${checkmark(ipsae.installed)} ipSAE        ${ipsae.installation?.receipt.revision ?? ipsae.problem ?? "not installed (run `moldesk install ipsae`)"}`);
     const status = await getUsalignStatus();
     console.log(`  ${checkmark(status.compiler !== null)} C++ compiler ${status.compiler ? `${status.compiler.command} (${status.compiler.version})` : "not found (needed to build US-align)"}`);
     console.log(
@@ -92,7 +94,7 @@ export function registerDoctorCommand(program: Command): void {
       try {
         const report = await getSystemReport();
         if (options.json) {
-          console.log(JSON.stringify(report, null, 2));
+          console.log(JSON.stringify({ ...report, tools: { ipsae: await getIpsaeStatus() } }, null, 2));
           return;
         }
         printHuman(report);

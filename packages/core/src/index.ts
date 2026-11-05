@@ -168,3 +168,14 @@ export type { FetchFormat, FetchSource, FetchSpec } from "./fetch/sources.js";
 export { chainsToFasta, fastaValidationEnvelope, validateFasta, writeFastaFile } from "./analysis/fasta.js";
 
 export { VERSION } from "./version.js";
+
+export { scoreProteinInterface } from "./analysis/interface.js";
+export type { InterfaceScoreOptions, InterfaceScoreResult } from "./analysis/interface.js";
+export { resolveBoltzPredictionArtifacts, hashArtifact, verifyArtifact } from "./analysis/boltz-artifacts.js";
+export type { BoltzPredictionArtifacts, HashedFile } from "./analysis/boltz-artifacts.js";
+export { installIpsae, uninstallIpsae, requireIpsae, getIpsaeStatus, planIpsaeInstall, IPSAE_REVISION, IPSAE_SOURCE } from "./tools/ipsae.js";
+export type { IpsaeReceipt, IpsaeInstallation, IpsaeInstallOptions } from "./tools/ipsae.js";
+export { freezeBinderGeneration, freezeBinderTarget, prepareBinderPredictions, sequenceHash } from "./binders/prepare.js";
+export type { FrozenBinderGeneration, FrozenBinderTarget, BinderRoles, PreparedBinderCandidate } from "./binders/prepare.js";
+export { collectBinderPredictionSample, rankBinderCandidates, validateBinderCampaign, writeBinderCandidateTable, binderCandidatesCsv } from "./binders/campaign.js";
+export type { BinderCampaignManifest, BinderCandidateState, BinderPredictionSample, BinderCandidateRow } from "./binders/campaign.js";

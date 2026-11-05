@@ -2,11 +2,11 @@
 
 Every command accepts `--json` (`schema` always prints JSON). Without a terminal (as when an agent runs it), commands that need confirmation stop and say so instead of prompting.
 
-The structure commands (`fetch`, `analyze`, `inspect`, `compare`, `describe`) print one envelope on stdout and keep logs on stderr: `schemaVersion` (1), `kind`, `status` (`ok`), `input` (absent for `fetch`, `compare`, `describe`), `result`, `warnings[]` (`code`, `message`) and `provenance` (`moldeskVersion`, optional `tool`). Errors are `{ "status": "error", "code", "message", "remediation", "details"? }`. `moldesk schema <kind>` prints the JSON Schema. Exit codes for these commands: `0` ok, `2` invalid input or usage (including a missing tool), `3` unknown model (`describe`), `8` cancelled (`fetch`), `10` internal or upstream failure.
+The structure commands (`fetch`, `analyze`, `inspect`, `compare`, `describe`, `score interface`) print one envelope on stdout and keep logs on stderr: `schemaVersion` (1), `kind`, `status` (`ok`), `input` (absent for `fetch`, `compare`, `describe`, `score interface`), `result`, `warnings[]` (`code`, `message`) and `provenance` (`moldeskVersion`, optional `tool`). Errors are `{ "status": "error", "code", "message", "remediation", "details"? }`. `moldesk schema <kind>` prints the JSON Schema. Exit codes for these commands: `0` ok, `2` invalid input or usage (including a missing tool), `3` unknown model (`describe`), `8` cancelled (`fetch`), `10` internal or upstream failure.
 
 ## `moldesk doctor [--json]`
 
-Reports platform, arch, CPU, memory, disk, Apple Silicon, host Python, Docker, and NVIDIA/CUDA. JSON keys: `platform`, `arch`, `cpu`, `memory`, `disk`, `appleSilicon`, `hostPython`, `docker`, `nvidia`.
+Reports platform, arch, CPU, memory, disk, Apple Silicon, host Python, Docker, and NVIDIA/CUDA. JSON also includes `tools.ipsae` installation status. System keys: `platform`, `arch`, `cpu`, `memory`, `disk`, `appleSilicon`, `hostPython`, `docker`, `nvidia`.
 
 ## `moldesk list [--installed] [--runtime python|docker] [--json]`
 
@@ -92,3 +92,15 @@ Replaces the viewer inside an older report with the one installed now.
 ## `moldesk cloud ...`
 
 `connect <provider>`, `disconnect <provider>`, `status`, `resources`, `recover <run-id>`, `cache list`, `cache delete <model>`. See [cloud-runpod.md](cloud-runpod.md).
+
+## `moldesk score interface <structure> [options]`
+
+Evaluate one complete two-protein-chain Boltz mmCIF prediction offline with managed ipSAE. Required: `--pae <npz>`, `--confidence <json>`, `--target-chain <author-id>`, `--binder-chain <author-id>`. Optional `--plddt <npz>` must belong to the same prediction. All sidecars must have exact matching Boltz filenames in the structure's directory. No guessing from chain length or matrix shape alone.
+
+`--pae-cutoff <angstrom>` and `--distance-cutoff <angstrom>` default to 15 and require positive integers. These are recipe settings, not a biological pass threshold. `--output <json>` writes the envelope atomically and retains private `.artifacts` inputs, mapping, raw table and diagnostic logs beside it. Neither the JSON nor artifact directory may already exist. Without output, audit files go under the managed runs directory. `--json` prints exactly one envelope, kind `moldesk.interface`; multi-file identities are in `result.inputs`.
+
+Result: explicit author/label roles, hashed token mapping, settings, `ipsaeTargetToBinder`, `ipsaeBinderToTarget`, `ipsaeMax`, pinned scorer identity and hashed audit artifacts. Ancillary upstream columns are unvalidated; absent pLDDT is never presented as a genuine zero. The scorer's generated PyMOL file is retained, never executed.
+
+Input errors (`INVALID_INTERFACE_ARGS`, `INVALID_PAE`, `PAE_STRUCTURE_MISMATCH`, `BOLTZ_ARTIFACT_MISMATCH`, `UNSUPPORTED_INTERFACE_INPUT`), missing/damaged tool and missing scorer rows exit 2. `INTERFACE_CANCELLED` exits 8; `IPSAE_EXECUTION_FAILED` exits 10. A valid low/zero score succeeds.
+
+Install the CPU tool once with `moldesk install ipsae`, after approving source, managed Python and hash-pinned NumPy downloads. No global Python fallback, GPU or local Boltz installation is required. `moldesk uninstall ipsae --yes` removes it; doctor reports status. Tools remain separate from model discovery. `moldesk schema moldesk.interface` publishes the result contract.

@@ -2,7 +2,7 @@ schemaVersion: 1
 name: boltz
 displayName: Boltz-2
 modelVersion: 2.2.1
-adapterVersion: 0.2.0
+adapterVersion: 0.3.0
 description: Joint biomolecular structure and binding-affinity prediction (Boltz team, MIT).
 category: structure-prediction
 status: available
@@ -168,4 +168,10 @@ outputs:
     required: true
   - id: affinity
     glob: "boltz_results_*/predictions/*/affinity_*.json"
+    required: false
+  - id: pae
+    glob: "boltz_results_*/predictions/*/pae_*.npz"
+    required: false
+  - id: plddt
+    glob: "boltz_results_*/predictions/*/plddt_*.npz"
     required: false
