@@ -27,6 +27,8 @@ import { describeBoltzVisualization } from "./visualization.js";
 const OUTPUTS: OutputSpec[] = [
   { id: "structures", glob: "boltz_results_*/predictions/*/*.cif", required: true },
   { id: "confidence", glob: "boltz_results_*/predictions/*/confidence_*.json", required: true },
+  { id: "pae", glob: "boltz_results_*/predictions/*/pae_*.npz", required: false },
+  { id: "plddt", glob: "boltz_results_*/predictions/*/plddt_*.npz", required: false },
   // Only produced when an affinity checkpoint/config is used; not every job requests it.
   { id: "affinity", glob: "boltz_results_*/predictions/*/affinity_*.json", required: false },
 ];
@@ -49,6 +51,7 @@ const PARAMS: ParamDescriptor[] = [
   { name: "diffusion_samples", type: "number", min: 1, description: "Number of diffusion samples" },
   { name: "max_parallel_samples", type: "number", min: 1, description: "Maximum samples to predict in parallel" },
   { name: "use_msa_server", type: "boolean", description: "Use the MMSeqs2 server for MSA generation" },
+  { name: "write_full_pae", type: "boolean", description: "Export full PAE arrays (default: true on Darwin, false on Linux)" },
   { name: "no_kernels", type: "boolean", description: "Disable custom kernels" },
   { name: "seed", type: "number", description: "Random seed (omit for no seeding)" },
 ];
@@ -153,8 +156,8 @@ export const boltzAdapter: ModelAdapterDefinition = {
    */
   resolveParamDefaults(context: ResolveParamDefaultsContext): Record<string, unknown> {
     const platform = context.installed.runtime.python?.platform;
-    if (platform === "darwin-arm64") return { accelerator: "mps" };
-    return { accelerator: "gpu" };
+    if (platform === "darwin-arm64") return { accelerator: "mps", write_full_pae: true };
+    return { accelerator: "gpu", write_full_pae: false };
   },
 
   async installPlan(_context: InstallContext): Promise<InstallPlan> {
@@ -193,13 +196,27 @@ export const boltzAdapter: ModelAdapterDefinition = {
     if (params.max_parallel_samples !== undefined) args.push("--max_parallel_samples", String(params.max_parallel_samples));
     if (params.use_msa_server === true) args.push("--use_msa_server");
     if (params.no_kernels === true) args.push("--no_kernels");
+    if (params.write_full_pae === true) args.push("--write_full_pae");
+    if (params.write_full_pae === false && context.platform === "darwin-arm64") args.push("--no_write_full_pae");
     if (params.seed !== undefined) args.push("--seed", String(params.seed));
 
     return { executable: boltzExecutable(context.runtimeExecutable), args };
   },
 
   async collectOutputs(context: RunContext): Promise<CollectedOutput[]> {
-    return collectGlobOutputs(context.outputDir, OUTPUTS);
+    const outputs = collectGlobOutputs(context.outputDir, OUTPUTS);
+    if (context.params.write_full_pae === true) {
+      const pae = new Set(outputs.filter((o) => o.id === "pae").map((o) => o.path));
+      for (const structure of outputs.filter((o) => o.id === "structures")) {
+        const expected = path.join(path.dirname(structure.path), `pae_${path.basename(structure.path, ".cif")}.npz`);
+        if (!pae.has(expected)) throw new MoldeskError({
+          code: "MISSING_REQUIRED_OUTPUT",
+          message: `Requested PAE is missing for ${structure.path}.`,
+          remediation: "Check the pinned Boltz runtime and the run logs.",
+        });
+      }
+    }
+    return outputs;
   },
 
   async describeVisualization(context: RunContext, outputs: readonly CollectedOutput[]) {
@@ -226,6 +243,12 @@ export const boltzAdapter: ModelAdapterDefinition = {
 
     const runner = context.runner ?? runCommand;
     const platform = context.platform ?? detectInstalledPlatform(context.modelDir);
+    const flags = await runner(python, ["-c", `from boltz.main import predict
+p = next(p for p in predict.params if p.name == "write_full_pae")
+assert "--write_full_pae" in p.opts
+assert ("--no_write_full_pae" in p.secondary_opts) == ${platform === "darwin-arm64" ? "True" : "False"}
+assert p.default is ${platform === "darwin-arm64" ? "True" : "False"}`], { timeoutMs: 30_000 });
+    if (flags.code !== 0) return { passed: false, output: `Unsupported Boltz PAE flags: ${flags.stderr.trim()}` };
     const probe = platform === "darwin-arm64" ? MPS_PROBE : CUDA_PROBE;
     const result = await runner(python, ["-c", probe], { timeoutMs: 60_000 });
     if (result.code !== 0) return { passed: false, output: result.stderr.trim() };

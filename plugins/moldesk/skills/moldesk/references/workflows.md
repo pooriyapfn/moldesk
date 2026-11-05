@@ -98,3 +98,9 @@ For every run, tell the user:
 - key scores, with their meaning,
 - the report path and how to open it,
 - that predictions need experimental validation.
+
+## RFD4 → Boltz → ipSAE campaign
+
+Use `examples/pdl1-binder-campaign/` in the repository for local core-helper bookkeeping. First register target/crop, explicit author chain roles, protocol/seeds, scorer/cutoffs and ranking criteria. Generate 2 candidates with an approved RFD4 run; prepare exact target/binder sequences using parsed CIF data and source residue mapping. Predict each unique sequence with Boltz and full PAE, using `msa: empty` initially. Ingest every sample and failure, then score offline and rank with the registered aggregation rule. Keep duplicate rows and parent IDs. Review measured throughput/costs before approving a 20-design pilot or another seed.
+
+The example writes campaign/input/source mappings, JSON and CSV candidate tables, score artifacts, decisions and molecular-report links under the selected directory. Restarts verify hashes before reuse. It does not schedule inference, silently retry failures or authorize a cloud campaign. Incompatible targets/protocols/scorers cannot be combined; criteria changes require a new recorded policy. Zero passing candidates is valid and does not justify threshold relaxation. Scores are computational evidence only.

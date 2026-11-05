@@ -1,3 +1,4 @@
+import { installIpsaeTool } from "./ipsae-tool.js";
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import {
@@ -118,12 +119,13 @@ async function verifyDockerGpuAccess(
 export function registerInstallCommand(program: Command): void {
   program
     .command("install <model>")
-    .description("Install a model into an isolated, reproducible environment (or the usalign tool, built from pinned source)")
+    .description("Install a model into an isolated, reproducible environment (or a managed usalign/ipsae tool)")
     .option("--runtime <kind>", "select runtime python|docker (no silent fallback)")
     .option("--yes", "accept downloads and installation without prompting")
     .option("--reinstall", "stage and atomically replace an existing installation")
     .option("--json", "print compatibility/plan result as JSON")
     .action(async (model: string, options: { runtime?: string; yes?: boolean; json?: boolean; reinstall?: boolean }) => {
+      if (model === "ipsae") return installIpsaeTool(options);
       if (model === USALIGN_TOOL) return installUsalignTool(options);
       const available = listAvailableModels();
       const manifest = available.find((m) => m.name === model);
