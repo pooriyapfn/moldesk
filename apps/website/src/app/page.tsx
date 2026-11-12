@@ -37,7 +37,7 @@ export default function Home() {
 
             <InstallCommand />
 
-            <div className="mt-[18px] flex gap-2.5">
+            <div className="mt-[18px] flex flex-wrap gap-2.5">
               <a
                 href="https://github.com/pooriyapfn/moldesk"
                 className="rounded-md border border-foreground bg-white px-[22px] py-[11px] text-sm font-medium text-foreground hover:bg-foreground hover:text-white"
@@ -49,6 +49,12 @@ export default function Home() {
                 className="rounded-md border border-border bg-transparent px-[22px] py-[11px] text-sm font-medium text-muted hover:border-foreground hover:text-foreground"
               >
                 Docs
+              </Link>
+              <Link
+                href="/competitions"
+                className="rounded-md border border-border bg-transparent px-[22px] py-[11px] text-sm font-medium text-muted hover:border-foreground hover:text-foreground"
+              >
+                Competitions
               </Link>
             </div>
           </div>
@@ -125,12 +131,15 @@ export default function Home() {
       <footer className="mt-auto border-t border-border">
         <div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-center justify-between gap-4 px-8 py-7">
           <span className="text-sm text-muted">MoleculeDesk · Open source</span>
-          <div className="flex gap-5 text-sm">
+          <div className="flex flex-wrap gap-5 text-sm">
             <a href="https://github.com/pooriyapfn/moldesk" className="text-muted hover:text-foreground">
               GitHub
             </a>
             <Link href="/docs" className="text-muted hover:text-foreground">
               Docs
+            </Link>
+            <Link href="/competitions" className="text-muted hover:text-foreground">
+              Competitions
             </Link>
             <a href="#license" className="text-muted hover:text-foreground">
               License
