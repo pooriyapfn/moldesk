@@ -5,9 +5,10 @@
   "scripts": {
     "sync:install": "node scripts/sync-install-script.mjs",
     "sync:molstar": "node scripts/sync-molstar.mjs",
-    "predev": "node scripts/sync-install-script.mjs && node scripts/sync-molstar.mjs",
+    "sync:competitions": "node scripts/sync-competitions.mjs",
+    "predev": "node scripts/sync-install-script.mjs && node scripts/sync-molstar.mjs && node scripts/sync-competitions.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/sync-install-script.mjs && node scripts/sync-molstar.mjs",
+    "prebuild": "node scripts/sync-install-script.mjs && node scripts/sync-molstar.mjs && node scripts/sync-competitions.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -23,6 +24,7 @@
     "posthog-js": "^1.434.14",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-pretty-code": "^0.14.5",
     "rehype-slug": "^6.0.0",
@@ -34,10 +36,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "ajv": "6.15.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yaml": "2.9.0"
   },
   "packageManager": "pnpm@9.15.0"
 }

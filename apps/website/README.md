@@ -34,3 +34,11 @@ For local development, put the same values in `apps/website/.env.local` (gitigno
 - `src/app/robots.ts` allows crawlers and points to `src/app/sitemap.ts`; `public/llms.txt` is an optional navigation index. None guarantees AI citations.
 - Each doc route has a title, description, and canonical URL. Keep visible content and structured data consistent.
 - After deployment, check that `/robots.txt`, `/sitemap.xml`, and guide URLs return successfully. Verify any CDN or Cloudflare bot rules separately; app files cannot override edge blocks.
+
+## Competitions
+
+[Bio Challenges](https://github.com/pooriyapfn/bio-challenges) supplies the competition catalog. The website build imports and validates one commit of `bio-challenges/main`. The imported snapshot provides the calendar, search, detail pages, and sitemap entries.
+
+To preview a content branch, run `BIO_CHALLENGES_REF=<branch> pnpm --filter website dev`. To use a local catalog checkout, set `BIO_CHALLENGES_DIR` to its absolute path. Rerun `pnpm --filter website sync:competitions` after changing local content.
+
+For automatic publishing, create a Deploy Hook for the website's production branch in Vercel and store its URL as the `VERCEL_DEPLOY_HOOK_URL` Actions secret in Bio Challenges. Its catalog workflow validates changes on `main` before requesting a rebuild.
