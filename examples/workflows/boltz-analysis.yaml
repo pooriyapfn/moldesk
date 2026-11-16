@@ -1,0 +1,28 @@
+apiVersion: moldesk.ai/v1alpha1
+kind: Workflow
+metadata:
+  name: boltz-analysis
+  version: 0.1.0
+spec:
+  inputs:
+    sequence:
+      type: protein_sequence
+      required: true
+  execution:
+    backend: local
+    cache: true
+    max_parallel: 1
+  steps:
+    - id: predict
+      uses: moldesk/boltz@1
+      with:
+        sequence: ${inputs.sequence}
+      outputs:
+        structure: protein_structure
+    - id: analyze
+      uses: moldesk/structure-analysis@1
+      needs: [predict]
+      with:
+        structure: ${steps.predict.outputs.structure}
+      outputs:
+        report: json

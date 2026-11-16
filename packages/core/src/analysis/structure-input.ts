@@ -21,6 +21,9 @@ const EXTENSIONS: Record<string, StructureFormat> = {
   ".mmcif": "mmcif",
 };
 
+/** File extensions accepted by `readStructureInput`. */
+export const STRUCTURE_EXTENSIONS: readonly string[] = Object.freeze(Object.keys(EXTENSIONS));
+
 function fail(code: string, message: string, remediation: string): never {
   throw new MoldeskError({ code, message, remediation });
 }
