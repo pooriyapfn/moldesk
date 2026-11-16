@@ -50,6 +50,9 @@ const EXIT_CODES: Record<string, number> = {
   COMPILER_NOT_FOUND: 2,
   NO_POLYMER_CHAINS: 2,
   VIEW_CANCELLED: 8,
+  INVALID_WORKFLOW_INPUT: 2,
+  WORKFLOW_INVALID: 2,
+  WORKFLOW_PLAN_FAILED: 2,
 };
 
 /** Prints an error as JSON (stdout, one object) or text (stderr) and sets the exit code. */

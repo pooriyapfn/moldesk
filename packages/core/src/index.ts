@@ -179,3 +179,58 @@ export { freezeBinderGeneration, freezeBinderTarget, prepareBinderPredictions, s
 export type { FrozenBinderGeneration, FrozenBinderTarget, BinderRoles, PreparedBinderCandidate } from "./binders/prepare.js";
 export { collectBinderPredictionSample, rankBinderCandidates, validateBinderCampaign, writeBinderCandidateTable, binderCandidatesCsv } from "./binders/campaign.js";
 export type { BinderCampaignManifest, BinderCandidateState, BinderPredictionSample, BinderCandidateRow } from "./binders/campaign.js";
+
+export {
+  MAX_WORKFLOW_BYTES,
+  WORKFLOW_API_VERSION,
+  parseWorkflowDocument,
+  parseWorkflowReference,
+  workflowJsonSchema,
+} from "./workflows/schema.js";
+export type {
+  WorkflowDiagnostic,
+  WorkflowDocument,
+  WorkflowExecution,
+  WorkflowInputDeclaration,
+  WorkflowParseResult,
+  WorkflowReference,
+  WorkflowStep,
+} from "./workflows/schema.js";
+export {
+  MAX_PROTEIN_SEQUENCE_LENGTH,
+  WORKFLOW_INPUT_TYPES,
+  WORKFLOW_OPERATION_IDS,
+  WORKFLOW_OPERATIONS,
+  buildBoltzMonomerInput,
+  getWorkflowOperation,
+  normalizeProteinSequence,
+  workflowOperationCatalog,
+} from "./workflows/operations.js";
+export type {
+  BoltzMonomerInput,
+  WorkflowBackend,
+  WorkflowOperation,
+  WorkflowOperationId,
+  WorkflowOperationInput,
+  WorkflowOperationOutput,
+  WorkflowValueType,
+} from "./workflows/operations.js";
+export {
+  WORKFLOW_PLAN_SCHEMA_VERSION,
+  planWorkflow,
+  resolveWorkflowModelRequirement,
+  validateWorkflow,
+} from "./workflows/compiler.js";
+export type {
+  PlanWorkflowOptions,
+  WorkflowCompileResult,
+  WorkflowModelAsset,
+  WorkflowModelRequirement,
+  WorkflowPlan,
+  WorkflowPlanBinding,
+  WorkflowPlanEdge,
+  WorkflowPlanResult,
+  WorkflowPlanStep,
+  WorkflowResolvedInput,
+  WorkflowStepRequirement,
+} from "./workflows/compiler.js";

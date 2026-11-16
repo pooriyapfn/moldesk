@@ -16,6 +16,7 @@ import { registerSchemaCommand } from "./commands/schema.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
 import { registerViewCommand } from "./commands/view.js";
 import { registerVisualizerCommand } from "./commands/visualizer.js";
+import { registerWorkflowCommand } from "./commands/workflow.js";
 
 const program = new Command();
 
@@ -39,5 +40,6 @@ registerScoreCommand(program);
 registerSchemaCommand(program);
 registerCloudCommand(program);
 registerVisualizerCommand(program);
+registerWorkflowCommand(program);
 
 program.parse();

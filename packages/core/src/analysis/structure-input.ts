@@ -11,6 +11,8 @@ export interface StructureInput {
   path: string;
   format: StructureFormat;
   sha256: string;
+  /** Size of the bytes that were hashed. */
+  sizeBytes: number;
   text: string;
 }
 
@@ -29,7 +31,7 @@ function fail(code: string, message: string, remediation: string): never {
 }
 
 /** Reads a plain-text input, rejecting missing, empty, oversize and binary files. `what` names the kind of file in messages. */
-export function readTextInput(file: string, what: string, maxBytes = REPORT_LIMITS.maxResourceBytes): { path: string; sha256: string; text: string } {
+export function readTextInput(file: string, what: string, maxBytes = REPORT_LIMITS.maxResourceBytes): { path: string; sha256: string; sizeBytes: number; text: string } {
   const resolved = path.resolve(file);
   let stat: fs.Stats;
   try {
@@ -44,7 +46,7 @@ export function readTextInput(file: string, what: string, maxBytes = REPORT_LIMI
   }
   const bytes = fs.readFileSync(resolved);
   if (bytes.includes(0)) fail("INPUT_BINARY", `${path.basename(resolved)} looks like a binary file.`, `Provide a text ${what} file.`);
-  return { path: resolved, sha256: createHash("sha256").update(bytes).digest("hex"), text: bytes.toString("utf8") };
+  return { path: resolved, sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length, text: bytes.toString("utf8") };
 }
 
 /**

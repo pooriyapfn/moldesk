@@ -63,10 +63,20 @@ export interface WorkflowDiagnostic {
   column?: number;
 }
 
+export interface WorkflowSourcePosition {
+  line?: number;
+  column?: number;
+}
+
 export interface WorkflowParseResult {
   valid: boolean;
   diagnostics: WorkflowDiagnostic[];
   workflow?: WorkflowDocument;
+  /**
+   * One-based source position of a field path such as `spec.steps[1].needs[0]`.
+   * Falls back to the nearest existing ancestor node; empty when none is found.
+   */
+  positionOf?: (fieldPath: string) => WorkflowSourcePosition;
 }
 
 export type WorkflowReference =
@@ -456,7 +466,16 @@ export function parseWorkflowDocument(source: string): WorkflowParseResult {
     return { valid: false, diagnostics };
   }
 
-  return { valid: true, diagnostics, workflow: normalizeWorkflow(value as Record<string, unknown>) };
+  const contents = document.contents;
+  const positionOf = (fieldPath: string): WorkflowSourcePosition => {
+    const parts = pointerParts(fieldPath);
+    for (let length = parts.length; length >= 0; length--) {
+      const node = locate(contents, parts.slice(0, length));
+      if (node) return position(node, lineCounter);
+    }
+    return {};
+  };
+  return { valid: true, diagnostics, workflow: normalizeWorkflow(value as Record<string, unknown>), positionOf };
 }
 
 function positionAtOffset(offset: number, lineCounter: LineCounter): { line: number; column: number } {

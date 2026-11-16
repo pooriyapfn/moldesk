@@ -1,0 +1,189 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Command } from "commander";
+import { registerWorkflowCommand } from "./workflow.js";
+
+const state = vi.hoisted(() => ({
+  validateWorkflow: vi.fn(),
+  planWorkflow: vi.fn(),
+  workflowJsonSchema: vi.fn(),
+}));
+
+vi.mock("@moldesk/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@moldesk/core")>();
+  return {
+    ...actual,
+    validateWorkflow: state.validateWorkflow,
+    planWorkflow: state.planWorkflow,
+    workflowJsonSchema: state.workflowJsonSchema,
+  };
+});
+
+let logs: string[];
+let errors: string[];
+let temporary: string;
+let workflowFile: string;
+let owned: string[] = [];
+
+beforeEach(() => {
+  logs = [];
+  errors = [];
+  process.exitCode = undefined;
+  vi.spyOn(console, "log").mockImplementation((value: unknown) => void logs.push(String(value)));
+  vi.spyOn(console, "error").mockImplementation((value: unknown) => void errors.push(String(value)));
+  state.validateWorkflow.mockReset();
+  state.planWorkflow.mockReset();
+  state.workflowJsonSchema.mockReset();
+  temporary = fs.mkdtempSync(path.join(os.tmpdir(), "moldesk-workflow-cli-"));
+  owned.push(temporary);
+  workflowFile = path.join(temporary, "workflow.yaml");
+  fs.writeFileSync(workflowFile, "apiVersion: moldesk.ai/v1alpha1\n");
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  process.exitCode = undefined;
+  for (const dir of owned.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+async function run(...args: string[]): Promise<void> {
+  const program = new Command();
+  program.exitOverride();
+  registerWorkflowCommand(program);
+  await program.parseAsync(["workflow", ...args], { from: "user" });
+}
+
+function singleJson(): unknown {
+  expect(logs).toHaveLength(1);
+  return JSON.parse(logs[0]!);
+}
+
+const validWorkflow = {
+  valid: true,
+  diagnostics: [],
+  steps: [{ id: "import" }, { id: "analyze" }],
+  edges: [{ from: "import", to: "analyze" }],
+};
+
+const plan = {
+  schemaVersion: 1,
+  workflowSha256: "a".repeat(64),
+  planId: "b".repeat(64),
+  inputs: {
+    structure: {
+      type: "structure_file",
+      value: "/tmp/1CRN.pdb",
+      format: "pdb",
+      sizeBytes: 10,
+      sha256: "c".repeat(64),
+    },
+  },
+  steps: [{ id: "import" }, { id: "analyze" }],
+  edges: [{ from: "import", to: "analyze" }],
+  requirements: [],
+};
+
+describe("moldesk workflow schema", () => {
+  it("prints one JSON schema value", async () => {
+    state.workflowJsonSchema.mockReturnValue({ $schema: "http://json-schema.org/draft-07/schema#" });
+    await run("schema", "--json");
+    expect(singleJson()).toEqual({ $schema: "http://json-schema.org/draft-07/schema#" });
+    expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe("moldesk workflow validate", () => {
+  it("prints a valid result as one JSON value", async () => {
+    state.validateWorkflow.mockReturnValue(validWorkflow);
+    await run("validate", workflowFile, "--json");
+    expect(singleJson()).toEqual({
+      status: "ok",
+      valid: true,
+      order: ["import", "analyze"],
+      edges: [{ from: "import", to: "analyze" }],
+      diagnostics: [],
+    });
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("exits 2 with diagnostics for an invalid workflow", async () => {
+    const diagnostics = [{ code: "WORKFLOW_CYCLE", message: "cycle", path: "spec.steps[0].needs" }];
+    state.validateWorkflow.mockReturnValue({ valid: false, diagnostics, steps: [], edges: [] });
+    await run("validate", workflowFile, "--json");
+    expect(singleJson()).toEqual({
+      status: "error",
+      code: "WORKFLOW_INVALID",
+      message: "spec.steps[0].needs: WORKFLOW_CYCLE: cycle",
+      remediation: expect.any(String),
+      details: { diagnostics },
+    });
+    expect(process.exitCode).toBe(2);
+  });
+});
+
+describe("moldesk workflow plan", () => {
+  it("passes parsed inputs and the caller cwd, then prints the plan", async () => {
+    state.planWorkflow.mockReturnValue({ valid: true, diagnostics: [], plan });
+    await run("plan", workflowFile, "--input", "structure=/tmp/1CRN.pdb", "--json");
+    expect(singleJson()).toEqual({ status: "ok", ...plan });
+    expect(state.planWorkflow).toHaveBeenCalledWith(expect.any(Buffer), {
+      inputs: { structure: "/tmp/1CRN.pdb" },
+      cwd: process.cwd(),
+    });
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("exits 2 with diagnostics when planning fails", async () => {
+    const diagnostics = [{ code: "WORKFLOW_MODEL_NOT_INSTALLED", message: "missing", path: "spec.steps[0].uses" }];
+    state.planWorkflow.mockReturnValue({ valid: false, diagnostics });
+    await run("plan", workflowFile, "--input", "sequence=AAAA", "--json");
+    expect(singleJson()).toMatchObject({ status: "error", code: "WORKFLOW_PLAN_FAILED", details: { diagnostics } });
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("lists diagnostics on stderr in text mode and exits 2", async () => {
+    const diagnostics = [
+      { code: "WORKFLOW_MISSING_INPUT", message: "Missing workflow input \"structure\".", path: "inputs.structure" },
+      { code: "WORKFLOW_CYCLE", message: "cycle", path: "spec.steps[0].needs", line: 12, column: 7 },
+    ];
+    state.planWorkflow.mockReturnValue({ valid: false, diagnostics });
+    await run("plan", workflowFile);
+    expect(logs).toEqual([]);
+    expect(errors).toEqual([
+      'inputs.structure: WORKFLOW_MISSING_INPUT: Missing workflow input "structure".',
+      "spec.steps[0].needs:12:7: WORKFLOW_CYCLE: cycle",
+    ]);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("passes the workflow file's raw bytes to the planner", async () => {
+    const bytes = Buffer.from([...Buffer.from("apiVersion: moldesk.ai/v1alpha1\n# "), 0xff, 0x0a]);
+    fs.writeFileSync(workflowFile, bytes);
+    state.planWorkflow.mockReturnValue({ valid: true, diagnostics: [], plan });
+    await run("plan", workflowFile, "--json");
+    expect(Buffer.compare(state.planWorkflow.mock.calls[0]![0] as Buffer, bytes)).toBe(0);
+  });
+
+  it("rejects duplicate --input bindings before planning", async () => {
+    await run("plan", workflowFile, "--input", "structure=/a.pdb", "--input", "structure=/b.pdb", "--json");
+    expect(singleJson()).toMatchObject({ status: "error", code: "INVALID_WORKFLOW_INPUT" });
+    expect(process.exitCode).toBe(2);
+    expect(state.planWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed --input binding", async () => {
+    await run("plan", workflowFile, "--input", "not-a-binding", "--json");
+    expect(singleJson()).toMatchObject({ status: "error", code: "INVALID_WORKFLOW_INPUT" });
+    expect(process.exitCode).toBe(2);
+    expect(state.planWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing workflow file as a JSON error with exit 2", async () => {
+    await run("plan", path.join(temporary, "missing.yaml"), "--json");
+    expect(singleJson()).toMatchObject({ status: "error", code: "INPUT_NOT_FOUND" });
+    expect(process.exitCode).toBe(2);
+    expect(state.planWorkflow).not.toHaveBeenCalled();
+  });
+});
