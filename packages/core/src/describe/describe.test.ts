@@ -145,6 +145,9 @@ describe("describe", () => {
     expect(accelerator.default).toBeUndefined();
     expect(accelerator.defaultsByPlatform).toEqual({ "linux-x64": "gpu", "darwin-arm64": "mps" });
     expect(accelerator.enum).toEqual(["gpu", "mps", "cpu"]);
+    const pae = result.parameters.find((p) => p.name === "write_full_pae")!;
+    expect(pae.default).toBeUndefined();
+    expect(pae.defaultsByPlatform).toEqual({ "linux-x64": false, "darwin-arm64": true });
   });
 
   it("reports no default for a seed that is drawn at random for every run", async () => {

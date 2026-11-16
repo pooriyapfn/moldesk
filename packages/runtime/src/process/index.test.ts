@@ -37,3 +37,15 @@ describe("runCommand", () => {
     expect(Date.now() - started).toBeLessThan(2000);
   }, 10_000);
 });
+
+it("terminates output floods and caps combined captured bytes", async () => {
+  const result = await runCommand(process.execPath, ["-e", "setInterval(()=>{process.stdout.write('x'.repeat(8192));process.stderr.write('y'.repeat(8192))},1)"], { maxOutputBytes: 32768, timeoutMs: 5000 });
+  expect(result.outputLimitExceeded).toBe(true);
+  expect(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(32768);
+});
+it("keeps timeout and cancellation distinct", async () => {
+  const timed = await runCommand(process.execPath, ["-e", "setInterval(()=>{},1000)"], { timeoutMs: 30 });
+  expect(timed.timedOut).toBe(true);
+  const cancelled = await runCommand(process.execPath, ["-e", "setInterval(()=>{},1000)"], { signal: AbortSignal.abort(), timeoutMs: 5000 });
+  expect(cancelled.cancelled).toBe(true); expect(cancelled.timedOut).not.toBe(true);
+});

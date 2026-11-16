@@ -103,6 +103,7 @@ export {
   materializeAsset,
   prepareDockerImage,
   preparePythonEnvironment,
+  prepareManagedPython,
   temporaryInstallDir,
   MANAGED_UV_VERSION,
 } from "./install/index.js";

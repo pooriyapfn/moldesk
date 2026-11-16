@@ -4,6 +4,8 @@
 import { MoldeskError } from "../errors.js";
 import type { StructureInput } from "./structure-input.js";
 
+export const STANDARD_PROTEIN_RESIDUES = new Set("ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split(" "));
+
 export const MOLSTAR_VERSION = "5.12.0";
 
 export type ResidueKind = "protein" | "dna" | "rna" | "other";

@@ -6,8 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import Ajv from "ajv";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getMoldeskPaths } from "@moldesk/runtime";
+import { scoreProteinInterface } from "../analysis/interface.js";
+import { resolveBoltzPredictionArtifacts } from "../analysis/boltz-artifacts.js";
+import { boltzRecord, IPSAE_TABLE } from "../testSupport/interface.js";
 import { analyzeStructureFile } from "../analysis/analyze.js";
 import { compareStructureFiles } from "../analysis/compare.js";
 import { fastaValidationEnvelope, validateFasta } from "../analysis/fasta.js";
@@ -16,6 +19,8 @@ import { describeModel } from "../describe/describe.js";
 import { fetchStructure } from "../fetch/fetch.js";
 import { captured, usalignHome } from "../testSupport/usalign.js";
 import { ENVELOPE_KINDS, schemaForKind, validateEnvelope, type EnvelopeKind } from "./envelope.js";
+
+vi.mock("../tools/ipsae.js", () => ({ requireIpsae: async () => ({ dir: "/tool", executable: "/tool/python", receipt: { revision: "a".repeat(40), sourceSha256: "b".repeat(64) } }) }));
 
 const FIXTURES = path.resolve(import.meta.dirname, "../../../visualizer/test/fixtures");
 const fx = (name: string) => path.join(FIXTURES, name);
@@ -67,6 +72,17 @@ beforeAll(async () => {
   add("moldesk.compare", await compareStructureFiles(fx("1CRN.pdb"), fx("1CRN.pdb"), { paths, runner: stub(captured("crn-self.txt")) }));
   add("moldesk.compare", await compareStructureFiles(fx("1CRN.pdb"), fx("3HZ7.pdb"), { paths, runner: stub(captured("crn-vs-3hz7.txt")), report: { outputPath: path.join(dir, "r.html") } }));
   add("moldesk.compare", await compareStructureFiles(fx("1AAY.pdb"), fx("1AAY.pdb"), { paths, runner: stub(captured("aay-multimer.txt")), multimer: true }));
+
+  for (const [index, targetChain, plddt] of [[0, "A", true], [1, "B", true], [2, "A", false]] as const) {
+    const run = await boltzRecord(path.join(dir, `interface-${index}`));
+    const a = await resolveBoltzPredictionArtifacts(run);
+    add("moldesk.interface", await scoreProteinInterface({ structure: a.structure.path, pae: a.pae!.path, confidence: a.confidence.path, plddt: plddt ? a.plddt!.path : undefined,
+      targetChain, binderChain: targetChain === "A" ? "B" : "A", outputPath: path.join(dir, `interface-${index}.json`),
+      runner: async (_cmd, args, options) => {
+        if (args.includes("/tool/ipsae.py")) fs.writeFileSync(path.join(options.cwd!, "prediction_15_15.txt"), IPSAE_TABLE);
+        return { code: 0, stdout: "", stderr: "" };
+      } }));
+  }
 
   server = http.createServer((req, res) => {
     if (req.url === "/download/1M17.cif") res.writeHead(200, { "last-modified": "Mon, 22 Sep 2025 00:17:19 GMT" }).end("data_1M17\nloop_\n_atom_site.id\n1\n");
@@ -134,6 +150,13 @@ describe("the schemas reject drift", () => {
       (e) => (e.result.tmScore.normalizedByA = "1"),
       (e) => (e.result.mode = "dimer"),
       (e) => (e.result.inputs.a.sha256 = "xyz"),
+    ],
+    "moldesk.interface": [
+      (e) => delete e.result.inputs.pae.sha256,
+      (e) => (e.result.scores.ipsaeMax = "0.5"),
+      (e) => (e.result.scorer.name = "other"),
+      (e) => (e.result.settings.paeCutoffAngstrom = 0),
+      (e) => (e.result.tokenMapping.count = 2049),
     ],
     "moldesk.fetch": [
       (e) => delete e.result.provenance.license,

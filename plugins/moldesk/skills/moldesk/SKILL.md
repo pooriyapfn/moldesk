@@ -55,12 +55,13 @@ moldesk analyze <structure> --json         # chains, sequences, gaps, secondary 
 moldesk inspect <structure> A:40-60 --json # residues and their neighbors within --radius
 moldesk view <structure> --highlight A:40-60 --color-by plddt
 moldesk compare <a> <b> --report overlay.html --json   # needs `moldesk install usalign` once
+moldesk score interface job_model_0.cif --pae pae_job_model_0.npz --confidence confidence_job_model_0.json --target-chain A --binder-chain B --json
 moldesk schema moldesk.analysis            # the JSON Schema of an output kind
 ```
 
-Add `--json` to `doctor`, `list`, `describe`, `install`, `run`, `view`, `fetch`, `analyze`, `inspect`, and `compare` for machine-readable output. Prefer `--json` when you need to parse results. Full command reference: [references/cli.md](references/cli.md).
+Add `--json` to `doctor`, `list`, `describe`, `install`, `run`, `view`, `fetch`, `analyze`, `inspect`, `compare`, and `score` for machine-readable output. Prefer `--json` when you need to parse results. Full command reference: [references/cli.md](references/cli.md).
 
-The structure commands print exactly one document on stdout: `{ "schemaVersion": 1, "kind": "moldesk.analysis|inspect|compare|fetch|model", "status": "ok", "result": …, "warnings": […], "provenance": … }`. Errors print `{ "status": "error", "code", "message", "remediation" }` and exit 2 for bad input. Run `moldesk schema <kind>` to see every field instead of guessing. Residues always carry both `authSeqId` and `labelSeqId`; selectors such as `A`, `A:45`, `A:40-60` and `A:52A` use author ids unless `--label` is given.
+The structure commands print exactly one document on stdout: `{ "schemaVersion": 1, "kind": "moldesk.analysis|inspect|compare|interface|fetch|model", "status": "ok", "result": …, "warnings": […], "provenance": … }`. Errors print `{ "status": "error", "code", "message", "remediation" }` and exit 2 for bad input. Run `moldesk schema <kind>` to see every field instead of guessing. Residues always carry both `authSeqId` and `labelSeqId`; selectors such as `A`, `A:45`, `A:40-60` and `A:52A` use author ids unless `--label` is given.
 
 ## Pick a model
 
@@ -103,3 +104,13 @@ Multi-step recipes (design then fold, dock then inspect, and others): [reference
 - `PLDDT_UNAVAILABLE` (`view --color-by plddt`): the file has no known pLDDT source. Offer a ModelCIF or MoleculeDesk Boltz structure instead.
 - `FETCH_NOT_FOUND`: there is no search; ask the user for a correct id. `OUTPUT_EXISTS`: choose a new name, the commands never overwrite.
 - Do not edit files under `~/.moldesk` by hand, and do not pip-install the model yourself as a fallback.
+
+## Binder evaluation campaigns
+
+PAE is an existing Boltz output; ipSAE is a separate CPU calculation. Ask before installing the managed tool (`moldesk install ipsae`); evaluation never installs it automatically. Request full arrays explicitly with `moldesk run boltz complex.yaml --param write_full_pae=true --json`. Keep PAE matrices in files, never in agent context. Pair structures, PAE, confidence and optional pLDDT by exact record/rank and verify their run-record hashes.
+
+Use the core helpers and [PD-L1 campaign example](../../../../examples/pdl1-binder-campaign/README.md) to freeze an approved target/crop, prepare prediction jobs, retain source lineage and exact sequence duplicates, and rank all declared samples. Author chain roles must be explicit; do not infer binder identity from length. Initial scoring supports exactly two complete standard protein chains in one Boltz mmCIF model, at most 2,048 tokens. Other input types are refused.
+
+Register policy, prediction protocol, scorer revision, integer cutoffs, sample aggregation, thresholds and seeds before generation. The 15/15 cutoffs and example threshold are recipe choices, not biological acceptance thresholds. Start with 2 designs, review cost/timing/failure evidence, then decide whether to approve a 20-design pilot. Keep batchSize <= 8 and numReplicates <= 32 per RFD4 spec. Every cloud run still requires its own quote, upload consent and cleanup checks. Do not start additional inference automatically.
+
+Keep duplicates and failed candidates visible, missing scores null, and every rejection reason. Compare only the same target/crop, chain roles, prediction protocol and scoring settings. Zero shortlisted candidates is valid. Record criteria changes as a new policy revision. ipSAE describes modeled interfaces, not measured affinity or confirmed binders; exact sequence deduplication does not prove broader diversity. Never report invented costs or pilot yields.

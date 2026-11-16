@@ -324,6 +324,21 @@ async function installRequirementSet(
   );
 }
 
+/** Small source-independent environment for CPU tools; never selects host Python. */
+export async function prepareManagedPython(options: {
+  targetDir: string; python: string; paths?: MoldeskPaths; runner?: InstallCommandRunner;
+  fetch?: AssetFetch; onProgress?: (progress: InstallProgress) => void;
+}): Promise<{ executable: string; uv: string; env: NodeJS.ProcessEnv }> {
+  const paths = options.paths ?? getMoldeskPaths();
+  const runner = options.runner ?? runCommand;
+  const uv = await ensureManagedUv({ ...options, paths, runner });
+  const env = managedEnvironment(paths, options.python);
+  await checked(runner, uv, ["python", "install", options.python], { env });
+  const venv = path.join(options.targetDir, ".venv");
+  await checked(runner, uv, ["venv", "--relocatable", "--python", options.python, venv], { env });
+  return { executable: path.join(venv, "bin", "python"), uv, env };
+}
+
 export async function preparePythonEnvironment(request: PythonInstallRequest): Promise<PreparedPythonEnvironment> {
   const runner = request.runner ?? runCommand;
   const paths = request.paths ?? getMoldeskPaths();

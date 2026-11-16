@@ -77,3 +77,9 @@ Check whether a model is enabled with `moldesk run <model> <input> --compute run
 ## Exit codes
 
 `11` credential, `12` provider (payment, capacity, rate limit), `13` cleanup pending or orphaned resources (new paid work is refused until resolved), `14` consent or safety refusal (missing acknowledgment such as `--accept-file-upload`, expired approval, re-quote required).
+
+## Boltz PAE for local interface scoring
+
+Request full arrays explicitly: `moldesk run boltz complex.yaml --compute runpod --param write_full_pae=true --json` (with the usual approved quote, budget/lifetime and upload-consent arguments). Cloud planning resolves Linux PAE defaults even when the client is a Mac. Collected PAE/pLDDT NPZ files are binary inventory items with verified sizes and hashes; each requested PAE must match its structure. Array bytes count toward transfer/storage evidence. PAE matrices grow as O(N²) per sample and should stay out of JSON/agent context.
+
+Score downloaded prediction files offline with the managed CPU ipSAE tool; no local Boltz installation is needed. The updated manifest requires a matching rebuilt and released worker bundle. A worker with an older manifest digest must fail before inference; do not bypass this check. Worker URL/checksum refresh belongs to release preparation, after producing and validating the artifact.

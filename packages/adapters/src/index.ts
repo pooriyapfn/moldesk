@@ -150,3 +150,6 @@ export interface ModelAdapterDefinition {
 export { adapterCatalog, getAdapter, hasAdapter, validateAdapterCatalog } from "./catalog.js";
 export { ReportBuilder } from "./visualization.js";
 export { validateParams, type ParamValidationResult } from "./params.js";
+
+// Shared validated spec reader for binder preparation; keeps one YAML grammar.
+export { readSpec as readRfd4Spec } from "./rfd4-proteina/spec.js";

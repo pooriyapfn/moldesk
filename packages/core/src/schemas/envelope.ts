@@ -8,6 +8,7 @@ export const ENVELOPE_KINDS = [
   "moldesk.analysis",
   "moldesk.inspect",
   "moldesk.compare",
+  "moldesk.interface",
   "moldesk.fetch",
   "moldesk.model",
 ] as const;

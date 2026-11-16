@@ -1,3 +1,4 @@
+import { uninstallIpsaeTool } from "./ipsae-tool.js";
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { uninstallModel } from "@moldesk/core";
@@ -41,6 +42,7 @@ export function registerUninstallCommand(program: Command): void {
         else console.log("Uninstall cancelled. Re-run with --yes for non-interactive use.");
         return;
       }
+      if (model === "ipsae") return uninstallIpsaeTool(options);
       if (model === USALIGN_TOOL) return uninstallUsalignTool(options);
       try {
         const removed = await uninstallModel(model, {

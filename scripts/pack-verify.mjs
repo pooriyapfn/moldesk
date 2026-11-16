@@ -84,6 +84,13 @@ try {
     }
   }
 
+  const installedCore = path.join(installDir, "node_modules", "@moldesk", "core");
+  for (const file of ["validate.py", "self-test.py", "LICENSE"]) {
+    if (!fs.existsSync(path.join(installedCore, "resources", "ipsae", file))) throw new Error(`Missing packaged ipSAE resource: ${file}`);
+  }
+  const interfaceSchema = JSON.parse(execFileSync(cliBin, ["schema", "moldesk.interface"], { cwd: unrelatedCwd, encoding: "utf8" }));
+  if (!interfaceSchema.properties.result.properties.scores) throw new Error("Missing packaged interface schema");
+
   // The viewer bundle must ship inside the package and nothing browser-source-only may leak.
   const installedVisualizer = path.join(installDir, "node_modules", "@moldesk", "visualizer");
   for (const asset of ["viewer.js", "viewer.css", "bundle.json", "THIRD_PARTY_NOTICES.txt", "MOLSTAR_LICENSE.txt"]) {

@@ -81,6 +81,18 @@ const compareResult = object(
   { report: object({ path: string, fileUrl: string, sha256, sizeBytes: integer, deviationThreshold: number, residuesAboveThreshold: integer }) },
 );
 
+const hashedFile = object({ path: string, sha256, sizeBytes: { type: "integer", minimum: 1 } });
+const interfaceChain = object({ authId: string, labelId: string });
+const interfaceResult = object({
+  inputs: object({ structure: hashedFile, pae: hashedFile, confidence: hashedFile }, { plddt: hashedFile }),
+  chains: object({ target: interfaceChain, binder: interfaceChain }),
+  settings: object({ paeCutoffAngstrom: { type: "integer", minimum: 1 }, distanceCutoffAngstrom: { type: "integer", minimum: 1 } }),
+  tokenMapping: object({ mode: { const: "boltz-two-protein-chains" }, count: { type: "integer", minimum: 2, maximum: 2048 }, sha256 }),
+  scores: object(Object.fromEntries(["ipsaeTargetToBinder", "ipsaeBinderToTarget", "ipsaeMax"].map((key) => [key, { type: "number", minimum: 0, maximum: 1 }]))),
+  scorer: object({ name: { const: "ipsae" }, revision: { type: "string", pattern: "^[0-9a-f]{40}$" }, sourceSha256: sha256 }),
+  artifacts: array(hashedFile),
+});
+
 const license = object({ name: string, url: string }, { notice: string });
 const fetchResult = object({
   source: oneOf("pdb", "afdb", "uniprot"),
@@ -170,6 +182,7 @@ export const RESULT_SCHEMAS: Record<string, Schema> = {
   "moldesk.analysis": { anyOf: [analysisStructure, analysisFasta] },
   "moldesk.inspect": inspectResult,
   "moldesk.compare": compareResult,
+  "moldesk.interface": interfaceResult,
   "moldesk.fetch": fetchResult,
   "moldesk.model": modelResult,
 };

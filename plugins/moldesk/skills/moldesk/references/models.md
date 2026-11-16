@@ -233,3 +233,9 @@ Total sequences = `batch_size` x `number_of_batches`.
 ## Planned (not runnable yet)
 
 AlphaFold, ColabFold, and Chai appear in docs as "coming soon". Do not try to install them; suggest Boltz-2 or OpenDDE instead.
+
+### Boltz full PAE arrays
+
+`write_full_pae` is boolean: Darwin/MPS defaults true, Linux/CUDA defaults false, resolved from the installed runtime. Explicit true enables export on both; explicit false uses the negative option only on Darwin. Cloud uses Linux defaults even from a Mac. `moldesk describe boltz --json` exposes these defaults.
+
+Declared outputs now include optional `pae` and `plddt` NPZ arrays as well as structures/confidence/affinity. Existing arrays are collected even if not explicitly requested. When PAE is requested, every structure must have its exact PAE sidecar or the run fails with `MISSING_REQUIRED_OUTPUT`, even if inference exited zero. Outputs are hashed and exported through the existing lifecycle; basename collisions still refuse overwrite. PAE storage grows quadratically with token count. Score files using the interface command after installing ipSAE; confidence-summary averages are not full PAE.

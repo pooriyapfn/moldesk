@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 
 export interface RunOptions {
+  /** Kill the child when combined captured output exceeds this byte limit. */
+  maxOutputBytes?: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
@@ -20,6 +22,7 @@ export interface RunOptions {
 }
 
 export interface RunResult {
+  outputLimitExceeded?: boolean;
   code: number;
   stdout: string;
   stderr: string;
@@ -48,6 +51,8 @@ export function runCommand(
     let settled = false;
     let timedOut = false;
     let cancelled = false;
+    let outputBytes = 0;
+    let outputLimitExceeded = false;
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const child = spawn(command, args, {
       cwd: options.cwd,
@@ -103,20 +108,20 @@ export function runCommand(
       if (timer) clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       options.signal?.removeEventListener("abort", onAbort);
-      resolve(result);
+      resolve({ ...result, ...(outputLimitExceeded ? { outputLimitExceeded: true } : {}) });
     };
 
-    child.stdout.on("data", (data: Buffer) => {
-      const text = data.toString();
-      stdout += text;
-      options.onStdout?.(text);
-    });
-
-    child.stderr.on("data", (data: Buffer) => {
-      const text = data.toString();
-      stderr += text;
-      options.onStderr?.(text);
-    });
+    const capture = (data: Buffer, stream: "stdout" | "stderr"): void => {
+      if (outputLimitExceeded) return;
+      outputBytes += data.length;
+      const limit = options.maxOutputBytes ?? Infinity;
+      const text = data.subarray(0, Math.max(0, data.length - Math.max(0, outputBytes - limit))).toString();
+      if (stream === "stdout") { stdout += text; options.onStdout?.(text); }
+      else { stderr += text; options.onStderr?.(text); }
+      if (outputBytes > limit) { outputLimitExceeded = true; terminate(); }
+    };
+    child.stdout.on("data", (data: Buffer) => capture(data, "stdout"));
+    child.stderr.on("data", (data: Buffer) => capture(data, "stderr"));
 
     child.on("error", (error: Error) => {
       const suffix =

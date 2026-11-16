@@ -102,7 +102,7 @@ describe("boltzAdapter.resolveParamDefaults", () => {
       manifestName: "boltz",
       installed: { runtime: { kind: "python", python: { platform: "darwin-arm64", platformSelected: true } } },
     });
-    expect(defaults).toEqual({ accelerator: "mps" });
+    expect(defaults).toEqual({ accelerator: "mps", write_full_pae: true });
   });
 
   it("resolves accelerator:gpu for a linux-x64 install", () => {
@@ -110,7 +110,7 @@ describe("boltzAdapter.resolveParamDefaults", () => {
       manifestName: "boltz",
       installed: { runtime: { kind: "python", python: { platform: "linux-x64", platformSelected: true } } },
     });
-    expect(defaults).toEqual({ accelerator: "gpu" });
+    expect(defaults).toEqual({ accelerator: "gpu", write_full_pae: false });
   });
 });
 
@@ -411,5 +411,38 @@ describe("boltzAdapter.verifyInstallation", () => {
     });
     expect(result.passed).toBe(false);
     expect(result.output).toContain("MPS backend is not available");
+  });
+});
+
+describe("Boltz full PAE export", () => {
+  const context = (outputDir: string, params: Record<string, unknown> = {}, platform: "darwin-arm64" | "linux-x64" = "linux-x64") => ({
+    manifestName: "boltz", inputPath: "/input/job.yaml", outputDir, modelDir: "/model", assetsDir: "/assets", runtimeExecutable: "/venv/bin/python", params, platform,
+  });
+  it.each(["darwin-arm64", "linux-x64"] as const)("maps true/false explicitly on %s", async (platform) => {
+    const yes = await boltzAdapter.command(context(tempDir(), { write_full_pae: true }, platform));
+    const no = await boltzAdapter.command(context(tempDir(), { write_full_pae: false }, platform));
+    const omitted = await boltzAdapter.command(context(tempDir(), {}, platform));
+    expect(yes.args).toContain("--write_full_pae");
+    expect(no.args.includes("--no_write_full_pae")).toBe(platform === "darwin-arm64");
+    expect(no.args).not.toContain("--write_full_pae");
+    expect(omitted.args).not.toContain("--write_full_pae");
+    expect(omitted.args).not.toContain("--no_write_full_pae");
+  });
+  it("collects every array, and fails if one requested PAE is missing or symlinked", async () => {
+    const root = tempDir();
+    for (const record of ["first", "second"]) for (const rank of [0, 1]) {
+      const dir = path.join(root, "boltz_results_job/predictions", record);
+      fs.mkdirSync(dir, { recursive: true });
+      for (const [name, data] of [[`${record}_model_${rank}.cif`, "data_x\n"], [`confidence_${record}_model_${rank}.json`, "{}"], [`pae_${record}_model_${rank}.npz`, "binary"], [`plddt_${record}_model_${rank}.npz`, "binary"]]) fs.writeFileSync(path.join(dir, name), data);
+    }
+    const outputs = await boltzAdapter.collectOutputs(context(root, { write_full_pae: true }));
+    expect(outputs.filter((o) => o.id === "pae")).toHaveLength(4);
+    expect(outputs.filter((o) => o.id === "plddt")).toHaveLength(4);
+    const missing = path.join(root, "boltz_results_job/predictions/second/pae_second_model_1.npz");
+    fs.rmSync(missing);
+    await expect(boltzAdapter.collectOutputs(context(root, { write_full_pae: true }))).rejects.toMatchObject({ code: "MISSING_REQUIRED_OUTPUT" });
+    fs.symlinkSync(path.join(root, "boltz_results_job/predictions/first/pae_first_model_1.npz"), missing);
+    await expect(boltzAdapter.collectOutputs(context(root, { write_full_pae: true }))).rejects.toMatchObject({ code: "MISSING_REQUIRED_OUTPUT" });
+    expect((await boltzAdapter.collectOutputs(context(root, { write_full_pae: false }))).filter((o) => o.id === "pae")).toHaveLength(3);
   });
 });
