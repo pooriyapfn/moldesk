@@ -1,9 +1,10 @@
 // Step 1 packaging gate: packs every published workspace package, installs those
 // tarballs into an unrelated temporary project, and runs the installed CLI binary.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,9 @@ try {
     ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...tarballs],
     { cwd: installDir, stdio: "inherit" },
   );
+  // The workflow store opens better-sqlite3, whose install script fetches/builds its native
+  // binary. The tarball install above skips scripts, so rebuild just that dependency.
+  execFileSync("npm", ["rebuild", "better-sqlite3"], { cwd: installDir, stdio: "inherit" });
 
   const installedRegistryModels = path.join(
     installDir,
@@ -134,6 +138,108 @@ try {
   const analysis = run(["analyze", structure, "--json"]);
   if (analysis.kind !== "moldesk.analysis" || analysis.result.chains[0]?.sequence !== "A") {
     throw new Error(`Installed moldesk analyze returned an unexpected result: ${JSON.stringify(analysis)}`);
+  }
+
+  // Workflow planning opens the durable plan store, so the packaged better-sqlite3 native binary
+  // must load from the isolated install. Run the CPU example from the unrelated cwd.
+  const workflowFile = path.join(unrelatedCwd, "verify-workflow.yaml");
+  fs.writeFileSync(
+    workflowFile,
+    [
+      "apiVersion: moldesk.ai/v1alpha1",
+      "kind: Workflow",
+      "metadata:",
+      "  name: pack-verify",
+      "  version: 0.1.0",
+      "spec:",
+      "  inputs:",
+      "    structure:",
+      "      type: structure_file",
+      "      required: true",
+      "  execution:",
+      "    backend: local",
+      "    cache: true",
+      "    max_parallel: 1",
+      "  steps:",
+      "    - id: import",
+      "      uses: moldesk/import-structure@1",
+      "      with:",
+      "        file: ${inputs.structure}",
+      "      outputs:",
+      "        structure: protein_structure",
+      "    - id: analyze",
+      "      uses: moldesk/structure-analysis@1",
+      "      needs: [import]",
+      "      with:",
+      "        structure: ${steps.import.outputs.structure}",
+      "      outputs:",
+      "        report: json",
+      "",
+    ].join("\n"),
+  );
+  const plan = run(["workflow", "plan", workflowFile, "--input", `structure=${structure}`, "--json"]);
+  if (
+    plan.status !== "ok" ||
+    !plan.planId ||
+    plan.steps.map((step) => step.id).join(",") !== "import,analyze" ||
+    plan.edges.length !== 1
+  ) {
+    throw new Error(`Installed moldesk workflow plan returned an unexpected result: ${JSON.stringify(plan)}`);
+  }
+
+  // Studio must serve its page and API from the packed CLI without a repo checkout.
+  const studio = spawn(cliBin, ["studio", "--workspace", unrelatedCwd, "--no-open", "--json"], {
+    cwd: unrelatedCwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    const studioInfo = await new Promise((resolve, reject) => {
+      const lines = readline.createInterface({ input: studio.stdout });
+      let buffer = "";
+      lines.on("line", (line) => {
+        buffer += `${buffer ? "\n" : ""}${line}`;
+        try {
+          const value = JSON.parse(buffer);
+          lines.close();
+          resolve(value);
+        } catch {
+          // The JSON block is pretty-printed across several lines; keep reading.
+        }
+      });
+      studio.once("exit", (code) => reject(new Error(`Studio exited before printing its URL (${code}).`)));
+    });
+    if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(studioInfo.url ?? "")) {
+      throw new Error(`Studio returned an unexpected URL: ${studioInfo.url}`);
+    }
+    const page = await (await fetch(studioInfo.url)).text();
+    const session = /const SESSION = "([a-f0-9]+)";/.exec(page)?.[1];
+    if (!page.includes("MoleDesk Studio") || !session) {
+      throw new Error("Packed Studio page is missing its page or session.");
+    }
+    const rejected = await fetch(`${studioInfo.url}/api/workspace`);
+    if (rejected.status !== 403) throw new Error("Studio API accepted a request without its session.");
+    const workspace = await (
+      await fetch(`${studioInfo.url}/api/workspace`, { headers: { "x-studio-session": session } })
+    ).json();
+    if (!workspace.files?.some((file) => file.path === "verify-workflow.yaml")) {
+      throw new Error(`Packed Studio did not list the workspace workflow: ${JSON.stringify(workspace)}`);
+    }
+    // Studio must never create approvals: a run request without a terminal approvalId is refused.
+    const noApproval = await fetch(`${studioInfo.url}/api/runs`, {
+      method: "POST",
+      headers: { "x-studio-session": session, origin: studioInfo.url, "content-type": "application/json" },
+      body: JSON.stringify({ planId: "0".repeat(64) }),
+    });
+    if (noApproval.status < 400 || noApproval.status >= 500) {
+      throw new Error(`Packed Studio did not reject a run without an approvalId (HTTP ${noApproval.status}).`);
+    }
+  } finally {
+    studio.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (studio.exitCode !== null || studio.signalCode !== null) resolve();
+      else studio.once("exit", resolve);
+    });
   }
 
   // Update lifecycle with the installed CLI: unchanged report is up to date; a stale one is

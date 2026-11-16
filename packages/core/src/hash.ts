@@ -6,6 +6,11 @@ export function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+/** sha256 of UTF-8 text, for byte-exact hashes such as a workflow source hash. */
+export function sha256Text(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
 /** sha256 of a file's contents, streamed rather than loaded fully into memory. */
 export async function sha256File(filePath: string): Promise<string> {
   const hash = createHash("sha256");

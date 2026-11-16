@@ -50,6 +50,30 @@ const EXIT_CODES: Record<string, number> = {
   COMPILER_NOT_FOUND: 2,
   NO_POLYMER_CHAINS: 2,
   VIEW_CANCELLED: 8,
+  INVALID_WORKFLOW_INPUT: 2,
+  WORKFLOW_INVALID: 2,
+  WORKFLOW_PLAN_FAILED: 2,
+  WORKFLOW_PLAN_NOT_FOUND: 2,
+  WORKFLOW_APPROVAL_NOT_FOUND: 2,
+  WORKFLOW_APPROVAL_USED: 2,
+  WORKFLOW_APPROVAL_DECLINED: 2,
+  WORKFLOW_APPROVAL_REQUIRES_TTY: 2,
+  WORKFLOW_RUN_NOT_FOUND: 2,
+  WORKFLOW_OWNER_BUSY: 2,
+  WORKFLOW_OWNER_LOST: 2,
+  WORKFLOW_ATTEMPT_INTERRUPTED: 10,
+  WORKFLOW_INPUT_CHANGED: 2,
+  WORKFLOW_ARTIFACT_DAMAGED: 2,
+  WORKFLOW_ARTIFACT_OUTSIDE_RUN: 2,
+  WORKFLOW_RUN_STATE_DAMAGED: 2,
+  WORKFLOW_MODEL_ATTEMPT_UNRESOLVED: 2,
+  WORKFLOW_MODEL_INSTALLATION_MISMATCH: 2,
+  WORKFLOW_STRUCTURE_NO_PROTEIN: 2,
+  WORKFLOW_MISSING_OUTPUT: 2,
+  WORKFLOW_MODEL_FAILED: 10,
+  WORKFLOW_MODEL_OUTPUT_INVALID: 10,
+  WORKFLOW_STEP_FAILED: 10,
+  WORKFLOW_RUN_CANCELLED: 8,
 };
 
 /** Prints an error as JSON (stdout, one object) or text (stderr) and sets the exit code. */
@@ -62,4 +86,14 @@ export function reportFailure(error: unknown, json: boolean | undefined): void {
     if (err.remediation) console.error(err.remediation);
   }
   process.exitCode = EXIT_CODES[err.code] ?? 10;
+}
+
+/**
+ * Exit code for a workflow run that finished (or was reported) with `status`. Succeeded and
+ * still-active runs exit 0; cancelled exits 8; failed/interrupted use the run error's mapping, else 10.
+ */
+export function exitCodeForWorkflowRun(status: string, error?: { code: string }): number {
+  if (status === "cancelled") return 8;
+  if (status === "failed" || status === "interrupted") return (error && EXIT_CODES[error.code]) || 10;
+  return 0;
 }

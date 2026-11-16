@@ -1,0 +1,28 @@
+apiVersion: moldesk.ai/v1alpha1
+kind: Workflow
+metadata:
+  name: structure-analysis
+  version: 0.1.0
+spec:
+  inputs:
+    structure:
+      type: structure_file
+      required: true
+  execution:
+    backend: local
+    cache: true
+    max_parallel: 1
+  steps:
+    - id: import
+      uses: moldesk/import-structure@1
+      with:
+        file: ${inputs.structure}
+      outputs:
+        structure: protein_structure
+    - id: analyze
+      uses: moldesk/structure-analysis@1
+      needs: [import]
+      with:
+        structure: ${steps.import.outputs.structure}
+      outputs:
+        report: json

@@ -89,6 +89,113 @@ Fetch, analyze, predict, compare, inspect. The repository's `examples/egfr-end-t
 
 ---
 
+## 10. Declarative YAML workflow (import → analyze)
+
+Use this when the user wants a repeatable pipeline rather than one model run. The shipped example validates a local PDB/mmCIF and analyzes it; a Boltz variant predicts one chain first. Agents discover the schema, write and plan the workflow, and show the plan. The user approves it in their own terminal; only then can the agent run it.
+
+1. **Check the capability.** If `moldesk --help` does not list `workflow`, the installed CLI is older than this feature. Tell the user the declarative-workflow capability is unavailable and that updating the CLI adds it. Do not substitute ad-hoc commands for a workflow the user asked for.
+
+2. **Discover the live schema and contracts.** Do not guess fields:
+
+   ```bash
+   moldesk workflow schema --json
+   ```
+
+   Read `schema` for the accepted YAML shape and `operations` for each operation's `uses`, required `with` bindings, output types, backend, and requirements. For model details such as parameters, formats, and whether a local install is ready, run `moldesk describe boltz --json`. Check installs with `moldesk list`.
+
+3. **Write the YAML in the task folder**, for example `./moldesk-work/<task>/structure-analysis.yaml`. Inputs declared by the document are bound later, not embedded as paths. A minimal import → analyze document is:
+
+   ```yaml
+   apiVersion: moldesk.ai/v1alpha1
+   kind: Workflow
+   metadata:
+     name: structure-analysis
+     version: 0.1.0
+   spec:
+     inputs:
+       structure:
+         type: structure_file
+         required: true
+     execution:
+       backend: local
+       cache: true
+       max_parallel: 1
+     steps:
+       - id: import
+         uses: moldesk/import-structure@1
+         with:
+           file: ${inputs.structure}
+         outputs:
+           structure: protein_structure
+       - id: analyze
+         uses: moldesk/structure-analysis@1
+         needs: [import]
+         with:
+           structure: ${steps.import.outputs.structure}
+         outputs:
+           report: json
+   ```
+
+   For a model smoke, replace the `structure` input with a required `sequence: protein_sequence`, replace `import` with a `predict` step using `moldesk/boltz@1`, and bind `analyze.structure` to `${steps.predict.outputs.structure}`. The Boltz contract is single-chain, standard amino acids only, and needs a ready local `boltz` installation. It never sends the sequence to an MSA server.
+
+4. **Validate the draft**, before any file staging or model work:
+
+   ```bash
+   moldesk workflow validate ./moldesk-work/<task>/structure-analysis.yaml --json
+   ```
+
+   A valid document returns `valid: true`, `order` and `edges`. Otherwise fix each diagnostic. Read `details.diagnostics[]` and report `code`, `message`, `path`, and `line`/`column` to the user; the path names the YAML field.
+
+5. **Plan with explicit input bindings.** Use the user's real file or sequence, resolved from the current working directory:
+
+   ```bash
+   moldesk workflow plan ./moldesk-work/<task>/structure-analysis.yaml --input structure=./moldesk-work/<task>/1CRN.pdb --json
+   ```
+
+   Bindings are one per declared input; a missing, unknown, or duplicate binding exits `2`. The plan returns `planId`, `workflowSha256`, resolved `inputs` with size and SHA-256, ordered `steps`, `edges`, and runtime `requirements`. Show the user the resolved inputs, the step order, and the required backend or installed model. A changed input file or installation produces a new `planId`.
+
+6. **Get the user's approval.** Ask the user to run this in their own terminal, then give you the `approvalId`:
+
+   ```bash
+   moldesk workflow approve <plan-id> --json
+   ```
+
+   The CLI prints the plan again, asks for confirmation, and returns a one-use `approvalId` bound to that exact plan. Never run `approve` yourself and never fabricate an approval. If they report that approval requires a terminal, they must rerun it interactively.
+
+7. **Run the approved plan** and wait for the outcome:
+
+   ```bash
+   moldesk workflow run <approval-id> --json
+   ```
+
+   The run is durable. Report `runStatus`, each step's `status` and `attempt`, and any `error.code` with its message. Resubmitting the same receipt returns the original `runId` with `duplicate: true`; it does not start another executor.
+
+8. **Inspect the run.** Use the returned `runId`:
+
+   ```bash
+   moldesk workflow status <run-id> --json
+   moldesk workflow artifacts <run-id> --json
+   ```
+
+   `status` is the durable source of truth (`queued`, `running`, `succeeded`, `failed`, `cancelled`, `interrupted`) with steps, events, and errors. `artifacts` lists committed typed artifacts with `type`, `format`, `relativePath`, `sha256`, `sizeBytes`, and `verified`. Only use artifacts whose `verified` is true. The import step writes the validated structure (`structure.pdb` or `structure.cif`), and the analysis step writes the unchanged `moldesk.analysis` envelope to `report.json` under `steps/<step>/attempt-<n>/`; use the artifact `path`. A step with status `cached` reused an identical earlier result and counts as success. For the Boltz variant, the `predict` step's `childRunId` names the child model run that keeps the logs and confidence outputs; if prediction failed, the child run ID is in the step error message.
+
+9. **Recover or cancel when needed.** For a run reported as `interrupted`, or one whose owner is gone, resume it from verified outputs. A `failed` run can also be resumed, but only after the cause in the step error is fixed:
+
+   ```bash
+   moldesk workflow resume <run-id> --json
+   ```
+
+   Resume reuses verified completed attempts and restarts interrupted CPU work; it refuses damaged outputs and unresolved in-flight prediction attempts rather than relaunching a maybe-live job. To stop a run, request cancellation and then inspect status:
+
+   ```bash
+   moldesk workflow cancel <run-id> --json
+   moldesk workflow status <run-id> --json
+   ```
+
+   Report results honestly: these are computations, not experimental validation, and a cancelled or failed run is a result to report, not to hide or retry silently.
+
+---
+
 ## Reporting back
 
 For every run, tell the user:

@@ -179,3 +179,108 @@ export { freezeBinderGeneration, freezeBinderTarget, prepareBinderPredictions, s
 export type { FrozenBinderGeneration, FrozenBinderTarget, BinderRoles, PreparedBinderCandidate } from "./binders/prepare.js";
 export { collectBinderPredictionSample, rankBinderCandidates, validateBinderCampaign, writeBinderCandidateTable, binderCandidatesCsv } from "./binders/campaign.js";
 export type { BinderCampaignManifest, BinderCandidateState, BinderPredictionSample, BinderCandidateRow } from "./binders/campaign.js";
+
+export {
+  MAX_WORKFLOW_BYTES,
+  WORKFLOW_API_VERSION,
+  parseWorkflowDocument,
+  parseWorkflowReference,
+  workflowJsonSchema,
+} from "./workflows/schema.js";
+export type {
+  WorkflowDiagnostic,
+  WorkflowDocument,
+  WorkflowExecution,
+  WorkflowInputDeclaration,
+  WorkflowParseResult,
+  WorkflowReference,
+  WorkflowStep,
+} from "./workflows/schema.js";
+export {
+  MAX_PROTEIN_SEQUENCE_LENGTH,
+  WORKFLOW_INPUT_TYPES,
+  WORKFLOW_OPERATION_IDS,
+  WORKFLOW_OPERATIONS,
+  buildBoltzMonomerInput,
+  getWorkflowOperation,
+  normalizeProteinSequence,
+  workflowOperationCatalog,
+} from "./workflows/operations.js";
+export type {
+  BoltzMonomerInput,
+  WorkflowBackend,
+  WorkflowOperation,
+  WorkflowOperationId,
+  WorkflowOperationInput,
+  WorkflowOperationOutput,
+  WorkflowValueType,
+} from "./workflows/operations.js";
+export {
+  WORKFLOW_PLAN_SCHEMA_VERSION,
+  planWorkflow,
+  resolveWorkflowModelRequirement,
+  validateWorkflow,
+} from "./workflows/compiler.js";
+export type {
+  PlanWorkflowOptions,
+  WorkflowCompileResult,
+  WorkflowModelAsset,
+  WorkflowModelRequirement,
+  WorkflowPlan,
+  WorkflowPlanBinding,
+  WorkflowPlanEdge,
+  WorkflowPlanResult,
+  WorkflowPlanStep,
+  WorkflowResolvedInput,
+  WorkflowStepRequirement,
+} from "./workflows/compiler.js";
+export { approveWorkflowPlan } from "./workflows/approval.js";
+export type {
+  ApproveWorkflowPlanOptions,
+  WorkflowApprovalConfirmer,
+  WorkflowApprovalSummary,
+} from "./workflows/approval.js";
+export {
+  WorkflowStore,
+  getWorkflowPlan,
+  storeWorkflowPlan,
+} from "./workflows/store.js";
+export type {
+  NewWorkflowArtifact,
+  RunOwner,
+  WorkflowApprovalRecord,
+  WorkflowArtifactRecord,
+  WorkflowAttemptOutputs,
+  WorkflowAttemptRecord,
+  WorkflowCacheFile,
+  WorkflowCacheRecord,
+  WorkflowErrorInfo,
+  WorkflowEventRecord,
+  WorkflowPlanRecord,
+  WorkflowRunRecord,
+  WorkflowRunStatus,
+  WorkflowStepOutput,
+  WorkflowStepStatus,
+} from "./workflows/store.js";
+export {
+  cancelWorkflowRun,
+  executeWorkflowRun,
+  getWorkflowArtifacts,
+  getWorkflowStatus,
+  resumeWorkflowRun,
+  startWorkflowResume,
+  startWorkflowRun,
+  submitWorkflowRun,
+  workflowRunDirectory,
+} from "./workflows/execute.js";
+export type {
+  StartedWorkflowResume,
+  StartedWorkflowRun,
+  SubmittedWorkflowRun,
+  WorkflowArtifactView,
+  WorkflowExecutionOptions,
+  WorkflowRunSummary,
+  WorkflowStageInput,
+  WorkflowStatusView,
+  WorkflowStepSummary,
+} from "./workflows/execute.js";

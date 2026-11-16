@@ -13,9 +13,11 @@ import { registerInstallCommand } from "./commands/install.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerScoreCommand } from "./commands/score.js";
 import { registerSchemaCommand } from "./commands/schema.js";
+import { registerStudioCommand } from "./commands/studio.js";
 import { registerUninstallCommand } from "./commands/uninstall.js";
 import { registerViewCommand } from "./commands/view.js";
 import { registerVisualizerCommand } from "./commands/visualizer.js";
+import { registerWorkflowCommand } from "./commands/workflow.js";
 
 const program = new Command();
 
@@ -39,5 +41,7 @@ registerScoreCommand(program);
 registerSchemaCommand(program);
 registerCloudCommand(program);
 registerVisualizerCommand(program);
+registerWorkflowCommand(program);
+registerStudioCommand(program);
 
 program.parse();

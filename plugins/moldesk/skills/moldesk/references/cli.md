@@ -85,6 +85,65 @@ One document for a model: `parameters[]` (exactly the names `moldesk run <model>
 
 Always prints JSON: the JSON Schema (draft-07) for `moldesk.analysis`, `moldesk.inspect`, `moldesk.compare`, `moldesk.fetch` or `moldesk.model`; without a kind it lists them.
 
+## `moldesk workflow` commands
+
+Declarative YAML workflows chain local operations. The document, its JSON Schema, and the registered operation contracts come from the core compiler; planning resolves inputs and installed models but never starts a run. An approval receipt is the only way to start one. See [workflows.md](workflows.md) for the agent recipe.
+
+Operation IDs: `moldesk/import-structure@1` (`file: structure_file` → `structure: protein_structure`), `moldesk/structure-analysis@1` (`structure: protein_structure` → `report: json`) and `moldesk/boltz@1` (`sequence: protein_sequence` → `structure: protein_structure`, one chain, requires a ready local `boltz` install). Input types are `structure_file` and `protein_sequence`; references are whole-value `${inputs.<name>}` or `${steps.<id>.outputs.<name>}` only.
+
+Workflow commands share the CLI error envelope (`status: "error"`, `code`, `message`, `remediation`, optional `details`) and print one JSON value on stdout. Validation and planning problems exit `2`. A run that ends `cancelled` exits `8`; one that ends `failed` or `interrupted` exits with its error code's mapping (`10` for step and model failures, `2` for problems such as a damaged artifact, a structure without a protein chain, or a changed model installation). Read the JSON `status` and `runStatus` rather than the exit code. Diagnostics carry `code`, `message`, `path`, and one-based `line`/`column` when the YAML source is available.
+
+## `moldesk workflow schema [--json]`
+
+Prints `{ schema, operations }`: the exact draft-07 JSON Schema for the workflow document and the operation map used for validation. Read it instead of guessing fields, flags, or contracts. For a model's parameters and installation verdict, also run `moldesk describe <model> --json`.
+
+## `moldesk workflow validate <file> [--json]`
+
+Validates the YAML bytes only; it does not resolve inputs or read structures. Checks the API version, metadata, declared inputs, step IDs, `uses`, `needs`, references, cycles, and declared output types. Result: `status`, `valid`, `order` (steps in execution order), `edges[]` (`from`, `to`), `diagnostics[]`. Invalid input exits `2` with `WORKFLOW_INVALID`; in JSON the diagnostics are under `details.diagnostics`.
+
+## `moldesk workflow plan <file> [--input <name=value>] [--json]`
+
+Validates, then resolves every declared input, hashes file inputs, and binds the local runtime. Relative file inputs resolve against the caller's working directory. For `moldesk/boltz@1` the plan selects the existing ready Python installation, records its model and adapter versions, manifest digest, runtime and environment fingerprints, source revision, and asset checksums. A missing or changed install is a planning diagnostic.
+
+- `--input name=value` is repeatable, one binding per input. A duplicate, malformed, missing, or unknown binding fails with `INVALID_WORKFLOW_INPUT` or `WORKFLOW_PLAN_FAILED` (exit `2`).
+- The plan is stored by `planId`; plan ids are deterministic for the same YAML bytes and resolved inputs. File inputs include their canonical absolute path, so the same bytes at another path yield another plan id.
+
+JSON result: `status`, `schemaVersion`, `workflowSha256`, `planId`, `inputs` (`type`, `value`, `format`, `sizeBytes`, `sha256`), `steps[]` (`id`, `uses`, `operationVersion`, `needs`, `bindings[]`, `outputs[]`), `edges[]`, `requirements[]` (`stepId`, `backend`, `operationVersion`, optional `model` identity), and empty `diagnostics[]`. Show this plan to the user before approval.
+
+## `moldesk workflow approve <plan-id> [--json]`
+
+Prints the stored plan, then asks the person to confirm on a human terminal. Without a terminal it exits `2` with `WORKFLOW_APPROVAL_REQUIRES_TTY` and does not create a receipt. Requires the exact stored `planId` (`WORKFLOW_PLAN_NOT_FOUND` otherwise). JSON result: `status`, `approvalId`, `planId`, `plan`. The `approvalId` is one-use and bound to that plan; give it to the agent only after approving.
+
+## `moldesk workflow run <approval-id> [--json]`
+
+Consumes the one-use receipt, claims the run, executes ready steps in planned order, and waits in the foreground. A second submission with the same receipt returns the original `runId` with `duplicate: true` and starts no second executor. JSON result: `status` (`ok` for a good run, or `failed`/`cancelled`/`interrupted`), `runId`, `planId`, `runStatus`, `steps[]`, `artifacts[]`, `events[]`, `runDir`, optional `error`, and `duplicate`.
+
+## `moldesk workflow status <run-id> [--json]`
+
+Prints the durable state from SQLite. Result: `status: "ok"`, `runId`, `planId`, `runStatus` (`queued`, `running`, `succeeded`, `failed`, `cancelled`, `interrupted`), `steps[]` (each `id`, `uses`, `status`, `attempt`, optional `error`, optional `outputs`, and `childRunId` for a model step that produced a result), `artifacts[]`, `events[]` (append-only, increasing `id`) and `runDir`. Step `status` is `pending`, `running`, `succeeded`, `cached` (reused from an identical earlier CPU step; a success), `failed`, `cancelled`, or `skipped` (never started because the run was cancelled or stopped).
+
+## `moldesk workflow artifacts <run-id> [--json]`
+
+Lists committed artifacts with `id`, `type`, `format`, `relativePath`, `sha256`, `sizeBytes`, `producerStepId`, `stepId`, `createdAt`, plus `path` and `verified`. `verified` is false when the file is missing, outside the run, or its hash changed; do not use an unverified artifact.
+
+## `moldesk workflow resume <run-id> [--json]`
+
+Resumes an `interrupted` or `failed` run (or a `running` run whose owner is gone) from verified outputs. A `succeeded` run is returned unchanged; a `cancelled` run needs a new approval. Completed attempts are reused after hash and key checks; interrupted CPU work restarts in a new attempt directory. Damaged prior outputs and unresolved in-flight model attempts are rejected with recovery instructions and are never relaunched blindly. Resume a `failed` run only after fixing the cause the step error names; it reruns the failed step with the same plan.
+
+## `moldesk workflow cancel <run-id> [--json]`
+
+Records a durable cancellation request. The owning process turns it into an abort for model execution and checks it before publishing CPU outputs. Result: `status`, `runId`, `runStatus`, `cancelRequested`. Inspect with `status`; a run that already finished is unchanged.
+
+## `moldesk studio --workspace <dir> [--no-open] [--json]`
+
+Starts a loopback-only Studio (`127.0.0.1`, OS-assigned port) for a workflow workspace. Open the printed URL, load a workspace YAML draft, edit inputs, validate and plan, approve the plan in a terminal, paste the approval receipt, then click Run. The page shows the read-only DAG and node details from the core plan, streams committed run events, and exposes status, cancellation, resume, artifact downloads and offline structure previews. `--no-open` keeps the launch scriptable; the process stays in the foreground until Ctrl+C.
+
+Studio never creates approvals. After Plan it shows the plan ID and the command `moldesk workflow approve <planId> --json`; a person runs that in a terminal (core requires an interactive confirmation), then pastes the returned `approvalId` into Studio. Run is enabled only with a selected plan and a pasted `approvalId`, and starts that one-use receipt through the same submission service as the CLI. A draft or binding edit clears the selected plan and the pasted receipt so a stale plan cannot be run. Requests are limited to the configured workspace and managed run artifacts; mutations require the exact loopback Origin and the per-launch session.
+
+```sh
+node apps/cli/dist/index.js studio --workspace "$PWD" --no-open
+```
+
 ## `moldesk visualizer update <report> [--output <file>] [--open] [--yes] [--json]`
 
 Replaces the viewer inside an older report with the one installed now.

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { flattenDocsNav } from "@/lib/docs-nav";
+import { getBlogPost } from "@/lib/blog";
 
 export function generateStaticParams() {
   return flattenDocsNav()
@@ -44,6 +45,6 @@ export async function generateMetadata({
   return {
     title: `${doc.metadata.title} — MoleculeDesk Docs`,
     description: doc.metadata.description,
-    alternates: { canonical: `/docs/${slug.join("/")}` },
+    alternates: { canonical: slug.length === 2 && slug[0] === "guides" && getBlogPost(slug[1]) ? `/blog/${slug[1]}` : `/docs/${slug.join("/")}` },
   };
 }
