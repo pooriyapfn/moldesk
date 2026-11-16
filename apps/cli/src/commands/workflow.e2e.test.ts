@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
+import { getWorkflowPlan } from "@moldesk/core";
 import { registerWorkflowCommand } from "./workflow.js";
 
 // Runs the real @moldesk/core compiler (no mocks) through the CLI command.
@@ -50,9 +51,15 @@ function singleJson(): Record<string, unknown> {
   return JSON.parse(logs[0]!) as Record<string, unknown>;
 }
 
-/** Planning may read installation state but must never create run, model, or state records. */
+/** Validation must never create run or model records. */
 function expectNoHomeWrites(): void {
   expect(fs.existsSync(home) ? fs.readdirSync(home, { recursive: true }) : []).toEqual([]);
+}
+
+/** Step 3 persists the plan, but planning must still create no run directories or step attempts. */
+function expectPlanOnly(): void {
+  expect(fs.existsSync(path.join(home, "state", "workflows.sqlite"))).toBe(true);
+  expect(fs.existsSync(path.join(home, "runs"))).toBe(false);
 }
 
 describe("moldesk workflow (real compiler)", () => {
@@ -79,7 +86,8 @@ describe("moldesk workflow (real compiler)", () => {
     logs = [];
     await run("plan", EXAMPLE, "--input", `structure=${FIXTURE}`, "--json");
     expect(singleJson()["planId"]).toBe(plan["planId"]);
-    expectNoHomeWrites();
+    expect(getWorkflowPlan(String(plan["planId"]))?.workflowSha256).toBe(plan["workflowSha256"]);
+    expectPlanOnly();
   });
 
   it("returns one JSON error with positioned diagnostics for an invalid DAG and exits 2", async () => {

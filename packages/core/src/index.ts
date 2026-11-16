@@ -234,3 +234,46 @@ export type {
   WorkflowResolvedInput,
   WorkflowStepRequirement,
 } from "./workflows/compiler.js";
+export {
+  WorkflowStore,
+  createWorkflowApproval,
+  getWorkflowPlan,
+  storeWorkflowPlan,
+} from "./workflows/store.js";
+export type {
+  NewWorkflowArtifact,
+  RunOwner,
+  WorkflowApprovalRecord,
+  WorkflowArtifactRecord,
+  WorkflowAttemptOutputs,
+  WorkflowAttemptRecord,
+  WorkflowCacheFile,
+  WorkflowCacheRecord,
+  WorkflowErrorInfo,
+  WorkflowEventRecord,
+  WorkflowPlanRecord,
+  WorkflowRunRecord,
+  WorkflowRunStatus,
+  WorkflowStepOutput,
+  WorkflowStepStatus,
+} from "./workflows/store.js";
+export {
+  cancelWorkflowRun,
+  executeWorkflowRun,
+  getWorkflowArtifacts,
+  getWorkflowStatus,
+  resumeWorkflowRun,
+  startWorkflowRun,
+  submitWorkflowRun,
+  workflowRunDirectory,
+} from "./workflows/execute.js";
+export type {
+  StartedWorkflowRun,
+  SubmittedWorkflowRun,
+  WorkflowArtifactView,
+  WorkflowExecutionOptions,
+  WorkflowRunSummary,
+  WorkflowStageInput,
+  WorkflowStatusView,
+  WorkflowStepSummary,
+} from "./workflows/execute.js";

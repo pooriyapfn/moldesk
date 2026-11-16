@@ -4,12 +4,24 @@ import type { Command } from "commander";
 import {
   MAX_WORKFLOW_BYTES,
   MoldeskError,
+  cancelWorkflowRun,
+  createWorkflowApproval,
+  executeWorkflowRun,
+  getWorkflowArtifacts,
+  getWorkflowPlan,
+  getWorkflowStatus,
   planWorkflow,
+  resumeWorkflowRun,
+  storeWorkflowPlan,
+  submitWorkflowRun,
   validateWorkflow,
   workflowJsonSchema,
   type WorkflowDiagnostic,
+  type WorkflowPlan,
+  type WorkflowRunSummary,
 } from "@moldesk/core";
-import { reportFailure } from "../utils/report-errors.js";
+import { confirm } from "../utils/confirm.js";
+import { exitCodeForWorkflowRun, reportFailure } from "../utils/report-errors.js";
 
 interface WorkflowJsonOptions {
   json?: boolean;
@@ -110,6 +122,75 @@ function reportDiagnostics(
   );
 }
 
+function workflowResult(summary: WorkflowRunSummary, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    status: "ok",
+    runId: summary.runId,
+    planId: summary.planId,
+    runStatus: summary.status,
+    steps: summary.steps,
+    artifacts: summary.artifacts,
+    events: summary.events,
+    runDir: summary.runDir,
+    ...(summary.error ? { error: summary.error } : {}),
+    ...extra,
+  };
+}
+
+/** `run` and `resume` report `status: "ok"` only for a run that did not fail, cancel or get interrupted. */
+function runOutcome(summary: WorkflowRunSummary, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const finishedBadly = summary.status === "failed" || summary.status === "cancelled" || summary.status === "interrupted";
+  return workflowResult(summary, { ...(finishedBadly ? { status: summary.status } : {}), ...extra });
+}
+
+function reportRun(summary: WorkflowRunSummary, json: boolean | undefined, extra: Record<string, unknown> = {}): void {
+  if (json) console.log(JSON.stringify(runOutcome(summary, extra), null, 2));
+  else printRun(summary);
+  const code = exitCodeForWorkflowRun(summary.status, summary.error);
+  if (code !== 0) process.exitCode = code;
+}
+
+/** Aborts `controller` on SIGINT/SIGTERM, as `moldesk run` does; the returned fn removes the handlers. */
+function abortOnSignals(controller: AbortController): () => void {
+  const onSignal = (): void => controller.abort();
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  return () => {
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+  };
+}
+
+function statusSummary(runId: string): WorkflowRunSummary {
+  const status = getWorkflowStatus(runId);
+  return {
+    runId: status.run.runId,
+    planId: status.run.planId,
+    status: status.run.status,
+    steps: status.steps,
+    artifacts: status.artifacts,
+    events: status.events,
+    ...(status.run.error ? { error: status.run.error } : {}),
+    runDir: status.runDir,
+  };
+}
+
+function printRun(summary: WorkflowRunSummary): void {
+  console.log(`${summary.status} ${summary.runId} (${summary.steps.length} steps, ${summary.artifacts.length} artifacts)`);
+  for (const step of summary.steps) console.log(`  ${step.id}: ${step.status} (attempt ${step.attempt})`);
+  if (summary.error) console.log(`  error: ${summary.error.code}: ${summary.error.message}`);
+}
+
+function planText(plan: WorkflowPlan): string {
+  const lines = [`Plan ${plan.planId}`, `Workflow sha256 ${plan.workflowSha256}`];
+  for (const [name, input] of Object.entries(plan.inputs)) {
+    const detail = input.format ? ` (${input.format}, ${input.sizeBytes} bytes)` : "";
+    lines.push(`  input ${name}: ${input.value}${detail}`);
+  }
+  lines.push(`  steps: ${plan.steps.map((step) => step.id).join(" → ")}`);
+  return lines.join("\n");
+}
+
 export function registerWorkflowCommand(program: Command): void {
   const workflow = program
     .command("workflow")
@@ -161,24 +242,22 @@ export function registerWorkflowCommand(program: Command): void {
     .option("--json", "print JSON")
     .action((file: string, options: WorkflowPlanOptions) => {
       try {
-        const result = planWorkflow(readWorkflowSource(file), {
+        const source = readWorkflowSource(file);
+        const result = planWorkflow(source, {
           inputs: parseInputValues(options.input),
           cwd: process.cwd(),
         });
 
         if (!result.valid || !result.plan) {
           reportDiagnostics("WORKFLOW_PLAN_FAILED", result.diagnostics, options.json);
-        } else if (options.json) {
+          return;
+        }
+        storeWorkflowPlan(source.toString("utf8"), result.plan);
+        if (options.json) {
           console.log(JSON.stringify({ status: "ok", ...result.plan }, null, 2));
         } else {
           const plan = result.plan;
-          console.log(`Plan ${plan.planId}`);
-          console.log(`Workflow sha256 ${plan.workflowSha256}`);
-          for (const [name, input] of Object.entries(plan.inputs)) {
-            const detail = input.format ? ` (${input.format}, ${input.sizeBytes} bytes)` : "";
-            console.log(`  input ${name}: ${input.value}${detail}`);
-          }
-          console.log(`  steps: ${plan.steps.map((step) => step.id).join(" → ")}`);
+          console.log(planText(plan));
           for (const requirement of plan.requirements) {
             if (requirement.model) {
               console.log(
@@ -186,6 +265,134 @@ export function registerWorkflowCommand(program: Command): void {
               );
             }
           }
+        }
+      } catch (error) {
+        reportFailure(error, options.json);
+      }
+    });
+
+  workflow
+    .command("approve <plan-id>")
+    .description("Display a stored plan and create a one-use approval on a human terminal")
+    .option("--json", "print JSON")
+    .action(async (planId: string, options: WorkflowJsonOptions) => {
+      try {
+        const stored = getWorkflowPlan(planId);
+        if (!stored) {
+          throw new MoldeskError({
+            code: "WORKFLOW_PLAN_NOT_FOUND",
+            message: `Unknown workflow plan "${planId}".`,
+            remediation: "Plan the workflow again and approve the new plan ID.",
+          });
+        }
+        console.error(planText(stored.plan));
+        if (!process.stdin.isTTY) {
+          throw new MoldeskError({
+            code: "WORKFLOW_APPROVAL_REQUIRES_TTY",
+            message: "Workflow approval requires an interactive terminal.",
+            remediation: "Run the approve command from a terminal so a person can review the plan.",
+          });
+        }
+        const approved = await confirm(`Approve plan ${planId}?`);
+        if (!approved) {
+          throw new MoldeskError({
+            code: "WORKFLOW_APPROVAL_DECLINED",
+            message: "Workflow plan was not approved.",
+            remediation: "Run the workflow only after reviewing and approving the plan.",
+          });
+        }
+        const approval = createWorkflowApproval(planId);
+        if (options.json) {
+          console.log(
+            JSON.stringify({ status: "ok", approvalId: approval.approvalId, planId, plan: stored.plan }, null, 2),
+          );
+        } else {
+          console.log(approval.approvalId);
+        }
+      } catch (error) {
+        reportFailure(error, options.json);
+      }
+    });
+
+  workflow
+    .command("run <approval-id>")
+    .description("Execute an approved workflow and wait for the result")
+    .option("--json", "print JSON")
+    .action(async (approvalId: string, options: WorkflowJsonOptions) => {
+      const controller = new AbortController();
+      const removeSignalHandlers = abortOnSignals(controller);
+      try {
+        const submitted = submitWorkflowRun(approvalId);
+        if (submitted.duplicate) {
+          // A duplicate never starts a second executor: report the original run as it is now.
+          reportRun(statusSummary(submitted.runId), options.json, { duplicate: true });
+          return;
+        }
+        const summary = await executeWorkflowRun(submitted.runId, { signal: controller.signal });
+        reportRun(summary, options.json, { duplicate: false });
+      } catch (error) {
+        reportFailure(error, options.json);
+      } finally {
+        removeSignalHandlers();
+      }
+    });
+
+  workflow
+    .command("status <run-id>")
+    .description("Print the durable status of a workflow run")
+    .option("--json", "print JSON")
+    .action((runId: string, options: WorkflowJsonOptions) => {
+      try {
+        const summary = statusSummary(runId);
+        if (options.json) console.log(JSON.stringify(workflowResult(summary), null, 2));
+        else printRun(summary);
+      } catch (error) {
+        reportFailure(error, options.json);
+      }
+    });
+
+  workflow
+    .command("artifacts <run-id>")
+    .description("List verified artifacts produced by a workflow run")
+    .option("--json", "print JSON")
+    .action(async (runId: string, options: WorkflowJsonOptions) => {
+      try {
+        const artifacts = await getWorkflowArtifacts(runId);
+        if (options.json) console.log(JSON.stringify({ status: "ok", runId, artifacts }, null, 2));
+        else for (const artifact of artifacts) console.log(`${artifact.id}\t${artifact.type}\t${artifact.path}`);
+      } catch (error) {
+        reportFailure(error, options.json);
+      }
+    });
+
+  workflow
+    .command("resume <run-id>")
+    .description("Resume an interrupted workflow run from verified outputs")
+    .option("--json", "print JSON")
+    .action(async (runId: string, options: WorkflowJsonOptions) => {
+      const controller = new AbortController();
+      const removeSignalHandlers = abortOnSignals(controller);
+      try {
+        const summary = await resumeWorkflowRun(runId, { signal: controller.signal });
+        reportRun(summary, options.json);
+      } catch (error) {
+        reportFailure(error, options.json);
+      } finally {
+        removeSignalHandlers();
+      }
+    });
+
+  workflow
+    .command("cancel <run-id>")
+    .description("Request cancellation of a workflow run")
+    .option("--json", "print JSON")
+    .action((runId: string, options: WorkflowJsonOptions) => {
+      try {
+        const run = cancelWorkflowRun(runId);
+        if (options.json) {
+          console.log(JSON.stringify({ status: "ok", runId, runStatus: run.status, cancelRequested: run.cancelRequested }, null, 2));
+        } else {
+          console.log(`${run.status} ${runId} (cancellation requested)`);
         }
       } catch (error) {
         reportFailure(error, options.json);
