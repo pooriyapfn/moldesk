@@ -1,6 +1,6 @@
 ---
 name: moldesk
-description: Install, check, and run molecular AI models (Boltz-2, OpenDDE, DiffDock-L, BindCraft2, ProteinMPNN, LigandMPNN) and analyze protein structures with the MoleculeDesk `moldesk` CLI. Use when the user wants to predict a protein or complex structure, estimate binding affinity, dock a ligand, design protein sequences or binders, fetch a structure from the PDB, AlphaFold DB or UniProt, summarize or inspect a PDB/mmCIF file (chains, sequences, secondary structure, pLDDT, neighbors), highlight residues or compare two structures (TM-score, RMSD, deviation), view a structure, check which models their machine can run or what a model's parameters are, or run a model on a Runpod cloud GPU. Also use when the user mentions MoleculeDesk or moldesk.
+description: Install, check, and run molecular AI models (Boltz-2, OpenDDE, DiffDock-L, BindCraft2, ProteinMPNN, LigandMPNN) and analyze protein structures with the MoleculeDesk `moldesk` CLI. Use when the user wants to predict a protein or complex structure, estimate binding affinity, dock a ligand, design protein sequences or binders, fetch a structure from the PDB, AlphaFold DB or UniProt, summarize or inspect a PDB/mmCIF file (chains, sequences, secondary structure, pLDDT, neighbors), highlight residues or compare two structures (TM-score, RMSD, deviation), view a structure, check which models their machine can run or what a model's parameters are, run a model on a Runpod cloud GPU, or validate, plan, approve and run a declarative YAML workflow that chains structure import, analysis and model prediction. Also use when the user mentions MoleculeDesk or moldesk.
 ---
 
 # MoleculeDesk (`moldesk`)
@@ -45,6 +45,7 @@ moldesk install <model>              # shows a plan and asks; --yes only after u
 moldesk run <model> <input> --output ./results
 moldesk view <structure.pdb|.cif> --open   # offline 3D report for any structure
 moldesk describe <model> --json            # inputs, parameters, hardware, cloud, license, verdict for this machine
+moldesk workflow schema --json             # declarative workflow YAML schema and operation contracts
 ```
 
 Structures:
@@ -92,6 +93,31 @@ Multi-step recipes (design then fold, dock then inspect, and others): [reference
    Runs can take seconds (ProteinMPNN) to tens of minutes (BindCraft2). Run long jobs in the background if your environment allows it, and tell the user roughly how long to expect.
 5. Read the result. `--json` returns the status, the run directory, each output path, and the report path. Exit code `0` is success, `7` is a failed run, `8` is cancelled, `5` is "not installed", `4` is "unsupported here".
 6. Summarize for the user: what ran, where the outputs are, key scores, and how to open the report (`open <report.html>` on macOS, `xdg-open` on Linux).
+
+## Declarative workflows
+
+A workflow is one YAML document that chains local operations (import a structure, analyze it, optionally predict a chain with Boltz) into one durable, approved run. Use it when the user asks for a repeatable pipeline rather than a single model call. The agent discovers the schema, writes and plans the workflow, and shows the plan; the user approves it in their own terminal. The CLI enforces a one-use approval receipt, so an agent can never start a run on its own.
+
+```bash
+moldesk workflow schema --json                                          # live YAML schema + operation contracts
+moldesk workflow validate work/structure-analysis.yaml --json           # compile only, no inputs read
+moldesk workflow plan work/structure-analysis.yaml --input structure=./work/1CRN.pdb --json
+moldesk workflow approve <plan-id> --json                               # the user runs this in their terminal
+moldesk workflow run <approval-id> --json                               # execute the approved plan and wait
+moldesk workflow status <run-id> --json
+moldesk workflow artifacts <run-id> --json
+moldesk workflow resume <run-id> --json
+moldesk workflow cancel <run-id> --json
+```
+
+- Discover before writing. Run `moldesk workflow schema --json` for the exact fields and operation contracts, and `moldesk describe <model> --json` for model parameters and installation state. Do not guess bindings or versions.
+- Write the YAML in the task folder, validate it, then plan with explicit input bindings. Relative file inputs resolve against the current working directory. Show the user the resolved inputs, step order, and runtime requirements before asking for approval.
+- Report diagnostics from `details.diagnostics[]` with their `code`, `message`, `path`, and `line`/`column`. Validation and planning errors exit `2`.
+- The user runs approve and gives you the returned `approvalId`. Then run the workflow and report `runId`, each step's terminal status, and any `error.code`. Use `status` as the source of truth and only artifacts whose `verified` is true.
+- Judge outcomes by the JSON `runStatus` and step `status` (`cached` counts as success), not the exit code. Resume a run that is `interrupted` or whose owner is gone; resume a `failed` run only after fixing the cause. Cancel requests are durable and checked by the owner. Never relaunch a possibly live prediction and never invent a result.
+- If `moldesk --help` does not list the workflow command, the installed CLI is older: tell the user the declarative-workflow capability is unavailable and that updating the CLI adds it. Do not replace the requested workflow with ad-hoc commands.
+
+Full command fields: [references/cli.md](references/cli.md). End-to-end recipe: [references/workflows.md](references/workflows.md).
 
 ## When something fails
 

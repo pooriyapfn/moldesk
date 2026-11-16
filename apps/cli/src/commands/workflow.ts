@@ -195,7 +195,7 @@ function planText(plan: WorkflowPlan): string {
 export function registerWorkflowCommand(program: Command): void {
   const workflow = program
     .command("workflow")
-    .description("Compile and plan local workflows without executing them");
+    .description("Validate, plan, approve, run and inspect local YAML workflows");
 
   workflow
     .command("schema")

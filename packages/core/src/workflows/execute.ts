@@ -60,6 +60,8 @@ export interface WorkflowStepSummary {
   attempt: number;
   error?: WorkflowErrorInfo;
   outputs?: Record<string, WorkflowStepOutput>;
+  /** The child model run behind a model step's attempt, for its logs and full outputs. */
+  childRunId?: string;
 }
 
 export interface WorkflowRunSummary {
@@ -597,6 +599,7 @@ function summaryFor(store: WorkflowStore, paths: MoldeskPaths, run: WorkflowRunR
       attempt: attempt?.attemptNumber ?? 0,
       ...(attempt?.error ? { error: attempt.error } : {}),
       ...(attempt?.outputs ? { outputs: attempt.outputs.outputs } : {}),
+      ...(attempt?.outputs?.childRunId ? { childRunId: attempt.outputs.childRunId } : {}),
     } satisfies WorkflowStepSummary;
   });
   return {

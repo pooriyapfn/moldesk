@@ -535,7 +535,10 @@ describe("workflow execution", () => {
       ]);
       const store = WorkflowStore.open(paths);
       try {
-        expect(store.latestAttempt(summary.runId, "predict")?.outputs?.childRunId).toEqual(expect.any(String));
+        const childRunId = store.latestAttempt(summary.runId, "predict")?.outputs?.childRunId;
+        expect(childRunId).toEqual(expect.any(String));
+        expect(summary.steps.find((step) => step.id === "predict")?.childRunId).toBe(childRunId);
+        expect(summary.steps.find((step) => step.id === "analyze")?.childRunId).toBeUndefined();
       } finally {
         store.close();
       }
