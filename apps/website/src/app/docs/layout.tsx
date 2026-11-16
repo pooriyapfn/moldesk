@@ -1,23 +1,8 @@
-import Link from "next/link";
 import { DocsSidebar } from "@/components/docs-sidebar";
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-border bg-background">
-        <div className="mx-auto flex w-full max-w-[1240px] items-center justify-between px-8 py-5">
-          <Link
-            href="/"
-            className="font-mono text-[13px] uppercase tracking-[0.13em] text-foreground no-underline hover:text-accent"
-          >
-            MoleculeDesk
-          </Link>
-          <Link href="/" className="text-sm text-muted hover:text-foreground">
-            ← Back to site
-          </Link>
-        </div>
-      </header>
-
       <div className="mx-auto flex w-full max-w-[1240px] flex-1 flex-col gap-10 px-8 py-12 md:flex-row md:items-start md:gap-16">
         <div className="shrink-0 py-1 md:sticky md:top-[65px] md:max-h-[calc(100vh-65px)] md:w-[220px] md:overflow-y-auto">
           <DocsSidebar />

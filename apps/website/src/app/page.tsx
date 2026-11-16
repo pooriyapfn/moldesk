@@ -1,19 +1,19 @@
 import Link from "next/link";
-import { InstallCommand } from "./install-command";
-import { TerminalDemo } from "./terminal-demo";
+import { models } from "@/lib/models";
+import { Hero } from "./hero";
 
 const FEATURES = [
   {
     title: "Run models",
-    body: "Use supported molecular AI models without complex setup.",
+    body: "Install and run molecular AI models like Boltz-2 and ProteinMPNN without complex setup.",
   },
   {
-    title: "Inspect results",
-    body: "Open molecular structures and examine model outputs.",
+    title: "Build workflows",
+    body: "Connect multiple models into reproducible workflows, with Claude Code, Codex, or YAML.",
   },
   {
-    title: "Stay in control",
-    body: "Keep visibility over your models, inputs, and runs.",
+    title: "Explore in Studio",
+    body: "Visualize workflows, monitor runs, and inspect molecular structures and results in one place.",
   },
 ];
 
@@ -21,46 +21,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto w-full max-w-[1240px] px-8 pt-[84px] pb-[88px]">
-        <div className="grid items-center gap-16 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
-          <div>
-            <div className="mb-[26px] font-mono text-[11.5px] uppercase tracking-[0.13em] text-muted">
-              MoleculeDesk
-            </div>
-            <h1 className="max-w-[14ch] text-[clamp(38px,4.6vw,62px)] leading-[1.04] font-semibold tracking-[-0.036em] text-balance">
-              Take control of your molecular AI.
-            </h1>
-            <p className="mt-[26px] max-w-[44ch] text-[clamp(16px,1.4vw,19px)] leading-[1.55] text-muted text-pretty">
-              MoleculeDesk is an open-source package manager and runtime for
-              running molecular AI models locally. Install, run, and inspect
-              supported models from one CLI.
-            </p>
-
-            <InstallCommand />
-
-            <div className="mt-[18px] flex flex-wrap gap-2.5">
-              <a
-                href="https://github.com/pooriyapfn/moldesk"
-                className="rounded-md border border-foreground bg-white px-[22px] py-[11px] text-sm font-medium text-foreground hover:bg-foreground hover:text-white"
-              >
-                GitHub
-              </a>
-              <Link
-                href="/docs"
-                className="rounded-md border border-border bg-transparent px-[22px] py-[11px] text-sm font-medium text-muted hover:border-foreground hover:text-foreground"
-              >
-                Docs
-              </Link>
-              <Link
-                href="/competitions"
-                className="rounded-md border border-border bg-transparent px-[22px] py-[11px] text-sm font-medium text-muted hover:border-foreground hover:text-foreground"
-              >
-                Competitions
-              </Link>
-            </div>
-          </div>
-
-          <TerminalDemo />
-        </div>
+        <Hero />
       </header>
 
       <section className="border-t border-b border-border bg-white">
@@ -69,12 +30,12 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Supported models
             </span>
-            {["Boltz", "OpenDDE", "ProteinMPNN", "LigandMPNN"].map((name) => (
+            {Object.values(models).filter((model) => model.status !== "soon").map((model) => (
               <span
-                key={name}
+                key={model.slug}
                 className="rounded-full border border-accent bg-accent-soft px-4 py-[7px] font-mono text-[13px] text-foreground"
               >
-                {name}
+                {model.displayName}{model.status === "beta" && " (Beta)"}
               </span>
             ))}
           </div>
@@ -82,12 +43,12 @@ export default function Home() {
             <span className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted">
               Coming soon
             </span>
-            {["DiffDock-L", "BindCraft2", "AlphaFold", "ColabFold", "Chai"].map((name) => (
+            {Object.values(models).filter((model) => model.status === "soon").map((model) => (
               <span
-                key={name}
+                key={model.slug}
                 className="rounded-full border border-border px-4 py-[7px] font-mono text-[13px] text-muted"
               >
-                {name}
+                {model.displayName}
               </span>
             ))}
           </div>
@@ -111,19 +72,20 @@ export default function Home() {
 
       <section className="border-t border-border bg-white">
         <div className="mx-auto w-full max-w-[1240px] px-8 py-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Start with a real workflow</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">From models to complete workflows</h2>
           <p className="mt-3 max-w-2xl leading-relaxed text-muted">
-            Check platform support, run a prediction, and inspect the files the CLI reports.
+            Go beyond single predictions. Connect molecular AI models, automate experiments, and explore results in MoleDesk Studio.
           </p>
-          <div className="mt-6 flex flex-col gap-3 text-sm">
+          <p className="mt-6 text-sm font-semibold">Explore the documentation:</p>
+          <div className="mt-3 flex flex-col gap-3 text-sm">
             <Link href="/docs/guides/run-boltz-locally" className="text-accent hover:underline">
-              How to run Boltz-2 locally →
+              Run your first Boltz-2 prediction →
             </Link>
-            <Link href="/docs/guides/apple-silicon" className="text-accent hover:underline">
-              Which molecular AI models run on Apple Silicon? →
+            <Link href="/docs/agent-skills" className="text-accent hover:underline">
+              Build a molecular AI workflow with Claude Code →
             </Link>
-            <Link href="/docs/model-compatibility" className="text-accent hover:underline">
-              Check model status and compatibility →
+            <Link href="/docs/cli-usage" className="text-accent hover:underline">
+              Visualize and inspect results in MoleDesk Studio →
             </Link>
           </div>
         </div>

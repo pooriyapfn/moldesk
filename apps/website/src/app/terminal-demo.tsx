@@ -1,69 +1,42 @@
-"use client";
+import { BrandIcon, CLAUDE_PATH, OPENAI_PATH, type InstallTarget } from "./install-command";
 
-import { useEffect, useRef, useState } from "react";
+const examples: Record<InstallTarget, { prompt?: string; lines: string[] }> = {
+  terminal: {
+    lines: ["$ moldesk install boltz", "✓ Boltz installed successfully", "", "$ moldesk run boltz --input protein.yaml", "✓ Prediction completed", "✓ Protein structure saved", "", "$ moldesk studio", "✓ Open Studio to view your 3D structure"],
+  },
+  codex: {
+    prompt: "Build a reproducible MoleDesk workflow to predict and analyze a protein structure using Boltz. Validate the YAML before running it.",
+    lines: ["✓ MoleDesk skill loaded", "✓ Workflow generated: protein-analysis.yaml", "✓ Workflow validated · 2 steps", "✓ Ready to execute"],
+  },
+  claude: {
+    prompt: "Use MoleDesk to create a workflow that predicts a protein structure with Boltz, analyzes the results, and opens it in Studio.",
+    lines: ["✓ MoleDesk skill loaded", "✓ Workflow generated: protein-analysis.yaml", "✓ Workflow validated · 2 steps", "✓ Ready to execute"],
+  },
+};
 
-type Line = { text: string; color: string; pause: number };
-
-const SCRIPT: Line[] = [
-  { text: "$ moldesk install proteinmpnn", color: "#F3F7F5", pause: 900 },
-  { text: "✓ environment resolved", color: "#A7B3AE", pause: 600 },
-  { text: "✓ weights cached", color: "#A7B3AE", pause: 600 },
-  { text: "✓ proteinmpnn ready", color: "#59B89A", pause: 1100 },
-  { text: "", color: "#A7B3AE", pause: 200 },
-  { text: "$ moldesk run proteinmpnn structure.pdb", color: "#F3F7F5", pause: 900 },
-  { text: "designing sequences...", color: "#A7B3AE", pause: 1400 },
-  { text: "✓ run complete", color: "#59B89A", pause: 3800 },
-];
-
-export function TerminalDemo() {
-  const [shown, setShown] = useState(0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-
-  useEffect(() => {
-    const tick = (n: number) => {
-      if (n >= SCRIPT.length) {
-        setShown(0);
-        timeoutRef.current = setTimeout(() => tick(0), 500);
-        return;
-      }
-      setShown(n + 1);
-      timeoutRef.current = setTimeout(() => tick(n + 1), SCRIPT[n].pause);
-    };
-    timeoutRef.current = setTimeout(() => tick(0), SCRIPT[0].pause);
-    return () => clearTimeout(timeoutRef.current);
-  }, []);
-
-  const lines = SCRIPT.slice(0, shown);
-
+export function TerminalDemo({ target }: { target: InstallTarget }) {
+  const isTerminal = target === "terminal";
+  const example = examples[target];
   return (
-    <div className="rounded-xl border border-[#27332F] bg-[#0C1110] overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-[#27332F] bg-[#121917] px-4 py-3">
-        <div className="h-2 w-2 rounded-full bg-[#27332F]" />
-        <div className="h-2 w-2 rounded-full bg-[#27332F]" />
-        <div className="h-2 w-2 rounded-full bg-[#27332F]" />
-        <span className="ml-2.5 font-mono text-[11.5px] text-[#A7B3AE]">
-          moldesk
-        </span>
+    <div className={`overflow-hidden rounded-xl border ${isTerminal ? "border-[#27332F] bg-[#0C1110] text-[#F3F7F5]" : "border-border bg-white text-foreground"}`}>
+      <div className={`flex h-12 items-center gap-2 border-b px-4 font-mono text-[12px] ${isTerminal ? "border-[#27332F] bg-[#121917] text-[#A7B3AE]" : "border-border text-muted"}`}>
+        {isTerminal ? (
+          <><span className="size-2 rounded-full bg-[#27332F]" /><span className="size-2 rounded-full bg-[#27332F]" /><span className="size-2 rounded-full bg-[#27332F]" /><span className="ml-2.5">moldesk</span></>
+        ) : (
+          <><BrandIcon path={target === "claude" ? CLAUDE_PATH : OPENAI_PATH} className={`size-4 ${target === "claude" ? "text-[#D97757]" : "text-foreground"}`} /><span>{target === "claude" ? "claude" : "codex"}</span></>
+        )}
       </div>
-      <div className="flex min-h-[330px] flex-col px-6 py-6 font-mono text-[13px] leading-[2.05]">
-        {lines.map((line, i) => (
+      <div key={target} aria-live="polite" className="min-h-[330px] px-6 py-6 font-mono text-[13px] leading-[2.05] motion-safe:animate-[md-example-in_400ms_100ms_both]">
+        {example.prompt && <p className="mb-6 flex gap-2 text-foreground"><span className="text-accent">&gt;</span><span>{example.prompt}</span></p>}
+        {example.lines.map((line, i) => (
           <div
             key={i}
-            className="whitespace-pre"
-            style={{
-              color: line.color,
-              animation: "md-line-in 320ms ease-out both",
-            }}
+            className={`whitespace-pre-wrap break-words motion-safe:animate-[md-line-in_320ms_ease-out_both] ${line.startsWith("✓") ? (isTerminal ? "text-[#59B89A]" : "text-accent") : ""}`}
+            style={{ animationDelay: `${(example.prompt ? 900 : 350) + example.lines.slice(0, i).filter(Boolean).length * 700}ms` }}
           >
-            {line.text || " "}
+            {line || "\u00a0"}
           </div>
         ))}
-        <span
-          className="mt-1 inline-block h-[15px] w-2 bg-[#59B89A]"
-          style={{ animation: "md-caret 1.1s step-end infinite" }}
-        />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { SiteNav } from "@/components/site-nav";
 import "./globals.css";
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -18,13 +19,13 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://moleculedesk.com"),
   title: "MoleculeDesk — Run molecular AI models locally",
   description:
-    "MoleculeDesk is an open-source package manager and runtime for running molecular AI models locally. Install, run, and inspect supported models from one CLI.",
+    "MoleculeDesk is an open-source runtime for molecular AI models and workflows. Install models, build reproducible workflows with Claude Code or Codex, and run them locally or on cloud GPUs, all from one CLI.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     siteName: "MoleculeDesk",
     title: "MoleculeDesk — Run molecular AI models locally",
-    description: "An open-source package manager and runtime for molecular AI models.",
+    description: "MoleculeDesk is an open-source runtime for molecular AI models and workflows. Install models, build reproducible workflows with Claude Code or Codex, and run them locally or on cloud GPUs, all from one CLI.",
     url: "https://moleculedesk.com/",
   },
 };
@@ -36,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     name: "MoleculeDesk",
     url: "https://moleculedesk.com/",
     applicationCategory: "DeveloperApplication",
-    description: "Open-source package manager and runtime for running molecular AI models locally.",
+    description: "MoleculeDesk is an open-source runtime for molecular AI models and workflows. Install models, build reproducible workflows with Claude Code or Codex, and run them locally or on cloud GPUs, all from one CLI.",
     codeRepository: "https://github.com/pooriyapfn/moldesk",
   };
   return (
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(software) }} />
+        <SiteNav />
         {children}
       </body>
     </html>
