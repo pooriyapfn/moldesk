@@ -16,6 +16,7 @@ import {
   submitWorkflowRun,
   validateWorkflow,
   workflowJsonSchema,
+  workflowOperationCatalog,
   type WorkflowDiagnostic,
   type WorkflowPlan,
   type WorkflowRunSummary,
@@ -198,10 +199,10 @@ export function registerWorkflowCommand(program: Command): void {
 
   workflow
     .command("schema")
-    .description("Print the workflow YAML JSON Schema")
+    .description("Print the workflow YAML JSON Schema and operation contracts")
     .option("--json", "print JSON")
     .action(() => {
-      console.log(JSON.stringify(workflowJsonSchema(), null, 2));
+      console.log(JSON.stringify({ schema: workflowJsonSchema(), operations: workflowOperationCatalog() }, null, 2));
     });
 
   workflow

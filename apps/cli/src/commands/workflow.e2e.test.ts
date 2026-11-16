@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
-import { getWorkflowPlan } from "@moldesk/core";
+import { getWorkflowPlan, workflowJsonSchema, workflowOperationCatalog } from "@moldesk/core";
 import { registerWorkflowCommand } from "./workflow.js";
 
 // Runs the real @moldesk/core compiler (no mocks) through the CLI command.
@@ -63,6 +63,16 @@ function expectPlanOnly(): void {
 }
 
 describe("moldesk workflow (real compiler)", () => {
+  it("discovers the same schema and operation contracts core validates against", async () => {
+    await run("schema", "--json");
+    expect(singleJson()).toEqual({
+      schema: JSON.parse(JSON.stringify(workflowJsonSchema())),
+      operations: JSON.parse(JSON.stringify(workflowOperationCatalog())),
+    });
+    expect(process.exitCode).toBeUndefined();
+    expectNoHomeWrites();
+  });
+
   it("validates the offline example", async () => {
     await run("validate", EXAMPLE, "--json");
     expect(singleJson()).toMatchObject({ status: "ok", valid: true, order: ["import", "analyze"] });

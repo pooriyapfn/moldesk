@@ -708,8 +708,8 @@ export function submitWorkflowRun(
 }
 
 /**
- * Executes a claimed run in planned order. The CLI waits on this promise; MCP and Studio can
- * call it in the background and poll `getWorkflowStatus`.
+ * Executes a claimed run in planned order. The CLI waits on this promise; Studio can call it
+ * in the background and poll `getWorkflowStatus`.
  */
 export async function executeWorkflowRun(
   runId: string,

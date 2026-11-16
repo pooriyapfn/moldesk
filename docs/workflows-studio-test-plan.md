@@ -40,7 +40,7 @@ Add `packages/core/src/workflows/compiler.test.ts` and `apps/cli/src/commands/wo
 | Bindings | Missing, extra, and duplicate external input values fail. The CPU example plans in an empty home. A missing local Boltz installation gets a specific diagnostic without installing anything. |
 | File access | Normal CLI-relative paths work, including paths with spaces. With a workspace root set, reject paths and symlink targets outside it. Reject directories, invalid formats, and oversized inputs. |
 | Determinism | Replan identical YAML and input bytes with reordered input-map keys. Plan ID and normalized DAG match. Editing YAML bytes, changing the file's bytes, or swapping the resolved installation fingerprint changes the plan ID. |
-| CLI behavior | `--json` emits exactly one parseable JSON value. Validation and planning errors exit `2`. Spy on runtime/provider calls and assert zero at both endpoints. |
+| CLI behavior | `--json` emits exactly one parseable JSON value. `workflow schema` returns the same schema and operation contracts used by core. Validation and planning errors exit `2`. Spy on runtime/provider calls and assert zero at both endpoints. |
 
 ```sh
 pnpm --filter @moldesk/core test workflows/compiler.test.ts
@@ -87,23 +87,22 @@ node apps/cli/dist/index.js workflow artifacts "$run_id" --json
 
 Expect `succeeded`, a PDB `protein_structure` artifact, and a JSON `report` artifact. Submit the same approval again and check the run ID and attempt counts remain identical.
 
-## 4. MCP over real stdio
+## 4. Test the MoleDesk skill against the built CLI
 
-Add `apps/cli/src/commands/mcp.test.ts`. Spawn the built `moldesk mcp --workspace <repo-root>` command with the SDK's stdio test client. Give it the same isolated `MOLDESK_HOME` as the CLI subprocesses. Create test approvals through the shared store fixture, then manually validate the human prompt once using the CLI above.
+Reuse the existing skill command checker. Smoke-test the [shared skill](../plugins/moldesk/skills/moldesk/SKILL.md) in Claude Code and Codex using the built CLI, the CPU fixture, and an isolated `MOLDESK_HOME` per smoke.
 
 | Case | Pass condition |
 | --- | --- |
-| Transport | Initialization and tool listing succeed. Every stdout frame is valid protocol traffic, including during execution and on errors. |
-| Discovery and diagnostics | `models_list` and `workflow_schema` match the core operation map and CLI schema. Invalid YAML returns the same codes and positions across MCP and CLI. |
-| Shared state | Plan the CPU workflow through MCP and approve that plan via CLI. `workflow_run` returns a run ID. Poll status to terminal, then read the same run ID and artifact hashes through the CLI. |
-| Invalid requests | Reject an escaped input path, unknown run ID, receipt-free execution, and attempts to add approval or override fields to `workflow_run`. Confirm zero work starts for the rejected submissions. |
-| Disconnect | Close the client during an injected slow CPU step. A second process can read the durable state. A graceful shutdown records cancellation. A forced exit follows the interrupted-run rules in step 3. |
+| Command coverage | The checker confirms the skill's commands and flags exist in the built CLI and `references/cli.md` covers `workflow`. |
+| Discovery and planning | Ask the agent to analyze the local crambin fixture as a YAML workflow. It reads `workflow schema --json`, uses declared operation IDs, validates its YAML, and presents the resolved plan with `planId`. Given broken YAML, it reports the CLI diagnostic and fixes the draft before planning. |
+| Approval and artifacts | Withhold approval and verify no run starts. Approve the displayed plan from a separate human terminal using the same home and pass the receipt to the agent. It runs the plan, reads status and artifacts by `runId`, and reports the structure and JSON report. Verify the IDs and hashes via the CLI. |
+| Older CLI | With a CLI that lacks `workflow`, the skill identifies the missing command and stops the workflow flow. |
 
 ```sh
-pnpm --filter @moldesk/cli test commands/mcp.test.ts
+pnpm --filter '@moldesk/cli...' build
+node --test scripts/check-skill-commands.test.mjs
+node scripts/check-skill-commands.mjs
 ```
-
-Manually connect one of Claude Code or Codex to the built stdio command. Discover the schema, plan the fixture, and read status. Use a CLI approval for any execution in the host smoke test.
 
 ## 5. Studio, packaging, and release smoke
 
@@ -115,7 +114,7 @@ Add `apps/cli/src/studio/server.test.ts`. Start the real loopback server on an O
 | Run inspector | Run after the explicit click. Watch step transitions, open artifact metadata, download the JSON report, and open the offline structure preview. Confirm the same run and artifact hashes from the CLI. |
 | Events and recovery | Disconnect and reconnect SSE with the last event ID. Receive each later event once and reconcile to the saved snapshot. Cancel a slow fixture and resume an interrupted CPU fixture. Confirm the same behavior through CLI status. |
 | Local boundaries | Assert the server listens on `127.0.0.1`. Reject an invalid Host, cross-origin mutation, missing session, and an out-of-workspace file. User text with HTML metacharacters displays as text. Artifact endpoints resolve only known, managed IDs. |
-| Packed CLI | Extend [`scripts/pack-verify.mjs`](../scripts/pack-verify.mjs) for MCP initialization and Studio asset/API checks from an unrelated working directory. The current tarball harness uses `--ignore-scripts`. Enable the existing SQLite native dependency in the isolated install for tests that open the workflow store. |
+| Packed CLI | Extend [`scripts/pack-verify.mjs`](../scripts/pack-verify.mjs) for workflow planning and Studio asset/API checks from an unrelated working directory. The current tarball harness uses `--ignore-scripts`. Enable the existing SQLite native dependency in the isolated install for tests that open the workflow store. |
 
 ```sh
 pnpm --filter @moldesk/cli test studio/server.test.ts

@@ -101,10 +101,13 @@ const plan = {
 };
 
 describe("moldesk workflow schema", () => {
-  it("prints one JSON schema value", async () => {
+  it("prints one JSON value with the schema and operation contracts", async () => {
     state.workflowJsonSchema.mockReturnValue({ $schema: "http://json-schema.org/draft-07/schema#" });
     await run("schema", "--json");
-    expect(singleJson()).toEqual({ $schema: "http://json-schema.org/draft-07/schema#" });
+    const output = singleJson() as Record<string, unknown>;
+    expect(Object.keys(output).sort()).toEqual(["operations", "schema"]);
+    expect(output["schema"]).toEqual({ $schema: "http://json-schema.org/draft-07/schema#" });
+    expect(Array.isArray(output["operations"])).toBe(true);
     expect(process.exitCode).toBeUndefined();
   });
 });
