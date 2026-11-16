@@ -86,6 +86,19 @@ moldesk cloud cache delete boltz
 
 See the [Runpod cloud execution guide](/docs/guides/runpod-cloud-execution) for costs, limits and what was validated.
 
+## `moldesk studio --workspace <dir>`
+
+Opens a loopback-only Studio for declarative YAML workflows. It uses the same plan and run services as the CLI, shows the resolved plan and read-only DAG, streams run events, and serves artifact downloads and offline structure previews.
+
+```bash
+moldesk studio --workspace .
+moldesk studio --workspace . --no-open
+```
+
+Studio cannot approve a plan itself. After planning, Studio shows `moldesk workflow approve <planId> --json`; run it in a terminal, confirm the plan, and paste the returned `approvalId` into Studio to enable Run. Each approval is single-use.
+
+The process stays in the foreground until Ctrl+C. `--no-open` prints the URL without opening a browser, which is useful in scripts and tests.
+
 ## What's next
 
 See each [model's page](/docs/model-compatibility) for a runnable, model-specific example.

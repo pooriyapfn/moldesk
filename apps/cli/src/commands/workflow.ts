@@ -4,11 +4,10 @@ import type { Command } from "commander";
 import {
   MAX_WORKFLOW_BYTES,
   MoldeskError,
+  approveWorkflowPlan,
   cancelWorkflowRun,
-  createWorkflowApproval,
   executeWorkflowRun,
   getWorkflowArtifacts,
-  getWorkflowPlan,
   getWorkflowStatus,
   planWorkflow,
   resumeWorkflowRun,
@@ -278,34 +277,24 @@ export function registerWorkflowCommand(program: Command): void {
     .option("--json", "print JSON")
     .action(async (planId: string, options: WorkflowJsonOptions) => {
       try {
-        const stored = getWorkflowPlan(planId);
-        if (!stored) {
-          throw new MoldeskError({
-            code: "WORKFLOW_PLAN_NOT_FOUND",
-            message: `Unknown workflow plan "${planId}".`,
-            remediation: "Plan the workflow again and approve the new plan ID.",
-          });
-        }
-        console.error(planText(stored.plan));
-        if (!process.stdin.isTTY) {
-          throw new MoldeskError({
-            code: "WORKFLOW_APPROVAL_REQUIRES_TTY",
-            message: "Workflow approval requires an interactive terminal.",
-            remediation: "Run the approve command from a terminal so a person can review the plan.",
-          });
-        }
-        const approved = await confirm(`Approve plan ${planId}?`);
-        if (!approved) {
-          throw new MoldeskError({
-            code: "WORKFLOW_APPROVAL_DECLINED",
-            message: "Workflow plan was not approved.",
-            remediation: "Run the workflow only after reviewing and approving the plan.",
-          });
-        }
-        const approval = createWorkflowApproval(planId);
+        // Policy lives in core; the terminal is only the transport that asks the person.
+        const { approval, summary } = await approveWorkflowPlan(planId, {
+          confirm: async (reviewed) => {
+            console.error(planText(reviewed.plan));
+            console.error(`  backend: ${reviewed.backend}`);
+            if (!process.stdin.isTTY) {
+              throw new MoldeskError({
+                code: "WORKFLOW_APPROVAL_REQUIRES_TTY",
+                message: "Workflow approval requires an interactive terminal.",
+                remediation: "Run the approve command from a terminal so a person can review the plan.",
+              });
+            }
+            return confirm(`Approve plan ${planId}?`);
+          },
+        });
         if (options.json) {
           console.log(
-            JSON.stringify({ status: "ok", approvalId: approval.approvalId, planId, plan: stored.plan }, null, 2),
+            JSON.stringify({ status: "ok", approvalId: approval.approvalId, planId, plan: summary.plan }, null, 2),
           );
         } else {
           console.log(approval.approvalId);

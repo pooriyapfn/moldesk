@@ -134,6 +134,16 @@ Resumes an `interrupted` or `failed` run (or a `running` run whose owner is gone
 
 Records a durable cancellation request. The owning process turns it into an abort for model execution and checks it before publishing CPU outputs. Result: `status`, `runId`, `runStatus`, `cancelRequested`. Inspect with `status`; a run that already finished is unchanged.
 
+## `moldesk studio --workspace <dir> [--no-open] [--json]`
+
+Starts a loopback-only Studio (`127.0.0.1`, OS-assigned port) for a workflow workspace. Open the printed URL, load a workspace YAML draft, edit inputs, validate and plan, approve the plan in a terminal, paste the approval receipt, then click Run. The page shows the read-only DAG and node details from the core plan, streams committed run events, and exposes status, cancellation, resume, artifact downloads and offline structure previews. `--no-open` keeps the launch scriptable; the process stays in the foreground until Ctrl+C.
+
+Studio never creates approvals. After Plan it shows the plan ID and the command `moldesk workflow approve <planId> --json`; a person runs that in a terminal (core requires an interactive confirmation), then pastes the returned `approvalId` into Studio. Run is enabled only with a selected plan and a pasted `approvalId`, and starts that one-use receipt through the same submission service as the CLI. A draft or binding edit clears the selected plan and the pasted receipt so a stale plan cannot be run. Requests are limited to the configured workspace and managed run artifacts; mutations require the exact loopback Origin and the per-launch session.
+
+```sh
+node apps/cli/dist/index.js studio --workspace "$PWD" --no-open
+```
+
 ## `moldesk visualizer update <report> [--output <file>] [--open] [--yes] [--json]`
 
 Replaces the viewer inside an older report with the one installed now.

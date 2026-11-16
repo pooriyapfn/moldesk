@@ -23,6 +23,19 @@ describe("openInBrowser", () => {
     expect(calls[0][1][0].endsWith(hostile)).toBe(true);
   });
 
+  it("passes an http URL through unchanged", async () => {
+    const calls: string[][] = [];
+    const result = await openInBrowser("http://127.0.0.1:4321/", {
+      platform: "darwin",
+      run: async (_command, args) => {
+        calls.push(args);
+        return { code: 0, stderr: "" };
+      },
+    });
+    expect(result).toEqual({ opened: true });
+    expect(calls).toEqual([["http://127.0.0.1:4321/"]]);
+  });
+
   it("reports failures instead of throwing", async () => {
     expect((await openInBrowser("/a.html", { platform: "linux", run: async () => ({ code: 3, stderr: "no display\n" }) })).error).toBe("no display");
     expect((await openInBrowser("/a.html", { platform: "linux", run: async () => { throw new Error("ENOENT"); } })).error).toBe("ENOENT");

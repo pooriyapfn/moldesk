@@ -7,9 +7,9 @@ export interface OpenResult {
 }
 
 /**
- * Opens a local file in the default browser. Structured executable + args, no shell,
- * so paths with spaces, quotes, `$()`, backticks, Unicode, or a leading dash are inert:
- * the path is made absolute first, so it can never be parsed as an option.
+ * Opens a local file or an http(s) URL in the default browser. Structured executable + args,
+ * no shell, so paths with spaces, quotes, `$()`, backticks, Unicode, or a leading dash are inert:
+ * file paths are made absolute first, so they can never be parsed as an option. URLs pass through.
  */
 export async function openInBrowser(
   filePath: string,
@@ -21,7 +21,7 @@ export async function openInBrowser(
   const platform = deps.platform ?? process.platform;
   const executable = platform === "darwin" ? "open" : platform === "linux" ? "xdg-open" : undefined;
   if (!executable) return { opened: false, error: `Opening a browser is not supported on ${platform}.` };
-  const target = path.resolve(filePath);
+  const target = /^https?:\/\//i.test(filePath) ? filePath : path.resolve(filePath);
   const run = deps.run ?? ((command, args) => runCommand(command, args, { timeoutMs: 10_000 }));
   try {
     const result = await run(executable, [target]);

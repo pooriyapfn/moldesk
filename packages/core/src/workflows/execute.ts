@@ -1010,11 +1010,11 @@ function publishCache(
 }
 
 /** Resumes an interrupted/failed run, reusing verified completed attempts. */
-export async function resumeWorkflowRun(
-  runId: string,
-  options: WorkflowExecutionOptions = {},
-): Promise<WorkflowRunSummary> {
-  const paths = options.paths ?? getMoldeskPaths();
+/**
+ * Synchronous resume preconditions. Returns the summary of an already-succeeded run, or
+ * undefined when execution should (re)start. Throws for unknown, cancelled, or owner-busy runs.
+ */
+function checkResumable(runId: string, paths: MoldeskPaths): WorkflowRunSummary | undefined {
   const store = WorkflowStore.open(paths);
   try {
     const run = store.getRun(runId);
@@ -1035,10 +1035,33 @@ export async function resumeWorkflowRun(
     }
     if (run.status === "running" && store.isOwnerAlive(run)) throw ownerBusyError(store, run);
     if (run.status === "running") store.markInterrupted(runId);
+    return undefined;
   } finally {
     store.close();
   }
-  return executeWorkflowRun(runId, options);
+}
+
+export async function resumeWorkflowRun(
+  runId: string,
+  options: WorkflowExecutionOptions = {},
+): Promise<WorkflowRunSummary> {
+  const done = checkResumable(runId, options.paths ?? getMoldeskPaths());
+  return done ?? executeWorkflowRun(runId, options);
+}
+
+export interface StartedWorkflowResume {
+  runId: string;
+  /** Resolves when execution settles; rejects with the executor's failure. */
+  done: Promise<WorkflowRunSummary>;
+}
+
+/**
+ * Like `resumeWorkflowRun`, but the preconditions are checked synchronously, so an unknown,
+ * cancelled, or owner-busy run throws here instead of inside the returned promise.
+ */
+export function startWorkflowResume(runId: string, options: WorkflowExecutionOptions = {}): StartedWorkflowResume {
+  const finished = checkResumable(runId, options.paths ?? getMoldeskPaths());
+  return { runId, done: finished ? Promise.resolve(finished) : executeWorkflowRun(runId, options) };
 }
 
 export function cancelWorkflowRun(runId: string, options: { paths?: MoldeskPaths } = {}): WorkflowRunRecord {
@@ -1063,6 +1086,8 @@ export function cancelWorkflowRun(runId: string, options: { paths?: MoldeskPaths
 export interface StartedWorkflowRun {
   runId: string;
   duplicate: boolean;
+  /** Settles (never rejects) once background execution ends; already settled for a duplicate. */
+  settled: Promise<void>;
 }
 
 /**
@@ -1076,13 +1101,17 @@ export function startWorkflowRun(
 ): StartedWorkflowRun {
   const { onError, ...execution } = options;
   const submitted = submitWorkflowRun(approvalId, { paths: execution.paths });
+  let settled: Promise<void> = Promise.resolve();
   if (!submitted.duplicate) {
-    executeWorkflowRun(submitted.runId, execution).catch((error: unknown) => {
-      if (onError) onError(error, submitted.runId);
-      else console.error(`Workflow run ${submitted.runId} stopped: ${errorInfo(error, "WORKFLOW_EXECUTION_FAILED").message}`);
-    });
+    settled = executeWorkflowRun(submitted.runId, execution).then(
+      () => undefined,
+      (error: unknown) => {
+        if (onError) onError(error, submitted.runId);
+        else console.error(`Workflow run ${submitted.runId} stopped: ${errorInfo(error, "WORKFLOW_EXECUTION_FAILED").message}`);
+      },
+    );
   }
-  return { runId: submitted.runId, duplicate: submitted.duplicate };
+  return { runId: submitted.runId, duplicate: submitted.duplicate, settled };
 }
 
 export function getWorkflowStatus(runId: string, options: { paths?: MoldeskPaths } = {}): WorkflowStatusView {

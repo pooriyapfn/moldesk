@@ -234,9 +234,14 @@ export type {
   WorkflowResolvedInput,
   WorkflowStepRequirement,
 } from "./workflows/compiler.js";
+export { approveWorkflowPlan } from "./workflows/approval.js";
+export type {
+  ApproveWorkflowPlanOptions,
+  WorkflowApprovalConfirmer,
+  WorkflowApprovalSummary,
+} from "./workflows/approval.js";
 export {
   WorkflowStore,
-  createWorkflowApproval,
   getWorkflowPlan,
   storeWorkflowPlan,
 } from "./workflows/store.js";
@@ -263,11 +268,13 @@ export {
   getWorkflowArtifacts,
   getWorkflowStatus,
   resumeWorkflowRun,
+  startWorkflowResume,
   startWorkflowRun,
   submitWorkflowRun,
   workflowRunDirectory,
 } from "./workflows/execute.js";
 export type {
+  StartedWorkflowResume,
   StartedWorkflowRun,
   SubmittedWorkflowRun,
   WorkflowArtifactView,

@@ -261,7 +261,7 @@ describe("workflow execution", () => {
     expect(before).toHaveLength(2);
 
     expect(submitWorkflowRun(approval.approvalId, { paths })).toMatchObject({ runId: submitted.runId, duplicate: true });
-    expect(startWorkflowRun(approval.approvalId, { paths })).toEqual({ runId: submitted.runId, duplicate: true });
+    expect(startWorkflowRun(approval.approvalId, { paths })).toMatchObject({ runId: submitted.runId, duplicate: true });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(attempts(paths, submitted.runId)).toEqual(before);
